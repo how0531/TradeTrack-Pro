@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { Portfolio } from '../../types';
 
 // Shared container style for scrollable capsules
 const ScrollContainer = ({ children }: React.PropsWithChildren<{}>) => (
@@ -8,7 +9,27 @@ const ScrollContainer = ({ children }: React.PropsWithChildren<{}>) => (
     </div>
 );
 
-export const StrategyChipsInput = ({ strategies, value, onChange }: any) => (
+interface ChipInputProps {
+    value: string;
+    onChange: (val: string) => void;
+    lang?: string;
+}
+
+interface StrategyChipInputProps extends ChipInputProps {
+    strategies: string[];
+}
+
+interface EmotionChipInputProps extends ChipInputProps {
+    emotions: string[];
+}
+
+interface PortfolioChipInputProps {
+    portfolios: Portfolio[];
+    value: string;
+    onChange: (val: string) => void;
+}
+
+export const StrategyChipsInput = ({ strategies, value, onChange }: StrategyChipInputProps) => (
     <ScrollContainer>
         {strategies.map((s: string) => (
             <button 
@@ -23,7 +44,7 @@ export const StrategyChipsInput = ({ strategies, value, onChange }: any) => (
     </ScrollContainer>
 );
 
-export const EmotionChipsInput = ({ emotions, value, onChange }: any) => (
+export const EmotionChipsInput = ({ emotions, value, onChange }: EmotionChipInputProps) => (
     <ScrollContainer>
         {emotions.map((e: string) => (
             <button 
@@ -38,9 +59,9 @@ export const EmotionChipsInput = ({ emotions, value, onChange }: any) => (
     </ScrollContainer>
 );
 
-export const PortfolioChipsInput = ({ portfolios, value, onChange }: any) => (
+export const PortfolioChipsInput = ({ portfolios, value, onChange }: PortfolioChipInputProps) => (
     <ScrollContainer>
-        {portfolios.map((p: any) => (
+        {portfolios.map((p) => (
             <button 
                 type="button"
                 key={p.id} 

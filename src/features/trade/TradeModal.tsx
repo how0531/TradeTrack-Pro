@@ -1,3 +1,4 @@
+
 // [Manage] Last Updated: 2024-05-22
 import React from 'react';
 import { X } from 'lucide-react';
@@ -27,7 +28,7 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                     {/* GLASS CHIPS: PORTFOLIO SELECTOR */}
                     <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 mb-1.5 ml-1 block">{t.portfolio}</label>
-                        <PortfolioChipsInput portfolios={portfolios} value={form.portfolioId || (portfolios[0]?.id || '')} onChange={(val) => updateForm('portfolioId', val)} />
+                        <PortfolioChipsInput portfolios={portfolios} value={form.portfolioId || (portfolios[0]?.id || '')} onChange={(val: string) => updateForm('portfolioId', val)} />
                     </div>
 
                     <div>
@@ -46,11 +47,11 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
 
                     <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">{t.strategyList}</label>
-                        <StrategyChipsInput strategies={strategies} value={form.strategy || ''} onChange={(val) => updateForm('strategy', val)} lang={lang} />
+                        <StrategyChipsInput strategies={strategies} value={form.strategy || ''} onChange={(val: string) => updateForm('strategy', val)} lang={lang} />
                     </div>
                     <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">{t.mindsetList}</label>
-                        <EmotionChipsInput emotions={emotions} value={form.emotion || ''} onChange={(val) => updateForm('emotion', val)} lang={lang} />
+                        <EmotionChipsInput emotions={emotions} value={form.emotion || ''} onChange={(val: string) => updateForm('emotion', val)} lang={lang} />
                     </div>
                     <textarea 
                         rows={3} 

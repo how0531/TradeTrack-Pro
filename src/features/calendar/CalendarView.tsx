@@ -1,7 +1,8 @@
+
 // [Manage] Last Updated: 2024-05-22
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
-import { CalendarViewProps } from '../../types';
+import { CalendarViewProps, CalendarDay } from '../../types';
 import { I18N } from '../../constants';
 import { formatCurrency, formatDecimal, formatCompactNumber } from '../../utils/format';
 
@@ -35,7 +36,8 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const calendarDays = [];
+    // FIX: Explicitly type the array to avoid 'implicitly has an any[] type' error
+    const calendarDays: CalendarDay[] = [];
     // Padding days
     for (let i = 0; i < firstDayOfMonth; i++) calendarDays.push({ key: `pad-${i}`, day: '', pnl: 0 });
     // Actual days
