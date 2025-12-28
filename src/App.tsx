@@ -1,6 +1,7 @@
+
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useMemo } from 'react';
-import { TrendingUp, Activity, Plus, Eye, EyeOff, Filter, Cloud, CloudOff, RefreshCw, AlertOctagon, Check, AlertCircle, BrainCircuit } from 'lucide-react';
+import { TrendingUp, Activity, Plus, Eye, EyeOff, Filter, AlertOctagon, BrainCircuit } from 'lucide-react';
 
 // Modules & Hooks
 import { THEME, I18N } from './constants';
@@ -17,6 +18,7 @@ import { PortfolioSelector } from './components/selectors/PortfolioSelector';
 import { FrequencySelector } from './components/selectors/FrequencySelector';
 import { TimeRangeSelector } from './components/selectors/TimeRangeSelector';
 import { MultiSelectDropdown } from './components/selectors/MultiSelectDropdown';
+import { SyncIndicator } from './components/SyncIndicator';
 import { SettingsView } from './features/settings/SettingsView';
 import { StatsChart, StatsContent } from './components/tabs/StatsTab';
 import { JournalTab } from './components/tabs/JournalTab';
@@ -109,7 +111,7 @@ export default function App() {
     }, [metrics.isPeak, metrics.eqChange, metrics.totalTrades]);
 
     // Logic to separate Number and Unit for styling
-    const getFormattedEquity = () => {
+    const eqDisplay = useMemo(() => {
         if (showFullEquity) {
             return { val: formatCurrency(metrics.currentEq, hideAmounts), unit: '' };
         }
@@ -121,9 +123,7 @@ export default function App() {
             val: match ? match[1] : raw,
             unit: match ? match[2] : ''
         };
-    };
-
-    const eqDisplay = getFormattedEquity();
+    }, [metrics.currentEq, hideAmounts, showFullEquity]);
     
     // --- Dynamic Font Size Logic for Header ---
     const eqLength = (eqDisplay.val?.length || 0) + (eqDisplay.unit?.length || 0);
@@ -141,40 +141,6 @@ export default function App() {
         );
     }
     
-    const SyncIndicator = () => {
-        const isOnline = authStatus === 'online' && user && !user.isAnonymous;
-        if (!isOnline) {
-            return (
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/5">
-                    <CloudOff size={10} className="text-slate-500" />
-                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">{t.offline}</span>
-                </div>
-            );
-        }
-        if (syncStatus === 'saving') {
-            return (
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/5">
-                    <RefreshCw size={10} className="text-gold animate-spin" />
-                    <span className="text-[9px] font-bold text-gold uppercase tracking-tighter">{t.saving}</span>
-                </div>
-            );
-        }
-        if (syncStatus === 'error') {
-             return (
-                <button onClick={actions.retrySync} className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors">
-                    <AlertCircle size={10} className="text-red-400" />
-                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-tighter">{t.syncError}</span>
-                </button>
-            );
-        }
-        return (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/5 transition-all duration-500">
-                <Check size={10} className="text-[#5B9A8B]" />
-                <span className="text-[9px] font-bold text-[#5B9A8B] uppercase tracking-tighter">{t.saved}</span>
-            </div>
-        );
-    };
-
     return (
         <div className={`min-h-[100dvh] bg-[#000000] text-[#E0E0E0] font-sans flex flex-col max-w-md mx-auto relative shadow-2xl transition-all duration-700 overflow-hidden ${isRiskAlert ? 'shadow-[0_0_50px_rgba(208,90,90,0.3)] border-x border-red-500/20' : ''}`}>
             
@@ -203,7 +169,13 @@ export default function App() {
                         <div className="flex justify-between items-center mb-2 shrink-0">
                             <div className="flex items-center gap-3">
                                 <div className="p-1.5 rounded-lg bg-[#25282C] border border-white/5 shadow-sm"><Activity size={14} color={THEME.BLUE} /></div>
-                                <SyncIndicator />
+                                <SyncIndicator 
+                                    authStatus={authStatus} 
+                                    user={user} 
+                                    syncStatus={syncStatus} 
+                                    retrySync={actions.retrySync} 
+                                    lang={lang} 
+                                />
                             </div>
                             <div className="flex items-center gap-3">
                                 <PortfolioSelector portfolios={portfolios} activeIds={activePortfolioIds} onChange={setActivePortfolioIds} lang={lang} />

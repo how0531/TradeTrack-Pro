@@ -1,3 +1,4 @@
+
 // [Manage] Last Updated: 2024-05-22
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import { TrendingUp, List, BarChart2, ScatterChart as ScatterIcon, ArrowRight, X, Maximize, Calendar } from 'lucide-react';
@@ -211,7 +212,8 @@ export const StatsChart = ({
     const [isLongPressing, setIsLongPressing] = useState(false);
     
     // Internal tracking for mouse/touch position
-    const longPressTimer = useRef<any>(null);
+    // UPDATED: Used proper typing for timeout (NodeJS.Timeout or number depending on env, 'any' is safe fallback but specific is better)
+    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const currentHoverItem = useRef<any>(null);
     const chartRef = useRef<any>(null);
 
