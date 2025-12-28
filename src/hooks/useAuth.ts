@@ -2,7 +2,7 @@
 // [Manage] Last Updated: 2024-05-22
 import { useState, useEffect } from 'react';
 import { auth, db, config } from '../firebaseConfig';
-import firebase from 'firebase/compat/app';
+import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { User } from '../types';
 
 export const useAuth = () => {
@@ -10,7 +10,8 @@ export const useAuth = () => {
     const [status, setStatus] = useState<'loading' | 'online' | 'offline'>('loading');
 
     useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged((u) => {
+        // Using Modular SDK onAuthStateChanged
+        const unsubscribe = onAuthStateChanged(auth, (u) => {
             if (u) {
                 setUser({
                     uid: u.uid,
@@ -30,8 +31,8 @@ export const useAuth = () => {
 
     const login = async () => {
         try {
-            const provider = new firebase.auth.GoogleAuthProvider();
-            await auth.signInWithPopup(provider);
+            const provider = new GoogleAuthProvider();
+            await signInWithPopup(auth, provider);
         } catch (e) {
             console.error("Login failed", e);
         }
@@ -39,7 +40,7 @@ export const useAuth = () => {
 
     const logout = async () => {
         try {
-            await auth.signOut();
+            await signOut(auth);
         } catch (e) {
             console.error("Logout failed", e);
         }

@@ -86,7 +86,7 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                     {/* Header */}
                     <div className="relative z-10 w-full flex justify-between items-start">
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{isTrade ? 'TRADE RESULT' : 'PERFORMANCE'}</span>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{isTrade ? t.share_tradeResult : t.share_performance}</span>
                             <span className="text-[9px] text-slate-600 font-mono mt-0.5">
                                 {isTrade && trade ? formatDate(trade.date, lang) : formatDate(new Date().toISOString(), lang)}
                             </span>
@@ -149,24 +149,24 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                         {!isTrade && metrics ? (
                             <>
                                 <div className="flex flex-col items-center">
-                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">WIN RATE</span>
+                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">{t.share_winRate}</span>
                                     <span className="text-sm font-bold text-white font-barlow-numeric">{formatDecimal(metrics.winRate)}%</span>
                                 </div>
                                 <div className="flex flex-col items-center border-l border-white/5">
-                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">TRADES</span>
+                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">{t.share_trades}</span>
                                     <span className="text-sm font-bold text-white font-barlow-numeric">{metrics.totalTrades}</span>
                                 </div>
                                 <div className="flex flex-col items-center border-l border-white/5">
-                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">PROFIT FACTOR</span>
+                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">{t.share_pf}</span>
                                     <span className="text-sm font-bold text-white font-barlow-numeric">{formatDecimal(metrics.pf)}</span>
                                 </div>
                             </>
                         ) : (
                             <>
                                 <div className="flex flex-col items-center col-span-3">
-                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">RESULT</span>
+                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">{t.share_result}</span>
                                     <span className={`text-lg font-bold font-barlow-numeric ${isWin ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'}`}>
-                                        {isWin ? 'WIN' : 'LOSS'}
+                                        {isWin ? t.share_win : t.share_loss}
                                     </span>
                                 </div>
                             </>
@@ -183,7 +183,7 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                             className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 text-[10px] font-bold uppercase transition-all border ${hideAmounts ? 'bg-white/10 text-white border-white/20' : 'bg-transparent text-slate-500 border-white/5 hover:bg-white/5'}`}
                         >
                             {hideAmounts ? <EyeOff size={14} /> : <Eye size={14} />}
-                            {hideAmounts ? 'Amounts Hidden' : 'Amounts Visible'}
+                            {hideAmounts ? t.share_amountsHidden : t.share_amountsVisible}
                         </button>
                         
                         {!isTrade && (
@@ -192,7 +192,7 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                                 className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 text-[10px] font-bold uppercase transition-all border ${showChart ? 'bg-white/10 text-white border-white/20' : 'bg-transparent text-slate-500 border-white/5 hover:bg-white/5'}`}
                             >
                                 <Layers size={14} />
-                                {showChart ? 'Chart On' : 'Chart Off'}
+                                {showChart ? t.share_chartOn : t.share_chartOff}
                             </button>
                         )}
                     </div>
@@ -207,9 +207,9 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                             disabled={isGenerating}
                             className="flex-1 py-3 rounded-xl bg-[#C8B085] text-black font-bold text-xs uppercase hover:bg-[#D9C298] hover:shadow-[0_0_20px_rgba(200,176,133,0.3)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                         >
-                            {isGenerating ? 'Generating...' : (
+                            {isGenerating ? t.share_generating : (
                                 <>
-                                    <Download size={16} /> Save Image
+                                    <Download size={16} /> {t.share_saveImage}
                                 </>
                             )}
                         </button>

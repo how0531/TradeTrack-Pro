@@ -1,7 +1,7 @@
 
 // [Manage] Last Updated: 2024-05-22
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/auth';
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
 
 // --- FIREBASE CONFIGURATION ---
@@ -16,9 +16,11 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-// This file is the single source of truth for Firebase instances
-const app = firebase.initializeApp(firebaseConfig);
-export const auth = app.auth();
+// Using Modular SDK initialization
+const app = initializeApp(firebaseConfig);
+
+// Initialize Auth
+export const auth = getAuth(app);
 
 // Initialize Firestore with settings optimized for offline usage
 export const db = initializeFirestore(app, {

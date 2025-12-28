@@ -1,3 +1,4 @@
+
 // [Manage] Last Updated: 2024-05-22
 export const THEME = {
     GOLD: '#C8B085',       
@@ -101,7 +102,23 @@ export const I18N = {
         filter_notes: '只顯示筆記',
 
         // New Stats
-        daysSincePeak: '未創高天數'
+        daysSincePeak: '未創高天數',
+
+        // Share Card Translations (Added)
+        share_tradeResult: '交易戰績',
+        share_performance: '帳戶績效',
+        share_winRate: '勝率',
+        share_trades: '交易筆數',
+        share_pf: '獲利因子',
+        share_result: '結果',
+        share_win: '獲利',
+        share_loss: '虧損',
+        share_amountsHidden: '隱藏金額',
+        share_amountsVisible: '顯示金額',
+        share_chartOn: '顯示圖表',
+        share_chartOff: '隱藏圖表',
+        share_saveImage: '儲存圖片',
+        share_generating: '生成中...'
     },
     en: {
         stats: 'Stats', journal: 'Journal', logs: 'Logs', settings: 'Settings',
@@ -180,6 +197,22 @@ export const I18N = {
         filter_notes: 'Notes Only',
 
         // New Stats
-        daysSincePeak: 'Max Stagnation (Days)'
+        daysSincePeak: 'Max Stagnation (Days)',
+
+        // Share Card Translations
+        share_tradeResult: 'TRADE RESULT',
+        share_performance: 'PERFORMANCE',
+        share_winRate: 'WIN RATE',
+        share_trades: 'TRADES',
+        share_pf: 'PROFIT FACTOR',
+        share_result: 'RESULT',
+        share_win: 'WIN',
+        share_loss: 'LOSS',
+        share_amountsHidden: 'Amounts Hidden',
+        share_amountsVisible: 'Amounts Visible',
+        share_chartOn: 'Chart On',
+        share_chartOff: 'Chart Off',
+        share_saveImage: 'Save Image',
+        share_generating: 'Generating...'
     }
 };
