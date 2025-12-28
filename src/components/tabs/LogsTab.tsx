@@ -3,7 +3,7 @@
 import React from 'react';
 import { Activity, BrainCircuit } from 'lucide-react';
 import { MultiSelectDropdown } from '../selectors/MultiSelectDropdown';
-import { LogsView } from '../../features/history/LogsView'; // Updated path
+import { LogsView } from '../../features/history/LogsView'; // Corrected path
 import { I18N } from '../../constants';
 import { LogsViewProps } from '../../types';
 

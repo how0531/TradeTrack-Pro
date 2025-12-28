@@ -53,6 +53,15 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                         <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">{t.mindsetList}</label>
                         <EmotionChipsInput emotions={emotions} value={form.emotion || ''} onChange={(val: string) => updateForm('emotion', val)} lang={lang} />
                     </div>
+                    
+                    <input 
+                        type="text" 
+                        value={form.image || ''} 
+                        onChange={e => updateForm('image', e.target.value)} 
+                        placeholder="Image URL (Optional)" 
+                        className="w-full h-[40px] px-3 rounded-lg bg-white/5 border border-white/10 text-xs text-white placeholder-slate-600 outline-none focus:border-white/20 focus:bg-white/10 transition-colors backdrop-blur-sm" 
+                    />
+
                     <textarea 
                         rows={3} 
                         value={form.note || ''} 
