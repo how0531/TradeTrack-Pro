@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { X, Download, Eye, EyeOff, Layers, Share2 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
 import html2canvas from 'html2canvas';
@@ -64,13 +64,38 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
         ? 'radial-gradient(circle at 50% 0%, rgba(208, 90, 90, 0.15), transparent 70%)' 
         : 'radial-gradient(circle at 50% 0%, rgba(91, 154, 139, 0.15), transparent 70%)';
 
-    const mainValue = hideAmounts ? (isWin ? '+****' : '-****') : formatCurrency(pnl);
-    
     // For Stats: Calculate percentage change
     const pctChange = !isTrade && metrics ? metrics.eqChangePct : 0;
     
     // Chart Data Construction
     const chartData = !isTrade && metrics ? metrics.curve : [];
+
+    // Calculate Return/DD Ratio (Net Profit / Max Drawdown Amount)
+    const retDD = useMemo(() => {
+        if (isTrade || !metrics || !metrics.curve) return 0;
+        const maxDDAmt = Math.max(...metrics.curve.map((d: any) => d.ddAmt || 0));
+        // If Max DD is 0 (perfect run), return a high number if profitable, else 0
+        if (maxDDAmt === 0) return metrics.eqChange > 0 ? 100 : 0; 
+        return metrics.eqChange / maxDDAmt;
+    }, [isTrade, metrics]);
+
+    // Calculate Date Label (Single date for Trade, Range for Stats)
+    const dateLabel = useMemo(() => {
+        if (isTrade && trade) {
+            return formatDate(trade.date, lang);
+        }
+        if (!isTrade && metrics && metrics.curve && metrics.curve.length > 0) {
+            const validPoints = metrics.curve.filter((p: any) => p.fullDate !== 'Start');
+            if (validPoints.length > 0) {
+                const start = validPoints[0];
+                const end = validPoints[validPoints.length - 1];
+                const s = formatDate(start.fullDate, lang);
+                const e = formatDate(end.fullDate, lang);
+                return s === e ? s : `${s} - ${e}`;
+            }
+        }
+        return formatDate(new Date().toISOString(), lang);
+    }, [isTrade, trade, metrics, lang]);
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -88,7 +113,7 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                         <div className="flex flex-col">
                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">{isTrade ? t.share_tradeResult : t.share_performance}</span>
                             <span className="text-[9px] text-slate-600 font-mono mt-0.5">
-                                {isTrade && trade ? formatDate(trade.date, lang) : formatDate(new Date().toISOString(), lang)}
+                                {dateLabel}
                             </span>
                         </div>
                         <div className="flex items-center gap-1.5 opacity-80">
@@ -102,7 +127,7 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                         
                         {/* CHART (If enabled & Stats mode) */}
                         {!isTrade && showChart && chartData.length > 0 && (
-                            <div className="absolute inset-0 top-10 bottom-16 opacity-30 pointer-events-none">
+                            <div className={`absolute inset-0 top-10 bottom-16 pointer-events-none ${hideAmounts ? 'opacity-50' : 'opacity-30'}`}>
                                 <ResponsiveContainer width="100%" height="100%">
                                     <AreaChart data={chartData}>
                                         <defs>
@@ -126,9 +151,12 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                         )}
 
                         <div className="flex flex-col items-center gap-2 drop-shadow-2xl">
-                             <h1 className="text-6xl font-black font-barlow-numeric tracking-tighter" style={{ color: color }}>
-                                {mainValue}
-                             </h1>
+                             {/* Only show Amount if not hidden */}
+                             {!hideAmounts && (
+                                <h1 className="text-6xl font-black font-barlow-numeric tracking-tighter" style={{ color: color }}>
+                                    {formatCurrency(pnl)}
+                                </h1>
+                             )}
                              
                              {/* Sub-label */}
                              {isTrade ? (
@@ -137,9 +165,12 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                                     {trade?.emotion && <span className="px-2 py-1 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300 uppercase">#{trade.emotion}</span>}
                                 </div>
                              ) : (
-                                <div className={`text-2xl font-bold font-barlow-numeric ${isWin ? 'text-white' : 'text-slate-400'}`}>
-                                    {pctChange > 0 ? '+' : ''}{formatDecimal(pctChange)}%
-                                </div>
+                                /* Only show Percentage if amounts are not hidden */
+                                !hideAmounts && (
+                                    <div className={`text-2xl font-bold font-barlow-numeric ${isWin ? 'text-white' : 'text-slate-400'}`}>
+                                        {pctChange > 0 ? '+' : ''}{formatDecimal(pctChange)}%
+                                    </div>
+                                )
                              )}
                         </div>
                     </div>
@@ -157,8 +188,8 @@ export const ShareCardModal = ({ isOpen, onClose, data, lang }: ShareCardModalPr
                                     <span className="text-sm font-bold text-white font-barlow-numeric">{metrics.totalTrades}</span>
                                 </div>
                                 <div className="flex flex-col items-center border-l border-white/5">
-                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">{t.share_pf}</span>
-                                    <span className="text-sm font-bold text-white font-barlow-numeric">{formatDecimal(metrics.pf)}</span>
+                                    <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">{t.riskReward}</span>
+                                    <span className="text-sm font-bold text-white font-barlow-numeric">{formatDecimal(retDD)}</span>
                                 </div>
                             </>
                         ) : (

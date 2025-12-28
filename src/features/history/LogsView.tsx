@@ -1,4 +1,3 @@
-
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useMemo, useEffect } from 'react';
 import { Scroll, Trash2, Edit2, Calendar, ArrowUpDown, StickyNote } from 'lucide-react';
@@ -100,11 +99,11 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
             {/* Note Section (No Image) */}
             {trade.note && (
                 <div className="w-full px-5 mt-2.5 relative z-10">
-                    <div onClick={() => setIsNoteExpanded(!isNoteExpanded)} className={`relative px-3 pt-3 pb-1 rounded-lg border backdrop-blur-[2px] cursor-pointer transition-all duration-300 group/note ${theme.noteBg} ${theme.noteBorder} ${theme.noteHover}`}>
-                        <div className="absolute -top-2.5 -left-1 px-1.5 bg-[#000000] z-20">
-                             <span className={`text-[9px] font-bold tracking-wider ${theme.noteLabel} opacity-50`} style={{ fontFamily: '"Century Gothic", sans-serif' }}>Note</span>
+                    <div onClick={() => setIsNoteExpanded(!isNoteExpanded)} className={`relative px-3 pt-5 pb-2 rounded-lg border backdrop-blur-[2px] cursor-pointer transition-all duration-300 group/note ${theme.noteBg} ${theme.noteBorder} ${theme.noteHover}`}>
+                        <div className="absolute top-1 left-3 z-20">
+                             <span className={`text-[8px] font-bold tracking-widest ${theme.noteLabel} opacity-50 uppercase`}>Note</span>
                         </div>
-                        <div className="w-full"><p className={`text-[10px] leading-relaxed font-medium text-slate-400 break-words ${isNoteExpanded ? '' : 'line-clamp-2'}`}>{trade.note}</p></div>
+                        <div className="w-full mt-0.5"><p className={`text-[10px] leading-relaxed font-medium text-slate-400 break-words ${isNoteExpanded ? '' : 'line-clamp-2'}`}>{trade.note}</p></div>
                     </div>
                 </div>
             )}
