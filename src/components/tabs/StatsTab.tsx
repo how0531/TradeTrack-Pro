@@ -1,7 +1,7 @@
 
 // [Manage] Last Updated: 2024-05-22
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { TrendingUp, List, BarChart2, ScatterChart as ScatterIcon, X, Calendar } from 'lucide-react';
+import { TrendingUp, List, ScatterChart as ScatterIcon, X, Calendar } from 'lucide-react';
 import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, ReferenceLine, ScatterChart, Scatter, ZAxis, BarChart, ReferenceArea } from 'recharts';
 import { StrategyListView } from '../../features/analytics/StrategyListView';
 import { THEME, I18N } from '../../constants';
