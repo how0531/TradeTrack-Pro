@@ -1,8 +1,9 @@
+
 // [Manage] Last Updated: 2024-05-22
 import React from 'react';
-import { Filter, BrainCircuit, Activity } from 'lucide-react';
+import { Activity, BrainCircuit } from 'lucide-react';
 import { MultiSelectDropdown } from '../selectors/MultiSelectDropdown';
-import { LogsView } from '../../features/logs/LogsView';
+import { LogsView } from '../../features/history/LogsView'; // Updated path
 import { I18N } from '../../constants';
 import { LogsViewProps } from '../../types';
 
