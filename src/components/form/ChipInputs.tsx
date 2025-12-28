@@ -1,7 +1,8 @@
+
 import React from 'react';
 
 // Shared container style for scrollable capsules
-const ScrollContainer = ({ children }: { children: React.ReactNode }) => (
+const ScrollContainer = ({ children }: React.PropsWithChildren<{}>) => (
     <div className="flex overflow-x-auto gap-2 pb-2 -mx-1 px-1 no-scrollbar mask-gradient-right items-center">
         {children}
     </div>

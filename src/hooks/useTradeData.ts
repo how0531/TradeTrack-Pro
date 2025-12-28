@@ -1,5 +1,6 @@
+
 // [Manage] Last Updated: 2024-05-22
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { doc, getDoc, setDoc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { Trade, Portfolio, SyncStatus, User } from '../types';
 import { useLocalStorage } from './useLocalStorage';
@@ -225,7 +226,7 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                 if (data.trades) {
                     // Combine trades, unique by ID
                     setTrades(prev => {
-                        const tradeMap = new Map(prev.map(t => [t.id, t]));
+                        const tradeMap = new Map<string, Trade>(prev.map(t => [t.id, t]));
                         data.trades.forEach((t: Trade) => tradeMap.set(t.id, t));
                         return Array.from(tradeMap.values()).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                     });

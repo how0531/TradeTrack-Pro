@@ -1,3 +1,4 @@
+
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useRef } from 'react';
 import { Cloud, UserCircle, Check, LogOut, Shield, Settings as SettingsIcon, Languages, Palette, HardDrive, Download, Upload, AlertOctagon, Target, Info, Layers, Plus as PlusIcon, X, Briefcase, Trash2, Pencil } from 'lucide-react';
@@ -7,7 +8,7 @@ import { useClickOutside } from '../../hooks/useClickOutside';
 import { ImportConflictModal } from '../../components/modals/ImportConflictModal';
 
 // --- INTERNAL COMPONENT: GlassCard (UPDATED TRANSPARENCY) ---
-const GlassCard = ({ children, className = '', onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => {
+const GlassCard = ({ children, className = '', onClick }: React.PropsWithChildren<{ className?: string; onClick?: () => void }>) => {
     return (
         <div 
             onClick={onClick}
@@ -76,16 +77,16 @@ const GemstoneLight = ({ color, onChange, label, align = 'left' }: { color: stri
 };
 
 // --- INTERNAL COMPONENT: Account Row ---
-const AccountRow = ({ 
-    portfolio, 
-    actions, 
-    isDeletable, 
-    globalLossColor 
-}: { 
+const AccountRow: React.FC<{ 
     portfolio: Portfolio, 
     actions: any, 
     isDeletable: boolean, 
     globalLossColor: string 
+}> = ({ 
+    portfolio, 
+    actions, 
+    isDeletable, 
+    globalLossColor 
 }) => {
     const [isEditingName, setIsEditingName] = useState(false);
     const [tempName, setTempName] = useState(portfolio.name);
