@@ -205,9 +205,6 @@ export const StatsChart = ({
     const [isLongPressing, setIsLongPressing] = useState(false);
     
     const longPressTimer = useRef<any>(null);
-    
-    // Removed unused ref to fix build error
-    // const chartRef = useRef<any>(null); 
 
     const cancelLongPress = () => {
         if (longPressTimer.current) {
@@ -314,9 +311,6 @@ export const StatsChart = ({
                                 onMouseDown={handleMouseDown}
                                 onMouseMove={handleMouseMove}
                                 onMouseUp={handleMouseUp}
-                                onTouchStart={handleMouseDown}
-                                onTouchMove={handleMouseMove}
-                                onTouchEnd={handleMouseUp}
                             >
                                 <defs>
                                     <filter id="glow-line" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.32 0 0 0 0 0.43 0 0 0 0 0.51 0 0 0 0.5 0" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>

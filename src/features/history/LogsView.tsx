@@ -112,8 +112,8 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                              <span className={`text-[9px] font-bold tracking-wider ${theme.noteLabel} opacity-50`} style={{ fontFamily: '"Century Gothic", sans-serif' }}>Note</span>
                         </div>
                         {showImage && trade.image && (
-                            <div className="mb-2 mt-1 rounded overflow-hidden border border-white/10">
-                                <img src={trade.image} alt="Trade chart" className="w-full object-cover" />
+                            <div className="mb-2 mt-1 rounded overflow-hidden border border-white/10 max-h-[300px]">
+                                <img src={trade.image} alt="Trade chart" className="w-full h-full object-contain" />
                             </div>
                         )}
                         {trade.note && <div className="w-full"><p className={`text-[10px] leading-relaxed font-medium text-slate-400 break-words ${isNoteExpanded ? '' : 'line-clamp-2'}`}>{trade.note}</p></div>}

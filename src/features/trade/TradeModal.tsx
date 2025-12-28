@@ -1,7 +1,7 @@
 
 // [Manage] Last Updated: 2024-05-22
-import React from 'react';
-import { X } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { X, Upload, Image as ImageIcon } from 'lucide-react';
 import { TradeModalProps, Trade } from '../../types';
 import { I18N } from '../../constants';
 import { StrategyChipsInput, EmotionChipsInput, PortfolioChipsInput } from '../../components/form/ChipInputs';
@@ -10,11 +10,60 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
     if (!isOpen) return null;
     const t = I18N[lang] || I18N['zh'];
     const updateForm = (key: keyof Trade, value: any) => setForm({ ...form, [key]: value });
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isCompressing, setIsCompressing] = useState(false);
     
     // Default to first portfolio if not set
     if (!form.portfolioId && portfolios.length > 0) {
         updateForm('portfolioId', portfolios[0].id);
     }
+
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsCompressing(true);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                // Max size constraint for Firestore optimization
+                const MAX_SIZE = 800;
+                if (width > height) {
+                    if (width > MAX_SIZE) {
+                        height *= MAX_SIZE / width;
+                        width = MAX_SIZE;
+                    }
+                } else {
+                    if (height > MAX_SIZE) {
+                        width *= MAX_SIZE / height;
+                        height = MAX_SIZE;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, width, height);
+                
+                // Compress to JPEG 60% quality
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                updateForm('image', dataUrl);
+                setIsCompressing(false);
+            };
+            img.src = event.target?.result as string;
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const removeImage = () => {
+        updateForm('image', '');
+        if(fileInputRef.current) fileInputRef.current.value = '';
+    };
 
     return (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-0 sm:p-4 animate-in fade-in duration-200 backdrop-blur-sm">
@@ -54,13 +103,39 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                         <EmotionChipsInput emotions={emotions} value={form.emotion || ''} onChange={(val: string) => updateForm('emotion', val)} lang={lang} />
                     </div>
                     
-                    <input 
-                        type="text" 
-                        value={form.image || ''} 
-                        onChange={e => updateForm('image', e.target.value)} 
-                        placeholder="Image URL (Optional)" 
-                        className="w-full h-[40px] px-3 rounded-lg bg-white/5 border border-white/10 text-xs text-white placeholder-slate-600 outline-none focus:border-white/20 focus:bg-white/10 transition-colors backdrop-blur-sm" 
-                    />
+                    {/* IMAGE UPLOAD SECTION */}
+                    <div>
+                        <label className="text-[10px] font-bold uppercase text-slate-500 mb-1.5 ml-1 block">Attachment</label>
+                        {form.image ? (
+                            <div className="relative group rounded-xl overflow-hidden border border-white/10">
+                                <img src={form.image} alt="Trade" className="w-full h-32 object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={removeImage} className="p-2 rounded-full bg-red-500/80 text-white hover:bg-red-500 transition-colors"><X size={16} /></button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="w-full h-12 rounded-xl border border-dashed border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-center gap-2 cursor-pointer group"
+                            >
+                                <input 
+                                    type="file" 
+                                    ref={fileInputRef} 
+                                    className="hidden" 
+                                    accept="image/*"
+                                    onChange={handleImageUpload}
+                                />
+                                {isCompressing ? (
+                                    <span className="text-[10px] font-bold uppercase text-gold animate-pulse">Compressing...</span>
+                                ) : (
+                                    <>
+                                        <div className="p-1 rounded bg-white/5 text-slate-400 group-hover:text-white transition-colors"><Upload size={14} /></div>
+                                        <span className="text-[10px] font-bold uppercase text-slate-500 group-hover:text-slate-300">Upload Image</span>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
 
                     <textarea 
                         rows={3} 
