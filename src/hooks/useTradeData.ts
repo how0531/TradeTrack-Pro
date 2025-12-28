@@ -1,6 +1,6 @@
 
 // [Manage] Last Updated: 2024-05-22
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { doc, getDoc, setDoc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { Trade, Portfolio, SyncStatus, User } from '../types';
 import { useLocalStorage } from './useLocalStorage';
@@ -29,6 +29,9 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
 
     // Import State
     const [pendingImport, setPendingImport] = useState<any>(null);
+    
+    // Sync Trigger Ref
+    const shouldSync = useRef(false);
 
     // --- Sync Logic (Memoized) ---
     const triggerCloudBackup = useCallback(async () => {
@@ -57,6 +60,16 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
         }
     }, [user, authStatus, db, trades, strategies, emotions, portfolios, lossColor]);
 
+    // --- Auto-Sync Effect ---
+    // Watches for changes in data. If 'shouldSync' is true (set by actions), it triggers backup.
+    useEffect(() => {
+        if (shouldSync.current) {
+            triggerCloudBackup();
+            shouldSync.current = false;
+        }
+    }, [trades, strategies, emotions, portfolios, lossColor, triggerCloudBackup]);
+
+
     // --- Actions (Memoized to prevent Error #185) ---
     const actions = useMemo(() => ({
         saveTrade: (trade: Trade, editingId: string | null) => {
@@ -66,17 +79,17 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                 const newTrade = { ...trade, id: `trade-${Date.now()}`, timestamp: new Date().toISOString() };
                 setTrades(prev => [newTrade, ...prev]);
             }
-            setTimeout(triggerCloudBackup, 0); 
+            shouldSync.current = true;
         },
 
         deleteTrade: (id: string) => {
             setTrades(prev => prev.filter(t => t.id !== id));
-            setTimeout(triggerCloudBackup, 0);
+            shouldSync.current = true;
         },
 
         updatePortfolio: (id: string, key: keyof Portfolio, value: any) => {
             setPortfolios(prev => prev.map(p => p.id === id ? { ...p, [key]: value } : p));
-            setTimeout(triggerCloudBackup, 0);
+            shouldSync.current = true;
         },
 
         updateSettings: (key: string, value: any) => {
@@ -90,31 +103,31 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                    return validActive.length > 0 ? validActive : [newIds[0]];
                 });
             }
-            setTimeout(triggerCloudBackup, 0);
+            shouldSync.current = true;
         },
 
         addStrategy: (s: string) => {
             if (!strategies.includes(s)) {
                 setStrategies(prev => [...prev, s]);
-                setTimeout(triggerCloudBackup, 0);
+                shouldSync.current = true;
             }
         },
 
         addEmotion: (e: string) => {
             if (!emotions.includes(e)) {
                 setEmotions(prev => [...prev, e]);
-                setTimeout(triggerCloudBackup, 0);
+                shouldSync.current = true;
             }
         },
         
         deleteStrategy: (s: string) => {
             setStrategies(prev => prev.filter(item => item !== s));
-            setTimeout(triggerCloudBackup, 0);
+            shouldSync.current = true;
         },
 
         deleteEmotion: (e: string) => {
             setEmotions(prev => prev.filter(item => item !== e));
-            setTimeout(triggerCloudBackup, 0);
+            shouldSync.current = true;
         },
 
         triggerCloudBackup,
@@ -195,6 +208,7 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                             setLossColor(data.settings.lossColor);
                         }
                         alert(t.importSuccess);
+                        shouldSync.current = true;
                     }
                 } catch (err) {
                     console.error(err);
@@ -257,7 +271,7 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
             }
             
             setPendingImport(null);
-            setTimeout(triggerCloudBackup, 0);
+            shouldSync.current = true;
         },
 
         downloadBackup: () => downloadJSON({ trades, strategies, emotions, portfolios, settings: { lossColor } }),
