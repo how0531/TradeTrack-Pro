@@ -1,7 +1,7 @@
 
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useMemo, useEffect } from 'react';
-import { Scroll, Trash2, Edit2, Calendar, ArrowUpDown, StickyNote, Image as ImageIcon } from 'lucide-react';
+import { Scroll, Trash2, Edit2, Calendar, ArrowUpDown, StickyNote } from 'lucide-react';
 import { Trade, LogsViewProps, Lang } from '../../types';
 import { I18N } from '../../constants';
 import { formatDate } from '../../utils/format';
@@ -11,7 +11,6 @@ type SortType = 'date' | 'pnl_high' | 'pnl_low';
 const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade: Trade, onEdit: (t: Trade) => void, onDelete: (id: string) => void, hideAmounts: boolean }) => {
     const [deleteStatus, setDeleteStatus] = useState<'idle' | 'confirm'>('idle');
     const [isNoteExpanded, setIsNoteExpanded] = useState(false);
-    const [showImage, setShowImage] = useState(false);
     
     const isProfit = trade.pnl >= 0;
     const rawStrat = trade.strategy ? trade.strategy.split('_')[0] : '';
@@ -58,9 +57,6 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                                 {stratName && <span className={`text-[11px] font-bold tracking-wide leading-none whitespace-nowrap ${theme.textName} opacity-80 mb-1`}>{stratName}</span>}
                                 <div className="flex items-center gap-1.5 justify-end">
                                     {trade.emotion && <span className={`text-[10px] font-bold font-sans tracking-wide ${theme.textTag}`}>#{trade.emotion}</span>}
-                                    {trade.image && (
-                                        <button onClick={(e) => {e.stopPropagation(); setShowImage(!showImage);}} className={`p-0.5 rounded-full hover:bg-white/10 ${theme.textTag} opacity-80 hover:opacity-100 transition-opacity`}><ImageIcon size={10} /></button>
-                                    )}
                                 </div>
                             </div>
                         </div>
@@ -94,9 +90,6 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                                 {stratName && <span className={`text-[11px] font-bold tracking-wide leading-none whitespace-nowrap ${theme.textName} opacity-80 mb-1`}>{stratName}</span>}
                                 <div className="flex items-center gap-1.5 justify-start">
                                     {trade.emotion && <span className={`text-[10px] font-bold font-sans tracking-wide ${theme.textTag}`}>#{trade.emotion}</span>}
-                                    {trade.image && (
-                                        <button onClick={(e) => {e.stopPropagation(); setShowImage(!showImage);}} className={`p-0.5 rounded-full hover:bg-white/10 ${theme.textTag} opacity-80 hover:opacity-100 transition-opacity`}><ImageIcon size={10} /></button>
-                                    )}
                                 </div>
                             </div>
                         </div>
@@ -104,19 +97,14 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                 </div>
             </div>
 
-            {/* Note & Image Section */}
-            {(trade.note || showImage) && (
+            {/* Note Section (No Image) */}
+            {trade.note && (
                 <div className="w-full px-5 mt-2.5 relative z-10">
                     <div onClick={() => setIsNoteExpanded(!isNoteExpanded)} className={`relative px-3 pt-3 pb-1 rounded-lg border backdrop-blur-[2px] cursor-pointer transition-all duration-300 group/note ${theme.noteBg} ${theme.noteBorder} ${theme.noteHover}`}>
                         <div className="absolute -top-2.5 -left-1 px-1.5 bg-[#000000] z-20">
                              <span className={`text-[9px] font-bold tracking-wider ${theme.noteLabel} opacity-50`} style={{ fontFamily: '"Century Gothic", sans-serif' }}>Note</span>
                         </div>
-                        {showImage && trade.image && (
-                            <div className="mb-2 mt-1 rounded overflow-hidden border border-white/10 max-h-[300px]">
-                                <img src={trade.image} alt="Trade chart" className="w-full h-full object-contain" />
-                            </div>
-                        )}
-                        {trade.note && <div className="w-full"><p className={`text-[10px] leading-relaxed font-medium text-slate-400 break-words ${isNoteExpanded ? '' : 'line-clamp-2'}`}>{trade.note}</p></div>}
+                        <div className="w-full"><p className={`text-[10px] leading-relaxed font-medium text-slate-400 break-words ${isNoteExpanded ? '' : 'line-clamp-2'}`}>{trade.note}</p></div>
                     </div>
                 </div>
             )}
