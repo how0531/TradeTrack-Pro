@@ -1,11 +1,11 @@
 
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useMemo } from 'react';
-import { TrendingUp, Activity, Plus, Eye, EyeOff, Filter, AlertOctagon, BrainCircuit } from 'lucide-react';
+import { TrendingUp, Activity, Plus, Eye, EyeOff, Filter, AlertOctagon, BrainCircuit, Share2 } from 'lucide-react';
 
 // Modules & Hooks
 import { THEME, I18N } from './constants';
-import { Trade, ViewMode, TimeRange, Frequency } from './types';
+import { Trade, ViewMode, TimeRange, Frequency, Metrics } from './types';
 import { getLocalDateStr, formatCurrency, formatDecimal, formatChartAxisDate, formatCompactNumber } from './utils/format';
 import { calculateMetrics } from './utils/calculations';
 import { useAuth } from './hooks/useAuth';
@@ -27,6 +27,7 @@ import { TradeModal } from './features/trade/TradeModal';
 import { StrategyDetailModal } from './features/analytics/StrategyDetailModal';
 import { CustomDateRangeModal } from './components/modals/CustomDateRangeModal';
 import { SyncConflictModal } from './components/modals/SyncConflictModal';
+import { ShareCardModal } from './components/modals/ShareCardModal';
 
 export default function App() {
     const { user, status: authStatus, db, config, login, logout } = useAuth();
@@ -45,6 +46,9 @@ export default function App() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [detailStrategy, setDetailStrategy] = useState<string | null>(null);
     
+    // Share Modal State
+    const [shareData, setShareData] = useState<{ type: 'TRADE' | 'STATS', trade?: Trade, metrics?: Metrics } | null>(null);
+
     // Filters & Range
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const [filterStrategy, setFilterStrategy] = useState<string[]>([]);
@@ -198,7 +202,7 @@ export default function App() {
                                 </div>
                                 <div className="text-right shrink-0">
                                     {metrics.isPeak ? (
-                                        <div className="flex items-center justify-end gap-1 text-[#C8B085] animate-pulse">
+                                        <div className="flex items-center justify-end gap-1 text-[#C8B085] font-bold animate-pulse">
                                             <TrendingUp size={12} />
                                             <span className="text-[10px] font-bold uppercase tracking-wider">{t.newPeak}</span>
                                         </div>
@@ -254,6 +258,14 @@ export default function App() {
                                 `}
                             >
                                 <Filter size={12} />
+                            </button>
+
+                            {/* NEW: DASHBOARD SHARE BUTTON */}
+                            <button 
+                                onClick={() => setShareData({ type: 'STATS', metrics })} 
+                                className="h-[28px] w-[28px] flex items-center justify-center rounded-lg border bg-[#1A1C20] border-white/5 text-slate-400 hover:text-white hover:bg-white/10 shrink-0"
+                            >
+                                <Share2 size={12} />
                             </button>
                         </div>
 
@@ -343,10 +355,32 @@ export default function App() {
                 </div>
             </div>
 
-            <TradeModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} form={form} setForm={setForm} onSubmit={(e: React.FormEvent) => { e.preventDefault(); actions.saveTrade({ id: form.id, date: form.date, pnl: form.type === 'profit' ? Math.abs(parseFloat(form.amount || '0')) : -Math.abs(parseFloat(form.amount || '0')), strategy: form.strategy, note: form.note, emotion: form.emotion, image: form.image, portfolioId: form.portfolioId }, editingId); setIsModalOpen(false); }} isEditing={!!editingId} strategies={strategies} emotions={emotions} portfolios={portfolios} lang={lang} />
+            <TradeModal 
+                isOpen={isModalOpen} 
+                onClose={() => setIsModalOpen(false)} 
+                form={form} 
+                setForm={setForm} 
+                onSubmit={(e: React.FormEvent) => { e.preventDefault(); actions.saveTrade({ id: form.id, date: form.date, pnl: form.type === 'profit' ? Math.abs(parseFloat(form.amount || '0')) : -Math.abs(parseFloat(form.amount || '0')), strategy: form.strategy, note: form.note, emotion: form.emotion, image: form.image, portfolioId: form.portfolioId }, editingId); setIsModalOpen(false); }} 
+                isEditing={!!editingId} 
+                strategies={strategies} 
+                emotions={emotions} 
+                portfolios={portfolios} 
+                lang={lang}
+                // NEW: Pass Share handler
+                onShare={() => setShareData({ type: 'TRADE', trade: { ...form, pnl: form.type === 'profit' ? Math.abs(parseFloat(form.amount || '0')) : -Math.abs(parseFloat(form.amount || '0')) } })}
+            />
+            
             <StrategyDetailModal strategy={detailStrategy} metrics={strategyMetrics ? {...strategyMetrics, netProfit: strategyMetrics.eqChange} : null} onClose={() => setDetailStrategy(null)} lang={lang} hideAmounts={hideAmounts} ddThreshold={ddThreshold} />
             <CustomDateRangeModal isOpen={isDatePickerOpen} onClose={() => setIsDatePickerOpen(false)} onApply={(s: string, e: string) => { setCustomRange({ start: s, end: e }); setTimeRange('CUSTOM'); setIsDatePickerOpen(false); }} initialRange={customRange} lang={lang} />
             <SyncConflictModal isOpen={isSyncModalOpen} onResolve={actions.resolveSyncConflict} lang={lang} isSyncing={isSyncing} />
+
+            {/* NEW: Share Card Modal */}
+            <ShareCardModal 
+                isOpen={!!shareData} 
+                onClose={() => setShareData(null)} 
+                data={shareData || { type: 'STATS' }} 
+                lang={lang} 
+            />
 
              {/* PREMIUM FLOATING NAVIGATION BAR */}
              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-[350px] pointer-events-none h-16">

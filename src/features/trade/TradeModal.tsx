@@ -1,12 +1,16 @@
 
 // [Manage] Last Updated: 2024-05-22
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, Share2 } from 'lucide-react';
 import { TradeModalProps, Trade } from '../../types';
 import { I18N } from '../../constants';
 import { StrategyChipsInput, EmotionChipsInput, PortfolioChipsInput } from '../../components/form/ChipInputs';
 
-export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing, strategies, emotions, portfolios, lang }: TradeModalProps) => {
+interface ExtendedTradeModalProps extends TradeModalProps {
+    onShare?: () => void;
+}
+
+export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing, strategies, emotions, portfolios, lang, onShare }: ExtendedTradeModalProps) => {
     if (!isOpen) return null;
     const t = I18N[lang] || I18N['zh'];
     const updateForm = (key: keyof Trade, value: any) => setForm({ ...form, [key]: value });
@@ -21,7 +25,14 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
             <div className="w-full sm:max-w-sm bg-black/60 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl border-t sm:border border-white/10 shadow-2xl shadow-black/50 overflow-hidden flex flex-col max-h-[95vh]">
                 <div className="px-4 py-3 border-b border-white/5 flex justify-between items-center bg-white/5">
                     <h2 className="font-bold text-sm text-white">{isEditing ? t.editTrade : t.addTrade}</h2>
-                    <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1"><X size={20}/></button>
+                    <div className="flex items-center gap-1">
+                        {onShare && (
+                            <button type="button" onClick={onShare} className="text-slate-500 hover:text-[#C8B085] transition-colors p-1.5 rounded-full hover:bg-white/5">
+                                <Share2 size={18} />
+                            </button>
+                        )}
+                        <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1"><X size={20}/></button>
+                    </div>
                 </div>
                 <form onSubmit={onSubmit} className="p-4 space-y-4 overflow-y-auto flex-1 no-scrollbar pb-8">
                     
