@@ -1,7 +1,7 @@
 
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useRef } from 'react';
-import { Cloud, UserCircle, Check, LogOut, Shield, Settings as SettingsIcon, Languages, Palette, HardDrive, Download, Upload, AlertOctagon, Target, Info, Layers, Plus as PlusIcon, X, Briefcase, Trash2, Pencil } from 'lucide-react';
+import { Cloud, UserCircle, Check, LogOut, Shield, Settings as SettingsIcon, Languages, Palette, HardDrive, Download, Upload, AlertOctagon, Target, Info, Layers, Plus as PlusIcon, X, Briefcase, Trash2, Pencil, Loader2 } from 'lucide-react';
 import { SettingsViewProps, Portfolio, Lang } from '../../types';
 import { THEME, I18N, DEFAULT_PALETTE } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
@@ -290,6 +290,7 @@ export const SettingsView = ({
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [showStrategyTip, setShowStrategyTip] = useState(false); 
     const [showMindsetTip, setShowMindsetTip] = useState(false);
+    const [isForceBackingUp, setIsForceBackingUp] = useState(false); // State for button loading
     const jsonInputRef = useRef<HTMLInputElement>(null);
     
     const handleAddStrategy = (e: React.FormEvent) => {
@@ -300,6 +301,21 @@ export const SettingsView = ({
     const handleAddEmotion = (e: React.FormEvent) => {
         e.preventDefault();
         if(newEmo.trim()) { actions.addEmotion(newEmo.trim()); setNewEmo(''); }
+    };
+
+    // --- NEW: Force Backup Handler ---
+    const handleForceBackup = async () => {
+        if (!currentUser) return onLogin();
+        
+        setIsForceBackingUp(true);
+        const success = await actions.triggerCloudBackup();
+        setIsForceBackingUp(false);
+
+        if (success) {
+            alert(lang === 'zh' ? '強制備份成功！雲端資料已覆蓋為目前裝置版本。' : 'Force backup successful! Cloud data overwritten with local version.');
+        } else {
+            alert(lang === 'zh' ? '備份失敗，請檢查網路連線。' : 'Backup failed. Please check your connection.');
+        }
     };
 
     const ddPercent = ((ddThreshold - 5) / (50 - 5)) * 100;
@@ -522,8 +538,14 @@ export const SettingsView = ({
                         <input type="file" ref={jsonInputRef} onChange={(e) => actions.handleImportJSON(e, t)} className="hidden" accept=".json" />
                     </button>
 
-                    <button onClick={() => actions.triggerCloudBackup()} className="group flex flex-col items-center justify-center p-3 rounded-xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-[#1A1C20]/50 active:scale-[0.98]">
-                        <div className="p-2 rounded-full bg-blue-500/10 text-blue-400 group-hover:scale-110 transition-transform"><Cloud size={18}/></div>
+                    <button 
+                        onClick={handleForceBackup} 
+                        disabled={isForceBackingUp}
+                        className="group flex flex-col items-center justify-center p-3 rounded-xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-[#1A1C20]/50 active:scale-[0.98]"
+                    >
+                        <div className="p-2 rounded-full bg-blue-500/10 text-blue-400 group-hover:scale-110 transition-transform">
+                            {isForceBackingUp ? <Loader2 size={18} className="animate-spin" /> : <Cloud size={18}/>}
+                        </div>
                         <span className="text-[10px] font-bold text-slate-300 tracking-wide text-center uppercase">{t.backupCloud}</span>
                     </button>
                  </div>
