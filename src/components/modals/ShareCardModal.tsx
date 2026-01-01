@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { X, Loader2, Download, Eye, EyeOff, Layers, Share2 } from 'lucide-react';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { X, Loader2, Download, Eye, Layers, Share2, ArrowLeftRight } from 'lucide-react';
+import { ComposedChart, Line, Bar, Cell, ResponsiveContainer, YAxis } from 'recharts';
 import html2canvas from 'html2canvas';
 import { Metrics, Lang } from '../../types';
 import { I18N, THEME } from '../../constants';
@@ -14,11 +14,13 @@ interface ShareModalProps {
     lang: Lang;
 }
 
+type DisplayMode = 'amount' | 'percent' | 'hidden';
+
 export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) => {
     if (!isOpen) return null;
 
     const [isSharing, setIsSharing] = useState(false);
-    const [hideAmount, setHideAmount] = useState(false);
+    const [displayMode, setDisplayMode] = useState<DisplayMode>('amount');
     const [showChart, setShowChart] = useState(true);
 
     const t = I18N[lang] || I18N['zh'];
@@ -36,7 +38,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
     const endDate = metrics.curve.length > 0 ? metrics.curve[metrics.curve.length - 1].date : '';
     const dateRangeStr = startDate && endDate ? `${startDate} - ${endDate}` : 'No Data';
 
-    // Chart Data (Last 30 points for cleaner look or all if less)
+    // Chart Data (Last 50 points for cleaner look or all if less)
     const chartData = metrics.curve.length > 50 ? metrics.curve.slice(-50) : metrics.curve;
 
     const handleSaveImage = async () => {
@@ -47,7 +49,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
         try {
             await new Promise(resolve => setTimeout(resolve, 100)); // Render wait
             const canvas = await html2canvas(element, {
-                backgroundColor: '#000000',
+                backgroundColor: null, // Transparent background outside border-radius
                 scale: 3, // High Resolution
                 useCORS: true,
                 logging: false,
@@ -65,6 +67,18 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
         }
     };
 
+    const toggleDisplayMode = () => {
+        if (displayMode === 'amount') setDisplayMode('percent');
+        else if (displayMode === 'percent') setDisplayMode('hidden');
+        else setDisplayMode('amount');
+    };
+
+    const getDisplayModeLabel = () => {
+        if (displayMode === 'amount') return '顯示: 金額';
+        if (displayMode === 'percent') return '顯示: %';
+        return '顯示: 隱藏';
+    };
+
     return (
         <div className="fixed inset-0 z-[150] bg-black flex flex-col animate-in fade-in duration-300">
             {/* Main Preview Area */}
@@ -78,7 +92,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     className="w-full max-w-[340px] aspect-[4/5] bg-black rounded-3xl border border-white/10 relative overflow-hidden flex flex-col shadow-2xl"
                 >
                     {/* Header */}
-                    <div className="p-6 flex justify-between items-start z-10">
+                    <div className="p-6 pb-2 flex justify-between items-start z-10">
                         <div>
                             <h3 className="text-white/60 font-bold text-sm tracking-widest uppercase">帳戶績效</h3>
                             <p className="text-[#555] font-mono text-[10px] mt-1 tracking-wide font-bold">
@@ -91,42 +105,65 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                         </div>
                     </div>
 
-                    {/* Main Stats (Center) */}
-                    <div className="flex-1 flex flex-col items-center justify-center z-10 relative -mt-8">
-                        {/* Big Number */}
-                        {/* Font size reduced from text-[80px] to text-6xl (approx 60px) for better fit */}
-                        <div 
-                            className="text-6xl font-bold font-barlow-numeric tracking-tighter leading-none drop-shadow-2xl"
-                            style={{ color: themeColor }}
-                        >
-                            {hideAmount ? '****' : formatCompactNumber(metrics.netProfit, false).replace('+', '')}
-                        </div>
-                        {/* Percentage / Label */}
-                        <div className="text-3xl font-bold font-barlow-numeric text-white mt-2">
-                             {hideAmount ? '**.**%' : `${formatDecimal(metrics.netProfitPct)}%`}
-                        </div>
+                    {/* Main Stats (Top Aligned) */}
+                    <div className="w-full px-6 z-10 relative flex flex-col items-start min-h-[60px]">
+                        {displayMode !== 'hidden' && (
+                            <div 
+                                className="text-5xl font-bold font-barlow-numeric tracking-tighter leading-none drop-shadow-2xl mt-1"
+                                style={{ color: themeColor }}
+                            >
+                                {displayMode === 'amount' 
+                                    ? formatCompactNumber(metrics.netProfit, false).replace('+', '') 
+                                    : `${formatDecimal(metrics.netProfitPct)}%`
+                                }
+                            </div>
+                        )}
                     </div>
 
-                    {/* Background Chart */}
+                    {/* Background Chart - EXACT REPLICA OF MAIN APP STYLE */}
                     {showChart && chartData.length > 0 && (
-                        <div className="absolute inset-x-0 bottom-[20%] h-[40%] opacity-40 mix-blend-screen pointer-events-none">
+                        <div className="absolute inset-x-0 bottom-[20%] top-[30%] opacity-100 pointer-events-none">
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData}>
+                                <ComposedChart data={chartData}>
                                     <defs>
-                                        <linearGradient id="shareChartGrad" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor={themeColor} stopOpacity={0.5}/>
-                                            <stop offset="100%" stopColor={themeColor} stopOpacity={0}/>
-                                        </linearGradient>
+                                        <filter id="glow-line-share" height="200%">
+                                            <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+                                            {/* Blue Glow Matrix matching THEME.BLUE */}
+                                            <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.32 0 0 0 0 0.43 0 0 0 0 0.51 0 0 0 0.5 0" result="coloredBlur" />
+                                            <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                                        </filter>
                                     </defs>
-                                    <Area 
+                                    
+                                    {/* PnL Bars (Background) */}
+                                    <Bar dataKey="pnl" yAxisId="pnl" radius={[2, 2, 0, 0]} barSize={4}>
+                                        {chartData.map((entry, index) => (
+                                            <Cell 
+                                                key={`cell-${index}`} 
+                                                fill={entry.pnl >= 0 ? '#D05A5A' : '#5B9A8B'} 
+                                                fillOpacity={0.5} 
+                                            />
+                                        ))}
+                                    </Bar>
+
+                                    {/* Equity Line (Foreground with Glow) */}
+                                    <Line 
+                                        yAxisId="equity"
                                         type="monotone" 
                                         dataKey="equity" 
-                                        stroke={themeColor} 
-                                        strokeWidth={3} 
-                                        fill="url(#shareChartGrad)" 
+                                        stroke="#526D82" // Fixed Blue to match app theme
+                                        strokeWidth={2} 
+                                        dot={({cx, cy, payload}) => {
+                                            if (payload.isNewPeak) return <circle cx={cx} cy={cy} r={3} fill="#C8B085" stroke="none" />;
+                                            return <></>;
+                                        }}
                                         isAnimationActive={false}
+                                        filter="url(#glow-line-share)"
                                     />
-                                </AreaChart>
+
+                                    {/* Hidden Axes for Dual Scaling */}
+                                    <YAxis yAxisId="pnl" hide domain={['auto', 'auto']} />
+                                    <YAxis yAxisId="equity" orientation="right" hide domain={['auto', 'auto']} />
+                                </ComposedChart>
                             </ResponsiveContainer>
                         </div>
                     )}
@@ -161,11 +198,11 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     {/* Toggles */}
                     <div className="flex gap-3">
                         <button 
-                            onClick={() => setHideAmount(!hideAmount)}
+                            onClick={toggleDisplayMode}
                             className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors"
                         >
-                            {hideAmount ? <Eye size={16}/> : <EyeOff size={16}/>}
-                            <span>{hideAmount ? '顯示金額' : '隱藏金額'}</span>
+                            {displayMode === 'hidden' ? <Eye size={16}/> : <ArrowLeftRight size={16}/>}
+                            <span>{getDisplayModeLabel()}</span>
                         </button>
                         <button 
                             onClick={() => setShowChart(!showChart)}
