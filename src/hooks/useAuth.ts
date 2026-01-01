@@ -2,7 +2,7 @@
 // [Manage] Last Updated: 2024-05-22
 import { useState, useEffect } from 'react';
 import { auth, db, config } from '../firebaseConfig';
-import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import firebase from 'firebase/compat/app';
 import { User } from '../types';
 
 export const useAuth = () => {
@@ -10,8 +10,7 @@ export const useAuth = () => {
     const [status, setStatus] = useState<'loading' | 'online' | 'offline'>('loading');
 
     useEffect(() => {
-        // Using Modular SDK onAuthStateChanged
-        const unsubscribe = onAuthStateChanged(auth, (u) => {
+        const unsubscribe = auth.onAuthStateChanged((u) => {
             if (u) {
                 setUser({
                     uid: u.uid,
@@ -31,16 +30,28 @@ export const useAuth = () => {
 
     const login = async () => {
         try {
-            const provider = new GoogleAuthProvider();
-            await signInWithPopup(auth, provider);
-        } catch (e) {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            // Explicitly set persistence to LOCAL to help with some environment quirks
+            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+            await auth.signInWithPopup(provider);
+        } catch (e: any) {
             console.error("Login failed", e);
+            // Handle environment-specific errors gracefully
+            if (e.code === 'auth/operation-not-supported-in-this-environment' || e.message?.includes('location.protocol')) {
+                alert("Login failed: This environment does not support Firebase Authentication.\n\nReason: 'location.protocol' must be http or https, and web storage must be enabled.\n\nTip: If running locally, ensure you use 'http://localhost' and not 'file://'.");
+            } else if (e.code === 'auth/popup-blocked') {
+                alert("Login popup was blocked by the browser. Please allow popups for this site.");
+            } else if (e.code === 'auth/unauthorized-domain') {
+                alert("Login failed: This domain is not authorized in the Firebase Console.");
+            } else {
+                alert(`Login Error: ${e.message}`);
+            }
         }
     };
 
     const logout = async () => {
         try {
-            await signOut(auth);
+            await auth.signOut();
         } catch (e) {
             console.error("Logout failed", e);
         }
