@@ -1,16 +1,12 @@
 
 // [Manage] Last Updated: 2024-05-22
 import React from 'react';
-import { X, Share2 } from 'lucide-react';
+import { X } from 'lucide-react';
 import { TradeModalProps, Trade } from '../../types';
 import { I18N } from '../../constants';
 import { StrategyChipsInput, EmotionChipsInput, PortfolioChipsInput } from '../../components/form/ChipInputs';
 
-interface ExtendedTradeModalProps extends TradeModalProps {
-    onShare?: () => void;
-}
-
-export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing, strategies, emotions, portfolios, lang, onShare }: ExtendedTradeModalProps) => {
+export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing, strategies, emotions, portfolios, lang }: TradeModalProps) => {
     if (!isOpen) return null;
     const t = I18N[lang] || I18N['zh'];
     const updateForm = (key: keyof Trade, value: any) => setForm({ ...form, [key]: value });
@@ -25,26 +21,26 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
             <div className="w-full sm:max-w-sm bg-black/60 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl border-t sm:border border-white/10 shadow-2xl shadow-black/50 overflow-hidden flex flex-col max-h-[95vh]">
                 <div className="px-4 py-3 border-b border-white/5 flex justify-between items-center bg-white/5">
                     <h2 className="font-bold text-sm text-white">{isEditing ? t.editTrade : t.addTrade}</h2>
-                    <div className="flex items-center gap-1">
-                        {onShare && (
-                            <button type="button" onClick={onShare} className="text-slate-500 hover:text-[#C8B085] transition-colors p-1.5 rounded-full hover:bg-white/5">
-                                <Share2 size={18} />
-                            </button>
-                        )}
-                        <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1"><X size={20}/></button>
-                    </div>
+                    <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1"><X size={20}/></button>
                 </div>
                 <form onSubmit={onSubmit} className="p-4 space-y-4 overflow-y-auto flex-1 no-scrollbar pb-8">
                     
                     {/* GLASS CHIPS: PORTFOLIO SELECTOR */}
                     <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 mb-1.5 ml-1 block">{t.portfolio}</label>
-                        <PortfolioChipsInput portfolios={portfolios} value={form.portfolioId || (portfolios[0]?.id || '')} onChange={(val: any) => updateForm('portfolioId', val)} />
+                        <PortfolioChipsInput portfolios={portfolios} value={form.portfolioId || (portfolios[0]?.id || '')} onChange={(val) => updateForm('portfolioId', val)} />
                     </div>
 
                     <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 ml-1 block">Date</label>
-                        <input type="date" required value={form.date} onChange={e => updateForm('date', e.target.value)} className="w-full h-[40px] px-3 rounded-lg bg-white/5 border border-white/10 text-xs text-white font-barlow-numeric outline-none focus:border-white/20 focus:bg-white/10 transition-colors backdrop-blur-sm" />
+                        <input 
+                            type="date" 
+                            required 
+                            value={form.date} 
+                            onChange={e => updateForm('date', e.target.value)} 
+                            className="w-full h-[40px] px-3 rounded-lg bg-white/5 border border-white/10 text-base text-white font-barlow-numeric outline-none focus:border-white/20 focus:bg-white/10 transition-colors backdrop-blur-sm text-center appearance-none"
+                            style={{ WebkitAppearance: 'none' }} // Fix for iOS Safari appearance
+                        />
                     </div>
 
                     <div className="flex gap-2 items-center bg-white/5 p-1 rounded-xl border border-white/5">
@@ -58,13 +54,12 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
 
                     <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">{t.strategyList}</label>
-                        <StrategyChipsInput strategies={strategies} value={form.strategy || ''} onChange={(val: any) => updateForm('strategy', val)} lang={lang} />
+                        <StrategyChipsInput strategies={strategies} value={form.strategy || ''} onChange={(val) => updateForm('strategy', val)} lang={lang} />
                     </div>
                     <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">{t.mindsetList}</label>
-                        <EmotionChipsInput emotions={emotions} value={form.emotion || ''} onChange={(val: any) => updateForm('emotion', val)} lang={lang} />
+                        <EmotionChipsInput emotions={emotions} value={form.emotion || ''} onChange={(val) => updateForm('emotion', val)} lang={lang} />
                     </div>
-
                     <textarea 
                         rows={3} 
                         value={form.note || ''} 
