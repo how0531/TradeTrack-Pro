@@ -15,11 +15,10 @@ const firebaseConfig = {
     measurementId: "G-DJ5M32QLKY"
 };
 
-// Initialize Firebase
-// Using Modular SDK initialization
+// Initialize Firebase (Modular SDK)
 const app = initializeApp(firebaseConfig);
 
-// Initialize Auth
+// Initialize Auth (Modular SDK)
 export const auth = getAuth(app);
 
 // Initialize Firestore with settings optimized for offline usage
