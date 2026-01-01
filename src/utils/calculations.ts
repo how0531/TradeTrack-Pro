@@ -1,3 +1,4 @@
+
 // [Manage] Last Updated: 2024-05-22
 import { Trade, Portfolio, Frequency, Metrics, StrategyStat, Lang, Streaks } from '../types';
 import { formatDate } from './format';
@@ -106,12 +107,15 @@ export const calculateMetrics = (
         };
     });
 
-    // 4. Basic Stats Aggregation
+    // 4. Basic Stats Aggregation & Net Profit Calculation
     let wins = 0, losses = 0, gProfit = 0, gLoss = 0;
     sortedTrades.forEach(t => {
         const p = Number(t.pnl) || 0;
         if (p > 0) { wins++; gProfit += p; } else if (p < 0) { losses++; gLoss += Math.abs(p); }
     });
+
+    const netProfit = gProfit - gLoss;
+    const netProfitPct = safeCapital > 0 ? (netProfit / safeCapital) * 100 : 0;
 
     // --- NEW: Calculate Max Stagnation Days (Weekdays Only) ---
     // This is calculated based on daily intervals regardless of the requested chart frequency
@@ -307,7 +311,9 @@ export const calculateMetrics = (
         drawdown, 
         currentEq, 
         eqChange: periodChange, 
-        eqChangePct: periodChangePct, 
+        eqChangePct: periodChangePct,
+        netProfit,
+        netProfitPct,
         currentDD: currentDD, 
         maxDD: maxDD, 
         winRate: sortedTrades.length > 0 ? (wins / sortedTrades.length) * 100 : 0, 
