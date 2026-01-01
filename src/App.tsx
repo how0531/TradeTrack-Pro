@@ -1,11 +1,11 @@
 
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useMemo } from 'react';
-import { TrendingUp, Activity, Plus, Eye, EyeOff, Filter, AlertOctagon, BrainCircuit, Share2 } from 'lucide-react';
+import { TrendingUp, Activity, Plus, Eye, EyeOff, Filter, Cloud, CloudOff, RefreshCw, AlertOctagon, Check, AlertCircle, BrainCircuit, Share2 } from 'lucide-react';
 
 // Modules & Hooks
 import { THEME, I18N } from './constants';
-import { Trade, ViewMode, TimeRange, Frequency, Metrics } from './types';
+import { Trade, ViewMode, TimeRange, Frequency } from './types';
 import { getLocalDateStr, formatCurrency, formatDecimal, formatChartAxisDate, formatCompactNumber } from './utils/format';
 import { calculateMetrics } from './utils/calculations';
 import { useAuth } from './hooks/useAuth';
@@ -18,7 +18,6 @@ import { PortfolioSelector } from './components/selectors/PortfolioSelector';
 import { FrequencySelector } from './components/selectors/FrequencySelector';
 import { TimeRangeSelector } from './components/selectors/TimeRangeSelector';
 import { MultiSelectDropdown } from './components/selectors/MultiSelectDropdown';
-import { SyncIndicator } from './components/SyncIndicator';
 import { SettingsView } from './features/settings/SettingsView';
 import { StatsChart, StatsContent } from './components/tabs/StatsTab';
 import { JournalTab } from './components/tabs/JournalTab';
@@ -27,7 +26,7 @@ import { TradeModal } from './features/trade/TradeModal';
 import { StrategyDetailModal } from './features/analytics/StrategyDetailModal';
 import { CustomDateRangeModal } from './components/modals/CustomDateRangeModal';
 import { SyncConflictModal } from './components/modals/SyncConflictModal';
-import { ShareCardModal } from './components/modals/ShareCardModal';
+import { ShareModal } from './components/modals/ShareModal';
 
 export default function App() {
     const { user, status: authStatus, db, config, login, logout } = useAuth();
@@ -42,13 +41,11 @@ export default function App() {
     
     // Modals & Forms
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [form, setForm] = useState<Trade>({ id: '', pnl: 0, date: getLocalDateStr(), amount: '', type: 'profit', strategy: '', note: '', emotion: '', image: '', portfolioId: '' });
     const [editingId, setEditingId] = useState<string | null>(null);
     const [detailStrategy, setDetailStrategy] = useState<string | null>(null);
     
-    // Share Modal State
-    const [shareData, setShareData] = useState<{ type: 'TRADE' | 'STATS', trade?: Trade, metrics?: Metrics } | null>(null);
-
     // Filters & Range
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const [filterStrategy, setFilterStrategy] = useState<string[]>([]);
@@ -115,7 +112,7 @@ export default function App() {
     }, [metrics.isPeak, metrics.eqChange, metrics.totalTrades]);
 
     // Logic to separate Number and Unit for styling
-    const eqDisplay = useMemo(() => {
+    const getFormattedEquity = () => {
         if (showFullEquity) {
             return { val: formatCurrency(metrics.currentEq, hideAmounts), unit: '' };
         }
@@ -127,7 +124,9 @@ export default function App() {
             val: match ? match[1] : raw,
             unit: match ? match[2] : ''
         };
-    }, [metrics.currentEq, hideAmounts, showFullEquity]);
+    };
+
+    const eqDisplay = getFormattedEquity();
     
     // --- Dynamic Font Size Logic for Header ---
     const eqLength = (eqDisplay.val?.length || 0) + (eqDisplay.unit?.length || 0);
@@ -145,6 +144,40 @@ export default function App() {
         );
     }
     
+    const SyncIndicator = () => {
+        const isOnline = authStatus === 'online' && user && !user.isAnonymous;
+        if (!isOnline) {
+            return (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/5">
+                    <CloudOff size={10} className="text-slate-500" />
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">{t.offline}</span>
+                </div>
+            );
+        }
+        if (syncStatus === 'saving') {
+            return (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/5">
+                    <RefreshCw size={10} className="text-gold animate-spin" />
+                    <span className="text-[9px] font-bold text-gold uppercase tracking-tighter">{t.saving}</span>
+                </div>
+            );
+        }
+        if (syncStatus === 'error') {
+             return (
+                <button onClick={actions.retrySync} className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors">
+                    <AlertCircle size={10} className="text-red-400" />
+                    <span className="text-[9px] font-bold text-red-400 uppercase tracking-tighter">{t.syncError}</span>
+                </button>
+            );
+        }
+        return (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/5 transition-all duration-500">
+                <Check size={10} className="text-[#5B9A8B]" />
+                <span className="text-[9px] font-bold text-[#5B9A8B] uppercase tracking-tighter">{t.saved}</span>
+            </div>
+        );
+    };
+
     return (
         <div className={`min-h-[100dvh] bg-[#000000] text-[#E0E0E0] font-sans flex flex-col max-w-md mx-auto relative shadow-2xl transition-all duration-700 overflow-hidden ${isRiskAlert ? 'shadow-[0_0_50px_rgba(208,90,90,0.3)] border-x border-red-500/20' : ''}`}>
             
@@ -173,13 +206,7 @@ export default function App() {
                         <div className="flex justify-between items-center mb-2 shrink-0">
                             <div className="flex items-center gap-3">
                                 <div className="p-1.5 rounded-lg bg-[#25282C] border border-white/5 shadow-sm"><Activity size={14} color={THEME.BLUE} /></div>
-                                <SyncIndicator 
-                                    authStatus={authStatus} 
-                                    user={user} 
-                                    syncStatus={syncStatus} 
-                                    retrySync={actions.retrySync} 
-                                    lang={lang} 
-                                />
+                                <SyncIndicator />
                             </div>
                             <div className="flex items-center gap-3">
                                 <PortfolioSelector portfolios={portfolios} activeIds={activePortfolioIds} onChange={setActivePortfolioIds} lang={lang} />
@@ -202,7 +229,7 @@ export default function App() {
                                 </div>
                                 <div className="text-right shrink-0">
                                     {metrics.isPeak ? (
-                                        <div className="flex items-center justify-end gap-1 text-[#C8B085] font-bold animate-pulse">
+                                        <div className="flex items-center justify-end gap-1 text-[#C8B085] animate-pulse">
                                             <TrendingUp size={12} />
                                             <span className="text-[10px] font-bold uppercase tracking-wider">{t.newPeak}</span>
                                         </div>
@@ -246,6 +273,14 @@ export default function App() {
                                 } 
                             />
 
+                            {/* Share Button (New) */}
+                            <button 
+                                onClick={() => setIsShareModalOpen(true)}
+                                className="h-[28px] w-[28px] flex items-center justify-center rounded-lg border bg-[#C8B085]/10 border-[#C8B085]/20 text-[#C8B085] hover:bg-[#C8B085]/20 shrink-0 transition-colors"
+                            >
+                                <Share2 size={12} />
+                            </button>
+
                             {/* Filter Button (Right) */}
                             <button 
                                 onClick={() => setIsFilterOpen(!isFilterOpen)} 
@@ -258,14 +293,6 @@ export default function App() {
                                 `}
                             >
                                 <Filter size={12} />
-                            </button>
-
-                            {/* NEW: DASHBOARD SHARE BUTTON */}
-                            <button 
-                                onClick={() => setShareData({ type: 'STATS', metrics })} 
-                                className="h-[28px] w-[28px] flex items-center justify-center rounded-lg border bg-[#1A1C20] border-white/5 text-slate-400 hover:text-white hover:bg-white/10 shrink-0"
-                            >
-                                <Share2 size={12} />
                             </button>
                         </div>
 
@@ -365,21 +392,18 @@ export default function App() {
                 strategies={strategies} 
                 emotions={emotions} 
                 portfolios={portfolios} 
-                lang={lang}
-                // NEW: Pass Share handler
-                onShare={() => setShareData({ type: 'TRADE', trade: { ...form, pnl: form.type === 'profit' ? Math.abs(parseFloat(form.amount || '0')) : -Math.abs(parseFloat(form.amount || '0')) } })}
+                lang={lang} 
+                metrics={metrics} // PASS METRICS HERE
             />
-            
-            <StrategyDetailModal strategy={detailStrategy} metrics={strategyMetrics ? {...strategyMetrics, netProfit: strategyMetrics.eqChange} : null} onClose={() => setDetailStrategy(null)} lang={lang} hideAmounts={hideAmounts} ddThreshold={ddThreshold} />
+            <StrategyDetailModal strategy={detailStrategy} metrics={strategyMetrics} onClose={() => setDetailStrategy(null)} lang={lang} hideAmounts={hideAmounts} ddThreshold={ddThreshold} />
             <CustomDateRangeModal isOpen={isDatePickerOpen} onClose={() => setIsDatePickerOpen(false)} onApply={(s: string, e: string) => { setCustomRange({ start: s, end: e }); setTimeRange('CUSTOM'); setIsDatePickerOpen(false); }} initialRange={customRange} lang={lang} />
             <SyncConflictModal isOpen={isSyncModalOpen} onResolve={actions.resolveSyncConflict} lang={lang} isSyncing={isSyncing} />
-
-            {/* NEW: Share Card Modal */}
-            <ShareCardModal 
-                isOpen={!!shareData} 
-                onClose={() => setShareData(null)} 
-                data={shareData || { type: 'STATS' }} 
-                lang={lang} 
+            
+            <ShareModal 
+                isOpen={isShareModalOpen}
+                onClose={() => setIsShareModalOpen(false)}
+                metrics={metrics}
+                lang={lang}
             />
 
              {/* PREMIUM FLOATING NAVIGATION BAR */}
