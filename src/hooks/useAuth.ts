@@ -53,7 +53,8 @@ export const useAuth = () => {
             } else if (e.code === 'auth/popup-blocked') {
                 alert("Login popup was blocked by the browser. Please allow popups for this site.");
             } else if (e.code === 'auth/unauthorized-domain') {
-                alert("Login failed: This domain is not authorized in the Firebase Console.");
+                const currentDomain = window.location.hostname;
+                alert(`Login Failed: Domain Unauthorized (${currentDomain})\n\nTo fix this:\n1. Go to Firebase Console > Authentication > Settings > Authorized Domains\n2. Add this domain: ${currentDomain}`);
             } else {
                 alert(`Login Error: ${e.message}`);
             }
