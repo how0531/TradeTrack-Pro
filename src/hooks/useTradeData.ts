@@ -50,11 +50,12 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
     useEffect(() => { lastBackupTimeRef.current = lastBackupTime; }, [lastBackupTime]);
 
     // --- Sync Logic (Memoized) ---
-    const triggerCloudBackup = useCallback(async () => {
+    // Updated to return Promise<boolean> for UI feedback
+    const triggerCloudBackup = useCallback(async (): Promise<boolean> => {
         // CRITICAL SECURITY: Do not sync if user is not logged in or offline
         if (!user || authStatus !== 'online') {
             setSyncStatus('offline');
-            return;
+            return false;
         }
         
         setSyncStatus('saving');
@@ -68,12 +69,17 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                 lastUpdated: Timestamp.now()
             };
             
+            // setDoc completely overwrites the document unless { merge: true } is passed.
+            // This ensures the cloud matches local exactly (Force Update).
             await setDoc(doc(db, 'users', user.uid), dataToSave);
+            
             setSyncStatus('synced');
             setLastBackupTime(new Date());
+            return true;
         } catch (e) {
             console.error("Backup failed", e);
             setSyncStatus('error');
+            return false;
         }
     }, [user, authStatus, db, trades, strategies, emotions, portfolios, lossColor]);
 
