@@ -1,3 +1,4 @@
+
 // [Manage] Last Updated: 2024-05-22
 import React from 'react';
 
@@ -33,6 +34,8 @@ export interface Metrics {
   currentEq: number;
   eqChange: number;
   eqChangePct: number;
+  netProfit: number;     // Added: Net Profit for the filtered range
+  netProfitPct: number;  // Added: Net Profit % for the filtered range
   currentDD: number;
   maxDD: number;
   winRate: number;
@@ -104,11 +107,12 @@ export interface TradeModalProps {
     emotions: string[];
     portfolios: Portfolio[];
     lang: Lang;
+    metrics?: Metrics; // Added for Share Card context
 }
 
 export interface StrategyDetailModalProps {
     strategy: string | null;
-    metrics: any;
+    metrics: Metrics | null; // Updated to use proper Metrics type
     onClose: () => void;
     lang: Lang;
     hideAmounts: boolean;
