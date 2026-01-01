@@ -1,6 +1,6 @@
 
 // [Manage] Last Updated: 2024-05-22
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { doc, getDoc, setDoc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { Trade, Portfolio, SyncStatus, User } from '../types';
 import { useLocalStorage } from './useLocalStorage';
@@ -29,10 +29,29 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
     // Import State
     const [pendingImport, setPendingImport] = useState<any>(null);
 
+    // --- REFS FOR LISTENER (Prevents Stale Closures) ---
+    // These ensure the onSnapshot listener always sees the LATEST data 
+    // without needing to re-subscribe on every change.
+    const tradesRef = useRef(trades);
+    const strategiesRef = useRef(strategies);
+    const emotionsRef = useRef(emotions);
+    const portfoliosRef = useRef(portfolios);
+    const lossColorRef = useRef(lossColor);
+    const syncStatusRef = useRef(syncStatus);
+    const lastBackupTimeRef = useRef(lastBackupTime);
+
+    // Keep Refs synced with State
+    useEffect(() => { tradesRef.current = trades; }, [trades]);
+    useEffect(() => { strategiesRef.current = strategies; }, [strategies]);
+    useEffect(() => { emotionsRef.current = emotions; }, [emotions]);
+    useEffect(() => { portfoliosRef.current = portfolios; }, [portfolios]);
+    useEffect(() => { lossColorRef.current = lossColor; }, [lossColor]);
+    useEffect(() => { syncStatusRef.current = syncStatus; }, [syncStatus]);
+    useEffect(() => { lastBackupTimeRef.current = lastBackupTime; }, [lastBackupTime]);
+
     // --- Sync Logic (Memoized) ---
     const triggerCloudBackup = useCallback(async () => {
         // CRITICAL SECURITY: Do not sync if user is not logged in or offline
-        // This prevents wiping cloud data when clearing local data on logout
         if (!user || authStatus !== 'online') {
             setSyncStatus('offline');
             return;
@@ -120,9 +139,7 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
 
         triggerCloudBackup,
 
-        // NEW: Safe Clear for Logout
         clearLocalData: () => {
-            // 1. Reset State to Defaults
             setTrades([]);
             setStrategies(['動能突破', '急殺抄底', '波段趨勢']);
             setEmotions(['短線', '事件', '產業', '波段']);
@@ -130,20 +147,16 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
             setActivePortfolioIds(['main']);
             setLossColor(THEME.DEFAULT_LOSS);
             
-            // 2. Clear Local Storage Keys
             const keysToRemove = [
                 'local_trades', 'local_strategies', 'local_emotions', 'local_portfolios',
                 'app_active_portfolios', 'app_loss_color', 'app_dd_threshold', 'app_max_loss_streak'
             ];
             keysToRemove.forEach(k => localStorage.removeItem(k));
-            
-            // NOTE: We DO NOT call triggerCloudBackup here.
         },
 
         resetAllData: async (t: any) => {
             if (window.confirm(t.resetConfirm)) {
                 try {
-                    // 1. If logged in, wipe cloud data first (Permanent Delete)
                     if (user && authStatus === 'online') {
                         const resetState = {
                             trades: [],
@@ -156,15 +169,12 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                         await setDoc(doc(db, 'users', user.uid), resetState);
                     }
 
-                    // 2. Clear Local Storage
                     const keysToRemove = [
                         'local_trades', 'local_strategies', 'local_emotions', 'local_portfolios',
                         'app_active_portfolios', 'app_loss_color', 'app_lang', 
                         'app_hide_amounts', 'app_dd_threshold', 'app_max_loss_streak', 'app_chart_height'
                     ];
                     keysToRemove.forEach(k => localStorage.removeItem(k));
-
-                    // 3. Force Reload
                     window.location.reload();
 
                 } catch (error) {
@@ -251,7 +261,6 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
 
         resolveSyncConflict: (choice: 'merge' | 'discard') => {
             if (choice === 'discard') {
-                // Fetch cloud data and overwrite local
                 getDoc(doc(db, 'users', user!.uid)).then(snap => {
                     if(snap.exists()) {
                         const data = snap.data();
@@ -263,7 +272,6 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                     }
                 });
             } else {
-                // Merge/Sync: Force a backup of current local state
                 triggerCloudBackup();
             }
             setIsSyncModalOpen(false);
@@ -282,10 +290,13 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 
-                if (syncStatus === 'saving') return; 
+                // IMPORTANT: Check current ref value, not the stale closure value
+                if (syncStatusRef.current === 'saving') return; 
 
+                const currentTrades = tradesRef.current;
+                
                 // CASE 1: Auto-Restore (Local is empty, Cloud has data)
-                if (trades.length === 0 && data.trades && data.trades.length > 0) {
+                if (currentTrades.length === 0 && data.trades && data.trades.length > 0) {
                      setTrades(data.trades);
                      setStrategies(data.strategies || []);
                      setEmotions(data.emotions || []);
@@ -297,15 +308,41 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                      setLastBackupTime(data.lastUpdated?.toDate());
                 } 
                 // CASE 2: Conflict Detection (Local has data, Cloud has DIFFERENT data)
-                // We only check this if we haven't just synced (lastBackupTime is null or old)
-                // AND local data is not empty (if it's empty, Case 1 handles it)
-                else if (trades.length > 0 && data.trades) {
-                    const localStr = JSON.stringify(trades);
+                else if (currentTrades.length > 0 && data.trades) {
+                    const localStr = JSON.stringify(currentTrades);
                     const cloudStr = JSON.stringify(data.trades);
                     
                     if (localStr !== cloudStr) {
-                        if (!lastBackupTime) {
+                        // Only show conflict if we haven't synced recently 
+                        // AND we are not currently in the process of saving.
+                        // (Note: The saving check is handled by syncStatusRef above)
+                        if (!lastBackupTimeRef.current) {
                             setIsSyncModalOpen(true);
+                        } else {
+                             // If we have backed up before, and there is a diff, 
+                             // it usually means a delete happened. 
+                             // Since we are inside onSnapshot, this might be the echo of our own action
+                             // OR an update from another device.
+                             
+                             // However, if we just performed a delete, syncStatus should have been 'saving'.
+                             // If we are here, it means syncStatus is NOT saving.
+                             // This implies the change came from elsewhere OR we finished saving.
+                             
+                             // To be safe and avoid annoying the user on deletes:
+                             // If the timestamps are very close, assume it's our own update echoing back.
+                             const cloudTime = data.lastUpdated?.toDate().getTime();
+                             const localTime = lastBackupTimeRef.current.getTime();
+                             
+                             // If cloud is newer by more than 5 seconds, it's likely another device
+                             if (cloudTime && cloudTime > localTime + 5000) {
+                                 setIsSyncModalOpen(true);
+                             } else {
+                                 // It's likely our own update or negligible diff, accept cloud state silently?
+                                 // actually, for delete, we want to trust local if we initiated it.
+                                 // But here we are just listening.
+                                 setSyncStatus('synced');
+                                 setLastBackupTime(data.lastUpdated?.toDate());
+                             }
                         }
                     } else {
                         setSyncStatus('synced');
@@ -316,7 +353,7 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
         });
 
         return () => unsubscribe();
-    }, [user, authStatus, db]);
+    }, [user, authStatus, db]); // Removed data dependencies to prevent re-subscription loops
 
     return {
         trades, strategies, emotions, portfolios,
