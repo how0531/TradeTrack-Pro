@@ -2,7 +2,14 @@
 // [Manage] Last Updated: 2024-05-22
 import { useState, useEffect } from 'react';
 import { auth, db, config } from '../firebaseConfig';
-import { GoogleAuthProvider } from 'firebase/auth'; // FIX: Import directly from modular SDK
+import { 
+    GoogleAuthProvider, 
+    signInWithPopup, 
+    signOut, 
+    onAuthStateChanged, 
+    setPersistence, 
+    browserLocalPersistence 
+} from 'firebase/auth';
 import { User } from '../types';
 
 export const useAuth = () => {
@@ -10,7 +17,8 @@ export const useAuth = () => {
     const [status, setStatus] = useState<'loading' | 'online' | 'offline'>('loading');
 
     useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged((u) => {
+        // Use Modular onAuthStateChanged
+        const unsubscribe = onAuthStateChanged(auth, (u) => {
             if (u) {
                 setUser({
                     uid: u.uid,
@@ -30,13 +38,13 @@ export const useAuth = () => {
 
     const login = async () => {
         try {
-            // FIX: Use the explicitly imported class
             const provider = new GoogleAuthProvider();
             
-            // FIX: Use string literal 'local' which is safer than accessing firebase.auth.Auth.Persistence.LOCAL
-            await auth.setPersistence('local');
+            // Use Modular setPersistence
+            await setPersistence(auth, browserLocalPersistence);
             
-            await auth.signInWithPopup(provider);
+            // Use Modular signInWithPopup
+            await signInWithPopup(auth, provider);
         } catch (e: any) {
             console.error("Login failed", e);
             // Handle environment-specific errors gracefully
@@ -54,7 +62,8 @@ export const useAuth = () => {
 
     const logout = async () => {
         try {
-            await auth.signOut();
+            // Use Modular signOut
+            await signOut(auth);
         } catch (e) {
             console.error("Logout failed", e);
         }
