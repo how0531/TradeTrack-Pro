@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { auth, db, config } from '../firebaseConfig';
 import firebase from 'firebase/compat/app';
+import 'firebase/compat/auth'; // FIX: Explicitly import auth compat module here
 import { User } from '../types';
 
 export const useAuth = () => {
@@ -30,6 +31,12 @@ export const useAuth = () => {
 
     const login = async () => {
         try {
+            // FIX: Ensure firebase.auth is available
+            if (!firebase.auth) {
+                console.error("Firebase Auth module not loaded correctly.");
+                throw new Error("Firebase Auth module missing. Please check imports.");
+            }
+
             const provider = new firebase.auth.GoogleAuthProvider();
             // Explicitly set persistence to LOCAL to help with some environment quirks
             await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
