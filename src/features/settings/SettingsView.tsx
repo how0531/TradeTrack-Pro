@@ -8,7 +8,7 @@ import { useClickOutside } from '../../hooks/useClickOutside';
 import { ImportConflictModal } from '../../components/modals/ImportConflictModal';
 
 // --- INTERNAL COMPONENT: GlassCard (UPDATED TRANSPARENCY) ---
-const GlassCard = ({ children, className = '', onClick }: React.PropsWithChildren<{ className?: string; onClick?: () => void }>) => {
+const GlassCard = ({ children, className = '', onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => {
     return (
         <div 
             onClick={onClick}
@@ -77,16 +77,16 @@ const GemstoneLight = ({ color, onChange, label, align = 'left' }: { color: stri
 };
 
 // --- INTERNAL COMPONENT: Account Row ---
-const AccountRow: React.FC<{ 
-    portfolio: Portfolio, 
-    actions: any, 
-    isDeletable: boolean, 
-    globalLossColor: string 
-}> = ({ 
+const AccountRow = ({ 
     portfolio, 
     actions, 
     isDeletable, 
     globalLossColor 
+}: { 
+    portfolio: Portfolio, 
+    actions: any, 
+    isDeletable: boolean, 
+    globalLossColor: string 
 }) => {
     const [isEditingName, setIsEditingName] = useState(false);
     const [tempName, setTempName] = useState(portfolio.name);
@@ -542,7 +542,35 @@ export const SettingsView = ({
             </div>
             
             <div className="text-center text-[10px] text-slate-700 font-mono pb-4 pt-2">TradeTrack Pro v1.3.1</div>
-            {showLogoutConfirm && (<div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"><div className="w-full max-w-xs bg-[#1C1E22] rounded-2xl border border-white/10 shadow-2xl p-6 text-center"><div className="w-12 h-12 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center text-slate-300"><LogOut size={24}/></div><h3 className="text-white font-bold text-lg mb-2">{t.logout}?</h3><p className="text-xs text-slate-400 mb-6">You are about to sign out. Your data is synced.</p><div className="flex gap-3"><button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-slate-300 text-xs font-bold hover:bg-white/10 transition-colors">Cancel</button><button onClick={() => { setShowLogoutConfirm(false); onLogout(); }} className="flex-1 py-3 rounded-xl bg-[#C8B085] text-black text-xs font-bold hover:bg-[#B09870] transition-colors">Sign Out</button></div></div></div>)}
+            
+            {showLogoutConfirm && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="w-full max-w-xs bg-[#1C1E22] rounded-2xl border border-white/10 shadow-2xl p-6 text-center">
+                        <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center text-slate-300">
+                            <LogOut size={24}/>
+                        </div>
+                        <h3 className="text-white font-bold text-lg mb-2">{t.logout}?</h3>
+                        <p className="text-xs text-slate-400 mb-6">
+                            You are about to sign out. Local data will be cleared for security.
+                        </p>
+                        <div className="flex gap-3">
+                            <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-slate-300 text-xs font-bold hover:bg-white/10 transition-colors">
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={() => { 
+                                    actions.clearLocalData(); // 1. WIPE LOCAL
+                                    onLogout();               // 2. SIGN OUT
+                                    setShowLogoutConfirm(false); 
+                                }} 
+                                className="flex-1 py-3 rounded-xl bg-[#C8B085] text-black text-xs font-bold hover:bg-[#B09870] transition-colors"
+                            >
+                                Sign Out
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Import Conflict Modal */}
             <ImportConflictModal 
