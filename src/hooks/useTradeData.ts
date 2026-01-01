@@ -13,7 +13,6 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
     // Local State (Single Source of Truth for UI)
     const [trades, setTrades] = useLocalStorage<Trade[]>('local_trades', []);
     const [strategies, setStrategies] = useLocalStorage<string[]>('local_strategies', ['動能突破', '急殺抄底', '波段趨勢']);
-    // UPDATED: Default to Trade Types instead of Mindsets
     const [emotions, setEmotions] = useLocalStorage<string[]>('local_emotions', ['短線', '事件', '產業', '波段']);
     const [portfolios, setPortfolios] = useLocalStorage<Portfolio[]>('local_portfolios', [INITIAL_PORTFOLIO]);
     
@@ -32,6 +31,8 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
 
     // --- Sync Logic (Memoized) ---
     const triggerCloudBackup = useCallback(async () => {
+        // CRITICAL SECURITY: Do not sync if user is not logged in or offline
+        // This prevents wiping cloud data when clearing local data on logout
         if (!user || authStatus !== 'online') {
             setSyncStatus('offline');
             return;
@@ -119,10 +120,30 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
 
         triggerCloudBackup,
 
+        // NEW: Safe Clear for Logout
+        clearLocalData: () => {
+            // 1. Reset State to Defaults
+            setTrades([]);
+            setStrategies(['動能突破', '急殺抄底', '波段趨勢']);
+            setEmotions(['短線', '事件', '產業', '波段']);
+            setPortfolios([INITIAL_PORTFOLIO]);
+            setActivePortfolioIds(['main']);
+            setLossColor(THEME.DEFAULT_LOSS);
+            
+            // 2. Clear Local Storage Keys
+            const keysToRemove = [
+                'local_trades', 'local_strategies', 'local_emotions', 'local_portfolios',
+                'app_active_portfolios', 'app_loss_color', 'app_dd_threshold', 'app_max_loss_streak'
+            ];
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+            
+            // NOTE: We DO NOT call triggerCloudBackup here.
+        },
+
         resetAllData: async (t: any) => {
             if (window.confirm(t.resetConfirm)) {
                 try {
-                    // 1. If logged in, wipe cloud data first
+                    // 1. If logged in, wipe cloud data first (Permanent Delete)
                     if (user && authStatus === 'online') {
                         const resetState = {
                             trades: [],
@@ -229,8 +250,6 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
         },
 
         resolveSyncConflict: (choice: 'merge' | 'discard') => {
-            // Note: In a real implementation, we would need the 'cloudData' here.
-            // For now, we trigger a re-fetch or push based on choice.
             if (choice === 'discard') {
                 // Fetch cloud data and overwrite local
                 getDoc(doc(db, 'users', user!.uid)).then(snap => {
@@ -244,8 +263,7 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                     }
                 });
             } else {
-                // Merge is basically just triggering a backup of current local state
-                // Firestore will overwrite, effectively "User wins"
+                // Merge/Sync: Force a backup of current local state
                 triggerCloudBackup();
             }
             setIsSyncModalOpen(false);
@@ -264,7 +282,6 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 
-                // If we are currently saving, ignore the snapshot to prevent loops
                 if (syncStatus === 'saving') return; 
 
                 // CASE 1: Auto-Restore (Local is empty, Cloud has data)
@@ -281,18 +298,16 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
                 } 
                 // CASE 2: Conflict Detection (Local has data, Cloud has DIFFERENT data)
                 // We only check this if we haven't just synced (lastBackupTime is null or old)
+                // AND local data is not empty (if it's empty, Case 1 handles it)
                 else if (trades.length > 0 && data.trades) {
                     const localStr = JSON.stringify(trades);
                     const cloudStr = JSON.stringify(data.trades);
                     
                     if (localStr !== cloudStr) {
-                        // Only trigger conflict modal if this is a fresh session (no lastBackupTime yet)
-                        // This implies we logged in on a new device or refreshed, and data differs.
                         if (!lastBackupTime) {
                             setIsSyncModalOpen(true);
                         }
                     } else {
-                        // Data matches, just update status
                         setSyncStatus('synced');
                         setLastBackupTime(data.lastUpdated?.toDate());
                     }
@@ -301,7 +316,7 @@ export const useTradeData = (user: User | null, authStatus: string, db: any, con
         });
 
         return () => unsubscribe();
-    }, [user, authStatus, db]); // Removed 'trades' dependency to prevent loop, checking inside ref or assuming initial load logic
+    }, [user, authStatus, db]);
 
     return {
         trades, strategies, emotions, portfolios,
