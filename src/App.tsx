@@ -26,7 +26,8 @@ import { TradeModal } from './features/trade/TradeModal';
 import { StrategyDetailModal } from './features/analytics/StrategyDetailModal';
 import { CustomDateRangeModal } from './components/modals/CustomDateRangeModal';
 import { SyncConflictModal } from './components/modals/SyncConflictModal';
-import { ShareModal } from './components/modals/ShareModal';
+// FIX: Correct file name import for Netlify case sensitivity
+import { ShareModal } from './components/modals/ShareCardModal';
 
 export default function App() {
     const { user, status: authStatus, db, config, login, logout } = useAuth();
