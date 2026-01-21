@@ -5,7 +5,7 @@ import { useLocalData } from '../hooks/useLocalData';
 import { useSync } from '../hooks/useSync';
 import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks } from '../types';
+import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks } from '../types';
 import { doc, getDoc } from 'firebase/firestore'; 
 import { I18N } from '../constants'; 
 
@@ -53,7 +53,7 @@ interface TradeContextType {
     // Metrics
     filteredTrades: Trade[];
     metrics: Metrics;
-    streaks: any;
+    streaks: Streaks;
     riskStreaks: RiskStreaks;
     dailyPnlMap: Record<string, number>;
     availableStrategies: string[];
@@ -71,27 +71,29 @@ interface TradeContextType {
     actions: {
         saveTrade: (trade: Trade, editingId: string | null) => void;
         deleteTrade: (id: string) => void;
-        updatePortfolio: (id: string, key: keyof Portfolio, value: any) => void;
+        updatePortfolio: (id: string, key: keyof Portfolio, value: string | number) => void;
+        addPortfolio: (portfolio: Portfolio) => void;
+        deletePortfolio: (id: string) => void;
         addStrategy: (s: string) => void;
         addEmotion: (e: string) => void;
         deleteStrategy: (s: string) => void;
         deleteEmotion: (e: string) => void;
         clearLocalData: () => void;
         downloadBackup: () => void;
-        resetAllData: (t: any) => Promise<void>;
-        handleImportJSON: (e: React.ChangeEvent<HTMLInputElement>, t: any) => void;
+        resetAllData: (t: Translation) => Promise<void>;
+        handleImportJSON: (e: React.ChangeEvent<HTMLInputElement>, t: Translation) => void;
         resolveImportConflict: (choice: 'merge' | 'overwrite') => void;
         isImportModalOpen: boolean;
     };
     
     // Auth (exposed for settings)
     authStatus: string;
-    user: any;
+    user: any; // Keep generic for now if User type has issues, or switch to User | null
     login: () => void;
     logout: () => void;
     
     // Translation
-    t: any;
+    t: Translation;
 }
 
 const TradeContext = createContext<TradeContextType | undefined>(undefined);
@@ -155,13 +157,13 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // 7. Computed Lists
     const availableStrategies = useMemo(() => {
-        const tradeSet = new Set(trades.map(t => t.strategy).filter(s => s && s.trim() !== ''));
+        const tradeSet = new Set(trades.map(t => t.strategy).filter((s): s is string => !!s && s.trim() !== ''));
         strategies.forEach(s => tradeSet.add(s));
         return Array.from(tradeSet).sort();
     }, [trades, strategies]);
 
     const availableEmotions = useMemo(() => {
-        const tradeSet = new Set(trades.map(t => t.emotion).filter(e => e && e.trim() !== ''));
+        const tradeSet = new Set(trades.map(t => t.emotion).filter((e): e is string => !!e && e.trim() !== ''));
         emotions.forEach(e => tradeSet.add(e));
         return Array.from(tradeSet).sort();
     }, [trades, emotions]);
@@ -300,6 +302,17 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveTrade: (t: Trade, id: string | null) => { localActions.saveTrade(t, id); setTimeout(triggerCloudBackup, 0); },
         deleteTrade: (id: string) => { localActions.deleteTrade(id); setTimeout(triggerCloudBackup, 0); },
         updatePortfolio: (id: string, k: any, v: any) => { localActions.updatePortfolio(id, k, v); setTimeout(triggerCloudBackup, 0); },
+        addPortfolio: (p: Portfolio) => { 
+            setPortfolios(prev => [...prev, p]); 
+            // Optional: Auto-activate new portfolio
+            setActivePortfolioIds(prev => [...prev, p.id]);
+            setTimeout(triggerCloudBackup, 0); 
+        },
+        deletePortfolio: (id: string) => { 
+            setPortfolios(prev => prev.filter(p => p.id !== id));
+            setActivePortfolioIds(prev => prev.filter(pid => pid !== id));
+            setTimeout(triggerCloudBackup, 0); 
+        },
         addStrategy: (s: string) => { localActions.addStrategy(s); setTimeout(triggerCloudBackup, 0); },
         addEmotion: (e: string) => { localActions.addEmotion(e); setTimeout(triggerCloudBackup, 0); },
         deleteStrategy: (s: string) => { localActions.deleteStrategy(s); setTimeout(triggerCloudBackup, 0); },

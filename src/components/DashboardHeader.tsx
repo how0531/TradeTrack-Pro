@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { StatsChart } from './tabs/StatsTab';
 import { MultiSelectDropdown } from './selectors/MultiSelectDropdown';
 import { FrequencySelector } from './selectors/FrequencySelector';
@@ -8,56 +8,29 @@ import { PortfolioSelector } from './selectors/PortfolioSelector';
 import { Eye, EyeOff, Filter, Activity, BrainCircuit, TrendingUp, CloudOff, RefreshCw, Check, AlertCircle, Share2 } from 'lucide-react';
 import { THEME } from '../constants';
 import { formatCompactNumber, formatDecimal, formatCurrency } from '../utils/format';
-import { Metrics, Portfolio, Frequency, TimeRange, SyncStatus, User } from '../types';
+import { useTradeContext } from '../context/TradeContext';
 
 interface DashboardHeaderProps {
-    metrics: Metrics;
-    portfolios: Portfolio[];
-    activePortfolioIds: string[];
-    setActivePortfolioIds: (ids: string[]) => void;
-    frequency: Frequency;
-    setFrequency: (f: Frequency) => void;
-    lang: 'zh' | 'en';
-    hideAmounts: boolean;
-    setHideAmounts: (b: boolean) => void;
-    chartHeight: number;
-    setChartHeight: (h: number) => void;
-    timeRange: TimeRange;
-    setTimeRange: (t: TimeRange) => void;
-    customRange: { start: string | null, end: string | null };
-    setCustomRange: (r: { start: string | null, end: string | null }) => void;
-    setIsDatePickerOpen: (b: boolean) => void;
-    setIsFilterOpen: (b: boolean) => void;
-    isFilterOpen: boolean;
-    hasActiveFilters: boolean;
-    availableStrategies: string[];
-    availableEmotions: string[];
-    filterStrategy: string[];
-    setFilterStrategy: (s: string[]) => void;
-    filterEmotion: string[];
-    setFilterEmotion: (e: string[]) => void;
-    showFullEquity: boolean;
-    setShowFullEquity: (b: boolean) => void;
     setIsShareModalOpen: (b: boolean) => void;
-    syncStatus: SyncStatus;
-    authStatus: string;
-    user: User | null;
-    t: any;
-    retrySync: () => void;
-    onZoom?: (s: string, e: string) => void; 
 }
 
-export const DashboardHeader: React.FC<DashboardHeaderProps> = ({ 
-    metrics, portfolios, activePortfolioIds, setActivePortfolioIds, 
-    frequency, setFrequency, lang, hideAmounts, setHideAmounts, 
-    chartHeight, setChartHeight, timeRange, setTimeRange, 
-    customRange, setCustomRange, setIsDatePickerOpen, 
-    setIsFilterOpen, isFilterOpen, hasActiveFilters,
-    availableStrategies, availableEmotions, filterStrategy, setFilterStrategy, 
-    filterEmotion, setFilterEmotion, 
-    showFullEquity, setShowFullEquity, setIsShareModalOpen,
-    syncStatus, authStatus, user, t, retrySync, onZoom
-}) => {
+export const DashboardHeader: React.FC<DashboardHeaderProps> = ({ setIsShareModalOpen }) => {
+    
+    // Global State from Context
+    const { 
+        metrics, portfolios, activePortfolioIds, setActivePortfolioIds, 
+        frequency, setFrequency, lang, hideAmounts, setHideAmounts, 
+        chartHeight, setChartHeight, timeRange, setTimeRange, 
+        customRange, setCustomRange, setIsDatePickerOpen, 
+        setIsFilterOpen, isFilterOpen,
+        availableStrategies, availableEmotions, filterStrategy, setFilterStrategy, 
+        filterEmotion, setFilterEmotion, 
+        syncStatus, authStatus, user, t, triggerCloudBackup 
+    } = useTradeContext();
+
+    // Local Display State
+    const [showFullEquity, setShowFullEquity] = useState(false);
+    const hasActiveFilters = filterStrategy.length > 0 || filterEmotion.length > 0;
 
     // Derived Display Logic
     const getFormattedEquity = () => {
@@ -96,7 +69,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         }
         if (syncStatus === 'error') {
              return (
-                <button onClick={retrySync} className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors">
+                <button onClick={triggerCloudBackup} className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors">
                     <AlertCircle size={10} className="text-red-400" />
                     <span className="text-[9px] font-bold text-red-400 uppercase tracking-tighter">{t.syncError}</span>
                 </button>
@@ -159,7 +132,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 </div>
 
                 {/* FREQUENCY + TIME RANGE + FILTER CONTROLS */}
-                <div className="flex items-center gap-1.5 mb-3 shrink-0 h-[28px]">
+                <div className="flex items-center gap-1.5 mb-3 shrink-0 h-[28px] relative z-[70]">
                     <FrequencySelector currentFreq={frequency} setFreq={setFrequency} lang={lang} />
                     
                     <TimeRangeSelector 
@@ -208,16 +181,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 )}
 
                 <StatsChart 
-                    metrics={metrics} 
-                    portfolios={portfolios} 
-                    activePortfolioIds={activePortfolioIds} 
-                    frequency={frequency} 
-                    lang={lang} 
-                    hideAmounts={hideAmounts} 
-                    chartHeight={chartHeight}
-                    setChartHeight={setChartHeight}
                     onZoom={(s, e) => { 
-                        if (onZoom) onZoom(s, e);
                         setCustomRange({ start: s, end: e }); 
                         setTimeRange('CUSTOM'); 
                     }}

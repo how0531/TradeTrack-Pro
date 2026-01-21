@@ -6,24 +6,10 @@ import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, R
 import { StrategyListView } from '../../features/analytics/StrategyListView';
 import { THEME, I18N } from '../../constants';
 import { getPnlColor, formatCurrency, formatDecimal, formatChartAxisDate, formatCompactNumber, formatDate } from '../../utils/format';
-import { Metrics, StrategyStat, StatsChartProps, Lang } from '../../types';
+import { Metrics, StrategyStat, Lang } from '../../types';
+import { useTradeContext } from '../../context/TradeContext';
 
-interface StatsCommonProps {
-    metrics: Metrics;
-    lang: Lang;
-    hideAmounts: boolean;
-}
-
-interface StatsContentProps extends StatsCommonProps {
-    stratView: 'list' | 'chart';
-    setStratView: (v: 'list' | 'chart') => void;
-    detailStrategy: string | null;
-    setDetailStrategy: (s: string | null) => void;
-    hasActiveFilters: boolean;
-    setFilterStrategy: (s: string[]) => void;
-    setFilterEmotion: (e: string[]) => void;
-    ddThreshold: number;
-}
+// Interfaces removed (now defined locally or unused)
 
 // --- INTERNAL COMPONENT: StatCard ---
 const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName }: any) => (
@@ -185,10 +171,13 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
     );
 };
 
-export const StatsChart = ({
-    metrics, portfolios, activePortfolioIds, frequency, lang, hideAmounts, chartHeight, setChartHeight, onZoom
-}: StatsChartProps) => {
+export const StatsChart = ({ onZoom }: { onZoom?: (s: string, e: string) => void }) => {
+    const { 
+        metrics, portfolios, activePortfolioIds, frequency, lang, hideAmounts, chartHeight, setChartHeight 
+    } = useTradeContext();
+    
     const t = I18N[lang] || I18N['zh'];
+    // ... logic same as before ... using context values
     const { barSize, barRadius } = useMemo(() => {
         switch (frequency) {
             case 'weekly': return { barSize: 12, barRadius: [3, 3, 0, 0] as [number, number, number, number] };
@@ -368,7 +357,15 @@ export const StatsChart = ({
     );
 };
 
-export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, stratView, setStratView, ddThreshold }: StatsContentProps) => {
+interface StatsContentProps {
+    stratView: 'list' | 'chart';
+    setStratView: (v: 'list' | 'chart') => void;
+    detailStrategy: string | null;
+    setDetailStrategy: (s: string | null) => void;
+}
+
+export const StatsContent = ({ setDetailStrategy, stratView, setStratView }: StatsContentProps) => {
+    const { metrics, lang, hideAmounts, ddThreshold } = useTradeContext();
     const t = I18N[lang] || I18N['zh'];
     const strategyData = useMemo(() => {
         return Object.entries(metrics.stratStats)
@@ -388,13 +385,13 @@ export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, st
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
              <div className="flex flex-col gap-2">
-                 <div className="grid grid-cols-3 gap-2">
-                    <StatCard label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate < 40 ? THEME.GREEN : THEME.RED} />
+                 <div className="grid grid-cols-4 gap-2">
+                    <StatCard label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate >= 50 ? THEME.RED : '#E0E0E0'} />
+                    <StatCard label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={THEME.GREEN} className={ddCardClass} valueClassName={ddValueClass} />
                     <StatCard label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
                     <StatCard label={t.sharpe} value={formatDecimal(metrics.sharpe)} valueColor={metrics.sharpe >= 1 ? THEME.RED : '#E0E0E0'} />
                  </div>
-                 <div className="grid grid-cols-4 gap-2">
-                    <StatCard label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
+                 <div className="grid grid-cols-3 gap-2">
                     <StatCard label={t.riskReward} value={formatDecimal(metrics.riskReward)} valueColor="#E0E0E0" />
                     <StatCard label={t.daysSincePeak} value={metrics.maxStagnationDays} valueColor={metrics.maxStagnationDays > 30 ? THEME.GREEN : '#E0E0E0'} />
                     <StatCard label={t.trades} value={metrics.totalTrades} valueColor="#E0E0E0" />

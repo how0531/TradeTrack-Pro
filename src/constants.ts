@@ -1,5 +1,7 @@
 
 // [Manage] Last Updated: 2024-05-22
+import { Translation, Lang } from './types';
+
 export const THEME = {
     GOLD: '#C8B085',       
     GOLD_BG: '#2A2824',    
@@ -26,7 +28,7 @@ export const DEFAULT_PALETTE = [
 export const TIME_RANGES = ['ALL', '1M', '3M', 'YTD', 'CUSTOM'] as const;
 export const FREQUENCIES = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'] as const;
 
-export const I18N = {
+export const I18N: Record<Lang, Translation> = {
     zh: {
         stats: '總覽', journal: '日誌', logs: '記錄', settings: '設定',
         initialCapital: '初始資金', currentEquity: '總權益', newPeak: '創歷史新高',

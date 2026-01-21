@@ -6,6 +6,7 @@ import { SettingsViewProps, Portfolio, Lang } from '../../types';
 import { THEME, I18N, DEFAULT_PALETTE } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { ImportConflictModal } from '../../components/modals/ImportConflictModal';
+import { useTradeContext } from '../../context/TradeContext';
 
 // --- INTERNAL COMPONENT: GlassCard (UPDATED TRANSPARENCY) ---
 const GlassCard = ({ children, className = '', onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => {
@@ -163,7 +164,7 @@ const AccountRow = ({
                             e.preventDefault();
                             if(window.confirm('Delete this account?')) {
                                 const id = portfolio.id;
-                                actions.updateSettings('portfolios', (prev: any[]) => prev.filter(p => p.id !== id));
+                                actions.deletePortfolio(id);
                             }
                         }}
                         className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-700 hover:text-red-500 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 ml-2"
@@ -202,7 +203,7 @@ export const AccountManager = ({
                 profitColor: DEFAULT_PALETTE[Math.floor(Math.random() * DEFAULT_PALETTE.length)],
                 lossColor: globalLossColor // USE GLOBAL PREFERENCE AS DEFAULT
             };
-            actions.updateSettings('portfolios', [...portfolios, newP]);
+            actions.addPortfolio(newP);
             setNewName('');
             setNewCapital('');
             setIsAdding(false);
@@ -272,19 +273,21 @@ export const AccountManager = ({
 };
 
 // --- MAIN SETTINGS VIEW ---
-export const SettingsView = ({
-    lang, setLang, trades, actions,
-    ddThreshold, setDdThreshold,
-    maxLossStreak, setMaxLossStreak,
-    lossColor, setLossColor,
-    strategies, emotions,
-    portfolios, activePortfolioIds, setActivePortfolioIds,
-    onBack, currentUser, onLogin, onLogout,
-    lastBackupTime,
-    isImportModalOpen = false
-}: SettingsViewProps) => {
+export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
+    const {
+        lang, setLang, trades, actions,
+        ddThreshold, setDdThreshold,
+        maxLossStreak, setMaxLossStreak,
+        lossColor, setLossColor,
+        availableStrategies: strategies, availableEmotions: emotions,
+        portfolios, activePortfolioIds, setActivePortfolioIds,
+        user: currentUser, authStatus, login: onLogin, logout: onLogout,
+        lastBackupTime, triggerCloudBackup,
+        isSyncModalOpen: isImportModalOpen
+    } = useTradeContext();
     
     const t = I18N[lang] || I18N['zh'];
+
     const [newStrat, setNewStrat] = useState('');
     const [newEmo, setNewEmo] = useState('');
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -303,12 +306,11 @@ export const SettingsView = ({
         if(newEmo.trim()) { actions.addEmotion(newEmo.trim()); setNewEmo(''); }
     };
 
-    // --- NEW: Force Backup Handler ---
     const handleForceBackup = async () => {
         if (!currentUser) return onLogin();
         
         setIsForceBackingUp(true);
-        const success = await actions.triggerCloudBackup();
+        const success = await triggerCloudBackup();
         setIsForceBackingUp(false);
 
         if (success) {

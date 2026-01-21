@@ -51,64 +51,13 @@ interface JournalPageProps {
 export const JournalPage: React.FC<JournalPageProps> = (props) => {
     return (
         <div className="flex flex-col h-full w-full">
-            <DashboardHeader 
-                metrics={props.metrics}
-                portfolios={props.portfolios}
-                activePortfolioIds={props.activePortfolioIds}
-                setActivePortfolioIds={props.setActivePortfolioIds}
-                frequency={props.frequency}
-                setFrequency={props.setFrequency}
-                lang={props.lang}
-                hideAmounts={props.hideAmounts}
-                setHideAmounts={props.setHideAmounts}
-                chartHeight={props.chartHeight}
-                setChartHeight={props.setChartHeight}
-                timeRange={props.timeRange}
-                setTimeRange={props.setTimeRange}
-                customRange={props.customRange}
-                setCustomRange={props.setCustomRange}
-                setIsDatePickerOpen={props.setIsDatePickerOpen}
-                setIsFilterOpen={props.setIsFilterOpen}
-                isFilterOpen={props.isFilterOpen}
-                hasActiveFilters={props.hasActiveFilters}
-                availableStrategies={props.availableStrategies}
-                availableEmotions={props.availableEmotions}
-                filterStrategy={props.filterStrategy}
-                setFilterStrategy={props.setFilterStrategy}
-                filterEmotion={props.filterEmotion}
-                setFilterEmotion={props.setFilterEmotion}
-                showFullEquity={props.showFullEquity}
-                setShowFullEquity={props.setShowFullEquity}
-                setIsShareModalOpen={props.setIsShareModalOpen}
-                syncStatus={props.syncStatus}
-                authStatus={props.authStatus}
-                user={props.user}
-                t={props.t}
-                retrySync={props.retrySync}
-                onZoom={(s, e) => {
-                    props.setCustomRange({start: s, end: e});
-                    props.setTimeRange('CUSTOM');
-                }}
-            />
+            <DashboardHeader setIsShareModalOpen={props.setIsShareModalOpen} />
 
             {/* MAIN CONTENT AREA */}
             <div className="relative w-full bg-transparent flex-1 min-h-[57dvh]">
                 <div className="px-4 py-5 pb-32 space-y-5 min-h-full">
                     <JournalTab 
-                        dailyPnlMap={props.dailyPnlMap}
-                        currentMonth={props.currentMonth}
-                        setCurrentMonth={props.setCurrentMonth}
                         onDateClick={props.onDateClick}
-                        monthlyStats={props.monthlyStats}
-                        hideAmounts={props.hideAmounts}
-                        lang={props.lang}
-                        streaks={props.streaks}
-                        strategies={props.availableStrategies} // Changed prop name
-                        emotions={props.availableEmotions}     // Changed prop name
-                        filterStrategy={props.filterStrategy}
-                        setFilterStrategy={props.setFilterStrategy}
-                        filterEmotion={props.filterEmotion}
-                        setFilterEmotion={props.setFilterEmotion}
                     />
                 </div>
             </div>

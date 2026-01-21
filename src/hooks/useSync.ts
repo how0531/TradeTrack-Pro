@@ -11,14 +11,15 @@ interface SyncData {
     emotions: string[];
     portfolios: Portfolio[];
     lossColor: string;
+    settings?: { lossColor: string };
 }
 
 interface UseSyncProps {
     user: User | null;
     authStatus: string;
-    db: any;
+    db: any; // Firestore instance type is complex, keeping as any or could use Firestore type if imported
     data: SyncData;
-    onPull: (data: any) => void; // Callback when data is pulled from cloud
+    onPull: (data: Partial<SyncData> & { lastUpdated?: any }) => void; // Callback when data is pulled from cloud
 }
 
 export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) => {
