@@ -35,8 +35,8 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
 
     // Date Range Logic - Intelligence to skip "Start" point
     const curve = metrics.curve;
-    const firstDatePoint = curve.length > 0 ? (curve[0].date === 'Start' || curve[0].date === 'Initial' ? (curve[1] ? curve[1].date : curve[0].date) : curve[0].date) : '';
-    const lastDatePoint = curve.length > 0 ? curve[curve.length - 1].date : '';
+    const firstDatePoint = curve.length > 0 ? (curve[0].fullDate === 'Start' || curve[0].fullDate === 'Initial' ? (curve[1] ? curve[1].fullDate : curve[0].fullDate) : curve[0].fullDate) : '';
+    const lastDatePoint = curve.length > 0 ? curve[curve.length - 1].fullDate : '';
     
     const formatDateDot = (dateStr: string, full: boolean) => {
         if (!dateStr || dateStr === 'Start' || dateStr === 'Initial') return dateStr;
