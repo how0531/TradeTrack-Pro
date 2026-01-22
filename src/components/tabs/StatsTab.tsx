@@ -403,6 +403,7 @@ export const StatsContent = ({ setDetailStrategy, stratView, setStratView }: Sta
                  <div className="grid grid-cols-4 gap-2">
                     <StatCard label={t.winRate} value={formatDecimal(metrics.winRate)} unit="%" valueColor={metrics.winRate >= 50 ? THEME.RED : '#E0E0E0'} />
                     <StatCard label={t.maxDD} value={formatDecimal(metrics.maxDD)} unit="%" valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
+                    <StatCard label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={THEME.GREEN} className={ddCardClass} valueClassName={ddValueClass} />
                     <StatCard label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
                     <StatCard label={t.sharpe} value={formatDecimal(metrics.sharpe)} valueColor={metrics.sharpe >= 1 ? THEME.RED : '#E0E0E0'} />
                  </div>

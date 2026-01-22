@@ -84,6 +84,29 @@ export default function App() {
     } = useTradeContext();
 
     // 2. UI-Only local state (Not in context yet)
+    const { 
+        actions, authStatus, user, login, logout, t, lang, setLang,
+        trades, strategies, emotions, portfolios, activePortfolioIds, setActivePortfolioIds,
+        lossColor, setLossColor, isSyncing, isSyncModalOpen, syncStatus, lastBackupTime,
+        currentMonth, setCurrentMonth,
+        filterStrategy, setFilterStrategy,
+        filterEmotion, setFilterEmotion,
+        timeRange, setTimeRange,
+        frequency, setFrequency,
+        customRange, setCustomRange,
+        isDatePickerOpen, setIsDatePickerOpen,
+        isFilterOpen, setIsFilterOpen,
+        hideAmounts, setHideAmounts,
+        ddThreshold, setDdThreshold,
+        maxLossStreak, setMaxLossStreak,
+        chartHeight, setChartHeight,
+        filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap,
+        availableStrategies, availableEmotions,
+        onResolveSyncConflict,
+        triggerCloudBackup 
+    } = useTradeContext();
+    
+    // UI Interaction State
     const [showFullEquity, setShowFullEquity] = useState(false);
     // stratView moved to StatsPage
     
@@ -139,9 +162,12 @@ export default function App() {
                         <AlertOctagon size={16} className="text-[#D05A5A] animate-pulse" />
                         <span className="text-xs font-bold text-[#D05A5A] uppercase tracking-wide">
                              {isDDAlert 
-                                ? (lang === 'zh' ? `回撤 ${formatDecimal(Math.abs(metrics.currentDD))}% 已達警戒 (${ddThreshold}%)` : `Drawdown ${formatDecimal(Math.abs(metrics.currentDD))}% hits limit (${ddThreshold}%)`)
-                                : (lang === 'zh' ? `連敗 ${riskStreaks.currentLoss} 次，建議暫停交易` : `Lost ${riskStreaks.currentLoss} in a row. Take a break.`)
+                                ? (lang === 'zh' ? `?�撤 ${formatDecimal(Math.abs(metrics.currentDD))}% 已�?警�? (${ddThreshold}%)` : `Drawdown ${formatDecimal(Math.abs(metrics.currentDD))}% hits limit (${ddThreshold}%)`)
+                                : (lang === 'zh' ? `??? ${riskStreaks.currentLoss} 次�?建議?��?交�?` : `Lost ${riskStreaks.currentLoss} in a row. Take a break.`)
                              }
+                                ? (lang === 'zh' ? `?�撤 ${formatDecimal(Math.abs(metrics.currentDD))}% 已�?警�? (${ddThreshold}%)` : `Drawdown ${formatDecimal(Math.abs(metrics.currentDD))}% hits limit (${ddThreshold}%)`)
+                                : (lang === 'zh' ? `??? ${riskStreaks.currentLoss} 次�?建議?��?交�?` : `Lost ${riskStreaks.currentLoss} in a row. Take a break.`)
+                                }
                         </span>
                     </div>
                     <button onClick={() => isDDAlert ? setDdThreshold(99) : setMaxLossStreak(99)} className="text-[10px] text-[#D05A5A] underline opacity-80 hover:opacity-100">{lang === 'zh' ? '忽略' : 'Dismiss'}</button>
@@ -155,6 +181,43 @@ export default function App() {
                             setIsShareModalOpen={setIsShareModalOpen}
                             detailStrategy={detailStrategy}
                             setDetailStrategy={setDetailStrategy}
+                            portfolios={portfolios} 
+                            activePortfolioIds={activePortfolioIds} 
+                            setActivePortfolioIds={setActivePortfolioIds}
+                            frequency={frequency}
+                            setFrequency={setFrequency}
+                            lang={lang}
+                            hideAmounts={hideAmounts}
+                            setHideAmounts={setHideAmounts}
+                            chartHeight={chartHeight}
+                            setChartHeight={setChartHeight}
+                            timeRange={timeRange}
+                            setTimeRange={setTimeRange}
+                            customRange={customRange}
+                            setCustomRange={setCustomRange}
+                            setIsDatePickerOpen={setIsDatePickerOpen}
+                            setIsFilterOpen={setIsFilterOpen}
+                            isFilterOpen={isFilterOpen}
+                            hasActiveFilters={hasActiveFilters}
+                            availableStrategies={availableStrategies}
+                            availableEmotions={availableEmotions}
+                            filterStrategy={filterStrategy}
+                            setFilterStrategy={setFilterStrategy}
+                            filterEmotion={filterEmotion}
+                            setFilterEmotion={setFilterEmotion}
+                            stratView={stratView}
+                            setStratView={setStratView}
+                            detailStrategy={detailStrategy}
+                            setDetailStrategy={setDetailStrategy}
+                            ddThreshold={ddThreshold}
+                            showFullEquity={showFullEquity}
+                            setShowFullEquity={setShowFullEquity}
+                            setIsShareModalOpen={setIsShareModalOpen}
+                            syncStatus={syncStatus}
+                            authStatus={authStatus}
+                            user={user}
+                            t={t}
+                            retrySync={triggerCloudBackup}
                         />
                     } />
                     
@@ -162,6 +225,45 @@ export default function App() {
                         <JournalPage 
                             setIsShareModalOpen={setIsShareModalOpen}
                             onDateClick={(d: string) => { setForm({ id: '', pnl: 0, date: d, amount: '', type: 'profit', strategy: '', note: '', emotion: '', image: '', portfolioId: activePortfolioIds[0] || '' }); setEditingId(null); setIsModalOpen(true); }} 
+                            currentMonth={currentMonth} 
+                            setCurrentMonth={setCurrentMonth} 
+                            onDateClick={(d: string) => { setForm({ id: '', pnl: 0, date: d, amount: '', type: 'profit', strategy: '', note: '', emotion: '', image: '', portfolioId: activePortfolioIds[0] || '' }); setEditingId(null); setIsModalOpen(true); }} 
+                            monthlyStats={monthlyStats.count > 0 ? monthlyStats : { pnl: 0, count: 0, winRate: 0 }} 
+                            hideAmounts={hideAmounts} 
+                            lang={lang} 
+                            streaks={streaks} 
+                            availableStrategies={availableStrategies}
+                            availableEmotions={availableEmotions}
+                            filterStrategy={filterStrategy} 
+                            setFilterStrategy={setFilterStrategy} 
+                            filterEmotion={filterEmotion} 
+                            setFilterEmotion={setFilterEmotion} 
+                            // Header Props
+                            metrics={metrics}
+                            portfolios={portfolios}
+                            activePortfolioIds={activePortfolioIds}
+                            setActivePortfolioIds={setActivePortfolioIds}
+                            frequency={frequency}
+                            setFrequency={setFrequency}
+                            setHideAmounts={setHideAmounts}
+                            chartHeight={chartHeight}
+                            setChartHeight={setChartHeight}
+                            timeRange={timeRange}
+                            setTimeRange={setTimeRange}
+                            customRange={customRange}
+                            setCustomRange={setCustomRange}
+                            setIsDatePickerOpen={setIsDatePickerOpen}
+                            setIsFilterOpen={setIsFilterOpen}
+                            isFilterOpen={isFilterOpen}
+                            hasActiveFilters={hasActiveFilters}
+                            showFullEquity={showFullEquity}
+                            setShowFullEquity={setShowFullEquity}
+                            setIsShareModalOpen={setIsShareModalOpen}
+                            syncStatus={syncStatus}
+                            authStatus={authStatus}
+                            user={user}
+                            t={t}
+                            retrySync={triggerCloudBackup}
                         />
                     } />
                     
@@ -189,11 +291,24 @@ export default function App() {
                 setForm={setForm} 
                 onSubmit={(e: React.FormEvent) => { e.preventDefault(); actions.saveTrade({ id: form.id, date: form.date, pnl: form.type === 'profit' ? Math.abs(parseFloat(form.amount || '0')) : -Math.abs(parseFloat(form.amount || '0')), strategy: form.strategy, note: form.note, emotion: form.emotion, image: form.image, portfolioId: form.portfolioId }, editingId); setIsModalOpen(false); }} 
                 isEditing={!!editingId} 
+                emotions={emotions} 
+                portfolios={portfolios} 
+                lang={lang} 
+                metrics={metrics} 
             />
             <StrategyDetailModal strategy={detailStrategy} metrics={strategyMetrics} onClose={() => setDetailStrategy(null)} lang={lang} hideAmounts={hideAmounts} ddThreshold={ddThreshold} />
             <CustomDateRangeModal isOpen={isDatePickerOpen} onClose={() => setIsDatePickerOpen(false)} onApply={(s: string | null, e: string | null) => { setCustomRange({ start: s, end: e }); setTimeRange('CUSTOM'); setIsDatePickerOpen(false); }} initialRange={customRange} lang={lang} />
             <SyncConflictModal isOpen={isSyncModalOpen} onResolve={onResolveSyncConflict} lang={lang} isSyncing={isSyncing} />
             <ShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} metrics={metrics} lang={lang} />
         </div>
+}
+
+export default function App() {
+    return (
+        <TradeProvider>
+            <BrowserRouter>
+                <MainApp />
+            </BrowserRouter>
+        </TradeProvider>
     );
 }

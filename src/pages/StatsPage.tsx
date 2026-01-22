@@ -51,6 +51,9 @@ export const StatsPage: React.FC<{
                         setStratView={setStratView}
                         detailStrategy={detailStrategy}
                         setDetailStrategy={setDetailStrategy}
+                        setStratView={props.setStratView}
+                        detailStrategy={props.detailStrategy}
+                        setDetailStrategy={props.setDetailStrategy}
                     />
                 </div>
             </div>

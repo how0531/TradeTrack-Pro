@@ -30,7 +30,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
     // Smart R:R Display
     const rrDisplay = useMemo(() => {
         if (metrics.avgLoss === 0) return { val: 'WIN', sub: 'ONLY' };
-        if (metrics.riskReward > 100) return { val: '∞', sub: 'R:R' };
+        if (metrics.riskReward > 100) return { val: '??, sub: 'R:R' };
         return { val: formatDecimal(metrics.riskReward), sub: '' };
     }, [metrics.riskReward, metrics.avgLoss]);
 
@@ -58,6 +58,23 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
 
     const dateRangeStr = firstDatePoint && lastDatePoint 
         ? `${formatDatePretty(firstDatePoint)} - ${formatDatePretty(lastDatePoint)}`
+    const lastDatePoint = curve.length > 0 ? curve[curve.length - 1].date : '';
+    
+    const formatDateDot = (dateStr: string, full: boolean) => {
+        if (!dateStr || dateStr === 'Start' || dateStr === 'Initial') return dateStr;
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return dateStr;
+
+            const yyyy = date.getFullYear();
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            return full ? `${yyyy}.${mm}.${dd}` : `.${mm}.${dd}`;
+        } catch { return dateStr; }
+    };
+
+    const dateRangeStr = firstDatePoint && lastDatePoint 
+        ? `${formatDateDot(firstDatePoint, true)}-${formatDateDot(lastDatePoint, false)}`
         : 'No Data';
 
     // Chart Data
@@ -96,14 +113,15 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
     };
 
     const getDisplayModeLabel = () => {
-        if (displayMode === 'amount') return '顯示: 金額';
+        if (displayMode === 'amount') return '顯示: ?��?';
         if (displayMode === 'percent') return '顯示: %';
-        return '顯示: 隱藏';
+        return '顯示: ?��?';
     };
 
     const mainNumberGradient = isProfit 
         ? 'linear-gradient(180deg, #FFD1D1 0%, #D05A5A 60%, #A33A3A 100%)' // Richer Red
         : 'linear-gradient(180deg, #ABEFDC 0%, #5B9A8B 60%, #2C5F54 100%)'; // Richer Green
+        : 'linear-gradient(135deg, #7FFFD4 0%, #5B9A8B 50%, #2C5F54 100%)'; // Richer Green
 
     // Calculate Period Return % (based on start equity of the period)
     const startEquity = metrics.currentEq - metrics.netProfit;
@@ -122,6 +140,8 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     className="w-full max-w-[340px] aspect-[4/5] bg-[#09090b] rounded-[32px] border border-white/10 relative overflow-hidden flex flex-col shadow-2xl"
                     style={{
                         boxShadow: `0 0 0 1px rgba(255,255,255,0.05), 0 20px 60px -15px ${isProfit ? 'rgba(208, 90, 90, 0.25)' : 'rgba(91, 154, 139, 0.25)'}`
+                    style={{
+                        boxShadow: `0 0 0 1px rgba(255,255,255,0.05), 0 20px 50px -10px ${isProfit ? 'rgba(208, 90, 90, 0.3)' : 'rgba(91, 154, 139, 0.3)'}`
                     }}
                 >
                     {/* Noise Texture */}
@@ -132,7 +152,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     {/* Header */}
                     <div className="p-7 pb-4 flex justify-between items-start z-10">
                         <div>
-                            <h3 className="text-white/90 font-bold text-sm tracking-[0.2em] uppercase">交易損益</h3>
+                            <h3 className="text-white/90 font-bold text-sm tracking-[0.2em] uppercase">交�??��?</h3>
                             <p className="text-white/40 font-mono text-[11px] mt-2 tracking-wider font-medium uppercase min-h-[1em]">
                                 {dateRangeStr}
                             </p>
@@ -140,6 +160,15 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                         <div className="flex items-center gap-1.5 opacity-90">
                             <div className="w-1.5 h-1.5 rounded-full bg-[#C8B085] shadow-[0_0_8px_#C8B085]"></div>
                             <span className="text-[#C8B085] font-black text-[10px] tracking-[0.25em] uppercase">TradeTrack</span>
+                        <div>
+                            <h3 className="text-white/80 font-bold text-sm tracking-widest uppercase">帳戶?�利</h3>
+                            <p className="text-[#888] font-mono text-xs mt-1.5 tracking-wide font-medium">
+                                {dateRangeStr}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 opacity-80">
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#C8B085]"></div>
+                            <span className="text-[#C8B085] font-bold text-[10px] tracking-widest uppercase">TradeTrack</span>
                         </div>
                     </div>
 
@@ -158,10 +187,10 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                                         val = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(abs);
                                     } else if (abs < 100000000) {
                                         val = parseFloat((abs / 10000).toFixed(2)).toString();
-                                        unit = '萬';
+                                        unit = '??;
                                     } else {
                                         val = parseFloat((abs / 100000000).toFixed(2)).toString();
-                                        unit = '億';
+                                        unit = '??;
                                     }
 
                                     const displayVal = (isNegative ? '-' : '') + val;
@@ -211,6 +240,19 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                             >
                                 {formatDecimal(periodReturnPct)}%
                             </span>
+                        {displayMode !== 'hidden' && (
+                            <div 
+                                className="text-[42px] font-black font-barlow-numeric tracking-tighter leading-none drop-shadow-2xl mt-2 bg-clip-text text-transparent"
+                                style={{ backgroundImage: mainNumberGradient }}
+                            >
+                                {displayMode === 'amount' 
+                                    ? formatCompactNumber(metrics.netProfit, false).replace('+', '') 
+                                    : `${formatDecimal(periodReturnPct)}%`
+                                }
+                            </div>
+                        )}
+                        {displayMode === 'hidden' && (
+                             <div className="text-3xl font-bold text-white/20 mt-4 tracking-widest opacity-0">HIDDEN</div>
                         )}
                     </div>
 
@@ -244,6 +286,24 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                                                 />
                                             );
                                         })}
+                                            <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.32 0 0 0 0 0.43 0 0 0 0 0.51 0 0 0 0.5 0" result="coloredBlur" />
+                                            <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                                        </filter>
+                                        <linearGradient id="equityLineGradient" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0%" stopColor="#87A6C1" stopOpacity={0.4}/>
+                                            <stop offset="50%" stopColor="#A9D0F5" stopOpacity={1}/>
+                                            <stop offset="100%" stopColor="#87A6C1" stopOpacity={0.4}/>
+                                        </linearGradient>
+                                    </defs>
+                                    
+                                    <Bar dataKey="pnl" yAxisId="pnl" radius={[2, 2, 0, 0]} barSize={4}>
+                                        {chartData.map((entry, index) => (
+                                            <Cell 
+                                                key={`cell-${index}`} 
+                                                fill={entry.pnl >= 0 ? '#D05A5A' : '#5B9A8B'} 
+                                                fillOpacity={0.3} 
+                                            />
+                                        ))}
                                     </Bar>
 
                                     <Line 
@@ -281,8 +341,17 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                              </span>
                         </div>
                         <div className="py-7 flex flex-col items-center justify-center gap-1.5">
-                             <span className="text-white/30 text-[9px] font-bold uppercase tracking-[0.2em]">交易筆數</span>
+                             <span className="text-white/30 text-[9px] font-bold uppercase tracking-[0.2em]">交�?筆數</span>
                              <span className="text-white/90 font-black font-barlow-numeric text-xl tracking-tight">
+                        <div className="py-6 flex flex-col items-center justify-center gap-1">
+                             <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">{t.winRate}</span>
+                             <span className="text-white font-black font-barlow-numeric text-xl tracking-tight">
+                                 {formatDecimal(metrics.winRate)}%
+                             </span>
+                        </div>
+                        <div className="py-6 flex flex-col items-center justify-center gap-1">
+                             <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">交�?筆數</span>
+                             <span className="text-white font-black font-barlow-numeric text-xl tracking-tight">
                                  {metrics.totalTrades}
                              </span>
                         </div>
@@ -302,6 +371,17 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                                  </span>
                                  {rrDisplay.sub && <span className="text-[9px] ml-1 text-white/40 font-bold uppercase">{rrDisplay.sub}</span>}
                              </div>
+                                <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">{t.maxDD}</span>
+                                <span className="text-[#5B9A8B] font-black font-barlow-numeric text-xl tracking-tight">
+                                    {formatDecimal(metrics.maxDD)}%
+                                </span>
+                            </div>
+                        )}
+                        <div className="py-6 flex flex-col items-center justify-center gap-1">
+                             <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">{t.riskReward}</span>
+                             <span className="text-white font-black font-barlow-numeric text-xl tracking-tight">
+                                 {formatDecimal(metrics.riskReward)}
+                             </span>
                         </div>
                     </div>
                 </div>
@@ -327,14 +407,14 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                             className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors active:scale-95"
                         >
                             <Layers size={16} className={showChart ? 'text-[#C8B085]' : ''}/>
-                            <span>{showChart ? '顯示圖表' : '隱藏圖表'}</span>
+                            <span>{showChart ? '顯示?�表' : '?��??�表'}</span>
                         </button>
                         <button 
                             onClick={() => setShowDD(!showDD)}
                             className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors active:scale-95"
                         >
                             <Share2 size={16} className={showDD ? 'text-[#D05A5A]' : ''}/>
-                            <span>{showDD ? '隱藏回撤' : '顯示回撤'}</span>
+                            <span>{showDD ? '?��??�撤' : '顯示?�撤'}</span>
                         </button>
                     </div>
 
@@ -352,7 +432,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                             className="flex-1 py-4 rounded-xl bg-[#C8B085] text-black font-bold text-sm uppercase tracking-wider shadow-[0_0_20px_rgba(200,176,133,0.3)] hover:bg-[#D9C298] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                         >
                             {isSharing ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-                            儲存圖片
+                            ?��??��?
                         </button>
                     </div>
                 </div>
