@@ -1,7 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
-import { X, Loader2, Download, Eye, Layers, Share2, ArrowLeftRight } from 'lucide-react';
-import { ComposedChart, Line, Bar, Cell, ResponsiveContainer, YAxis } from 'recharts';
+import React, { useState, useRef, useId } from 'react';
+import { X, Loader2, Download, Eye, Layers, ArrowLeftRight } from 'lucide-react';
+import { ComposedChart, Area, Bar, Cell, ResponsiveContainer, YAxis } from 'recharts';
 import html2canvas from 'html2canvas';
 import { Metrics, Lang } from '../../types';
 import { I18N, THEME } from '../../constants';
@@ -17,81 +17,89 @@ interface ShareModalProps {
 type DisplayMode = 'amount' | 'percent' | 'hidden';
 
 export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) => {
-    if (!isOpen) return null;
-
+    // 1. Always call hooks at the top level, even if !isOpen (though standard pattern often returns null early)
+    // To be safe with hooks like useId, we should render hooks first or conditionally render the whole component from parent.
+    // Assuming parent renders conditionally or we accept `useId` calls potentially changing if we return early.
+    // Best practice: Standard hooks first.
+    
+    // We'll keep the early return for performance if that's the pattern, but `useId` is safe to call.
+    const uniqueId = useId(); 
+    const cardRef = useRef<HTMLDivElement>(null);
     const [isSharing, setIsSharing] = useState(false);
     const [displayMode, setDisplayMode] = useState<DisplayMode>('amount');
     const [showChart, setShowChart] = useState(true);
-    const [showDD, setShowDD] = useState(false);
 
-    const t = I18N[lang] || I18N['zh'];
-    const isProfit = metrics.netProfit >= 0;
+    if (!isOpen) return null;
+
+    const t = I18N[lang] || I18N['zh']; // Fallback to zh if undefined
     
-    // Smart R:R Display
-    const rrDisplay = useMemo(() => {
-        if (metrics.avgLoss === 0) return { val: 'WIN', sub: 'ONLY' };
-        if (metrics.riskReward > 100) return { val: '??, sub: 'R:R' };
-        return { val: formatDecimal(metrics.riskReward), sub: '' };
-    }, [metrics.riskReward, metrics.avgLoss]);
-
+    // Use netProfit for accurate period PnL
+    const isProfit = metrics.netProfit >= 0;
+    const themeColor = isProfit ? '#D05A5A' : '#5B9A8B';
+    const drawdownColor = '#5B9A8B'; // Green color for Drawdown "loss" representation
+    
     // Background Gradient based on performance
     const bgGradient = isProfit 
-        ? 'radial-gradient(circle at 50% 0%, rgba(208, 90, 90, 0.25), transparent 70%)'
-        : 'radial-gradient(circle at 50% 0%, rgba(91, 154, 139, 0.25), transparent 70%)';
+        ? 'radial-gradient(circle at 50% 0%, rgba(208, 90, 90, 0.15), transparent 70%)'
+        : 'radial-gradient(circle at 50% 0%, rgba(91, 154, 139, 0.15), transparent 70%)';
 
-    // Date Range Logic - Intelligence to skip "Start" point
-    const curve = metrics.curve;
-    const firstDatePoint = curve.length > 0 ? (curve[0].fullDate === 'Start' || curve[0].fullDate === 'Initial' ? (curve[1] ? curve[1].fullDate : curve[0].fullDate) : curve[0].fullDate) : '';
-    const lastDatePoint = curve.length > 0 ? curve[curve.length - 1].fullDate : '';
-    
-    const formatDatePretty = (dateStr: string) => {
-        if (!dateStr || dateStr === 'Start' || dateStr === 'Initial') return '';
-        try {
-            const date = new Date(dateStr);
-            if (isNaN(date.getTime())) return '';
-            const yyyy = date.getFullYear();
-            const mm = String(date.getMonth() + 1).padStart(2, '0');
-            const dd = String(date.getDate()).padStart(2, '0');
-            return `${yyyy}.${mm}.${dd}`;
-        } catch { return ''; }
+    // Date Range Logic
+    const formatRangeDate = (d: string) => {
+        if (!d || d === 'Start' || d === 'Initial') return 'Start'; // Internal flag
+        // Assume YYYY-MM-DD
+        if (d.length >= 10) {
+            return d.replace(/-/g, '.');
+        }
+        return d;
     };
 
-    const dateRangeStr = firstDatePoint && lastDatePoint 
-        ? `${formatDatePretty(firstDatePoint)} - ${formatDatePretty(lastDatePoint)}`
-    const lastDatePoint = curve.length > 0 ? curve[curve.length - 1].date : '';
+    // Find first meaningful date (skip 'Start' anchor point)
+    const firstRealPoint = metrics.curve.find(p => p.fullDate !== 'Start' && p.fullDate !== 'Initial');
+    const startDateRaw = firstRealPoint ? firstRealPoint.fullDate : (metrics.curve[0]?.fullDate || '');
+    const endDateRaw = metrics.curve.length > 0 ? metrics.curve[metrics.curve.length - 1].fullDate : '';
     
-    const formatDateDot = (dateStr: string, full: boolean) => {
-        if (!dateStr || dateStr === 'Start' || dateStr === 'Initial') return dateStr;
-        try {
-            const date = new Date(dateStr);
-            if (isNaN(date.getTime())) return dateStr;
+    let dateRangeStr = 'No Data';
+    if (startDateRaw && endDateRaw) {
+        const start = formatRangeDate(startDateRaw);
+        const end = formatRangeDate(endDateRaw);
+        
+        if (start === 'Start' && end === 'Start') {
+            dateRangeStr = 'New Account';
+        } else if (start === 'Start') {
+             // Only end date valid
+             dateRangeStr = end; 
+        } else {
+             // Both valid
+             dateRangeStr = `${start} - ${end.substring(5)}`;
+        }
+    }
 
-            const yyyy = date.getFullYear();
-            const mm = String(date.getMonth() + 1).padStart(2, '0');
-            const dd = String(date.getDate()).padStart(2, '0');
-            return full ? `${yyyy}.${mm}.${dd}` : `.${mm}.${dd}`;
-        } catch { return dateStr; }
-    };
-
-    const dateRangeStr = firstDatePoint && lastDatePoint 
-        ? `${formatDateDot(firstDatePoint, true)}-${formatDateDot(lastDatePoint, false)}`
-        : 'No Data';
-
-    // Chart Data
+    // Chart Data (Last 50 points for cleaner look or all if less)
     const chartData = metrics.curve.length > 50 ? metrics.curve.slice(-50) : metrics.curve;
+    
+    // SVG Filter IDs scoped to this instance to prevent collisions
+    const glowId = `glow-line-share-${uniqueId}`;
+    const gradientId = `areaGradient-${uniqueId}`;
 
     const handleSaveImage = async () => {
-        const element = document.getElementById('share-card-capture');
-        if (!element || isSharing) return;
+        if (!cardRef.current || isSharing) return;
 
         setIsSharing(true);
         try {
-            await new Promise(resolve => setTimeout(resolve, 200)); // Slight Render wait
-            const canvas = await html2canvas(element, {
-                backgroundColor: null,
-                scale: 3,
+            // Short Render wait to ensure any repaints are finished
+            await new Promise(resolve => setTimeout(resolve, 100)); 
+            
+            const canvas = await html2canvas(cardRef.current, {
+                backgroundColor: null, // Transparent background outside border-radius
+                scale: 3, // High Resolution
                 useCORS: true,
                 logging: false,
+                // Attempt to fix potential DOM interaction issues:
+                ignoreElements: (element) => {
+                     // Ignore any elements that might cause issues if necessary, 
+                     // usually not needed unless specific plugins interfere
+                     return false;
+                }
             });
 
             const link = document.createElement('a');
@@ -113,56 +121,49 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
     };
 
     const getDisplayModeLabel = () => {
-        if (displayMode === 'amount') return '顯示: ?��?';
+        if (displayMode === 'amount') return '顯示: 金額';
         if (displayMode === 'percent') return '顯示: %';
-        return '顯示: ?��?';
+        return '顯示: 隱藏';
     };
 
-    const mainNumberGradient = isProfit 
-        ? 'linear-gradient(180deg, #FFD1D1 0%, #D05A5A 60%, #A33A3A 100%)' // Richer Red
-        : 'linear-gradient(180deg, #ABEFDC 0%, #5B9A8B 60%, #2C5F54 100%)'; // Richer Green
-        : 'linear-gradient(135deg, #7FFFD4 0%, #5B9A8B 50%, #2C5F54 100%)'; // Richer Green
+    // Helper to split number and unit for styling
+    const getFormattedValueParts = () => {
+        if (displayMode === 'hidden') return { value: '****', unit: '' };
+        
+        let fullStr = '';
+        if (displayMode === 'amount') {
+            fullStr = formatCompactNumber(metrics.netProfit, false).replace('+', '');
+        } else {
+            fullStr = `${formatDecimal(metrics.netProfitPct)}%`;
+        }
 
-    // Calculate Period Return % (based on start equity of the period)
-    const startEquity = metrics.currentEq - metrics.netProfit;
-    const periodReturnPct = startEquity !== 0 ? (metrics.netProfit / startEquity) * 100 : 0;
+        // Match number part and non-number suffix (unit)
+        const match = fullStr.match(/^([-\d.,]+)(.*)$/);
+        if (match) {
+            return { value: match[1], unit: match[2] };
+        }
+        return { value: fullStr, unit: '' };
+    };
+
+    const { value, unit } = getFormattedValueParts();
 
     return (
-        <div className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-sm flex flex-col animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[150] bg-black flex flex-col animate-in fade-in duration-300">
             {/* Main Preview Area */}
             <div className="flex-1 flex items-center justify-center p-6 relative overflow-hidden">
                 {/* Background Glow */}
-                <div className="absolute inset-0 pointer-events-none" style={{ background: bgGradient, opacity: 0.3 }}></div>
+                <div className="absolute inset-0 pointer-events-none" style={{ background: bgGradient }}></div>
 
                 {/* THE CARD TO CAPTURE */}
                 <div 
-                    id="share-card-capture" 
-                    className="w-full max-w-[340px] aspect-[4/5] bg-[#09090b] rounded-[32px] border border-white/10 relative overflow-hidden flex flex-col shadow-2xl"
-                    style={{
-                        boxShadow: `0 0 0 1px rgba(255,255,255,0.05), 0 20px 60px -15px ${isProfit ? 'rgba(208, 90, 90, 0.25)' : 'rgba(91, 154, 139, 0.25)'}`
-                    style={{
-                        boxShadow: `0 0 0 1px rgba(255,255,255,0.05), 0 20px 50px -10px ${isProfit ? 'rgba(208, 90, 90, 0.3)' : 'rgba(91, 154, 139, 0.3)'}`
-                    }}
+                    ref={cardRef}
+                    className="w-full max-w-[340px] aspect-[4/5] bg-black rounded-3xl border border-white/10 relative overflow-hidden flex flex-col shadow-2xl"
                 >
-                    {/* Noise Texture */}
-                    <div className="absolute inset-0 opacity-[0.04] pointer-events-none z-0 mix-blend-overlay" 
-                         style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}>
-                    </div>
-
                     {/* Header */}
-                    <div className="p-7 pb-4 flex justify-between items-start z-10">
+                    <div className="p-6 pb-2 flex justify-between items-start z-10">
                         <div>
-                            <h3 className="text-white/90 font-bold text-sm tracking-[0.2em] uppercase">交�??��?</h3>
-                            <p className="text-white/40 font-mono text-[11px] mt-2 tracking-wider font-medium uppercase min-h-[1em]">
-                                {dateRangeStr}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-1.5 opacity-90">
-                            <div className="w-1.5 h-1.5 rounded-full bg-[#C8B085] shadow-[0_0_8px_#C8B085]"></div>
-                            <span className="text-[#C8B085] font-black text-[10px] tracking-[0.25em] uppercase">TradeTrack</span>
-                        <div>
-                            <h3 className="text-white/80 font-bold text-sm tracking-widest uppercase">帳戶?�利</h3>
-                            <p className="text-[#888] font-mono text-xs mt-1.5 tracking-wide font-medium">
+                            <h3 className="text-white font-bold text-lg tracking-wider">交易損益</h3>
+                            <p className="text-[#666] font-barlow-numeric text-[11px] mt-0.5 tracking-wide font-medium">
                                 {dateRangeStr}
                             </p>
                         </div>
@@ -172,131 +173,55 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                         </div>
                     </div>
 
-                    {/* Main Stats (Top Aligned) */}
-                    <div className="w-full px-7 z-10 relative flex flex-col items-start min-h-[100px] justify-center mt-1">
-                        {(displayMode === 'amount' || displayMode === 'hidden') && (
-                            <div className="flex items-baseline gap-4">
-                                {(() => {
-                                    const abs = Math.abs(metrics.netProfit);
-                                    const isNegative = metrics.netProfit < 0;
-                                    
-                                    let val = '';
-                                    let unit = '';
-
-                                    if (abs < 10000) {
-                                        val = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(abs);
-                                    } else if (abs < 100000000) {
-                                        val = parseFloat((abs / 10000).toFixed(2)).toString();
-                                        unit = '??;
-                                    } else {
-                                        val = parseFloat((abs / 100000000).toFixed(2)).toString();
-                                        unit = '??;
-                                    }
-
-                                    const displayVal = (isNegative ? '-' : '') + val;
-
-                                    return (
-                                        <div className={`flex items-baseline ${displayMode === 'hidden' ? 'blur-md opacity-50 select-none' : ''}`}>
-                                            <span 
-                                                className="text-[40px] font-black font-barlow-numeric tracking-tighter leading-none drop-shadow-[0_4px_20px_rgba(0,0,0,0.5)] bg-clip-text text-transparent"
-                                                style={{ 
-                                                    backgroundImage: mainNumberGradient,
-                                                    filter: `drop-shadow(0 0 30px ${isProfit ? 'rgba(208, 90, 90, 0.15)' : 'rgba(91, 154, 139, 0.15)'})`
-                                                }}
-                                            >
-                                                {displayVal}
-                                            </span>
-                                            {unit && (
-                                                <span 
-                                                    className="text-2xl ml-1.5 font-bold font-sans bg-clip-text text-transparent -translate-y-1"
-                                                    style={{ 
-                                                        backgroundImage: mainNumberGradient,
-                                                        filter: `drop-shadow(0 0 30px ${isProfit ? 'rgba(208, 90, 90, 0.15)' : 'rgba(91, 154, 139, 0.15)'})`
-                                                    }}
-                                                >
-                                                    {unit}
-                                                </span>
-                                            )}
-                                        </div>
-                                    );
-                                })()}
-                                {showDD && (
-                                    <div className="flex flex-col items-start gap-0.5 self-end pb-1">
-                                        <span className="text-white/30 text-[8px] font-bold uppercase tracking-wider">{t.maxDD}</span>
-                                        <span className="text-[#5B9A8B] font-black font-barlow-numeric text-lg tracking-tight">
-                                            {formatDecimal(metrics.maxDD)}<span className="text-xs ml-0.5 opacity-60">%</span>
-                                        </span>
-                                    </div>
+                    {/* Main Stats Area - REVISED LAYOUT */}
+                    <div className="w-full px-6 z-10 relative flex flex-col items-start min-h-[80px] mt-4">
+                        {/* Changed to flex-row and whitespace-nowrap to FORCE side-by-side */}
+                        <div className="flex flex-row items-baseline gap-3 whitespace-nowrap">
+                             {/* Main Number */}
+                             <div className="flex items-baseline">
+                                <span 
+                                    className={`font-bold font-barlow-numeric tracking-tighter leading-none drop-shadow-2xl transition-all duration-300 ${displayMode === 'hidden' ? 'blur-md opacity-50 select-none' : ''}`}
+                                    style={{ color: themeColor, fontSize: '40px' }}
+                                >
+                                    {displayMode === 'hidden' ? '888.88' : value}
+                                </span>
+                                {unit && displayMode !== 'hidden' && (
+                                    <span className="text-xl font-bold opacity-80 ml-1" style={{ color: themeColor }}>
+                                        {unit}
+                                    </span>
                                 )}
+                             </div>
+
+                             {/* Max Drawdown - Right Aligned, aligned to baseline */}
+                             <div className="flex items-center gap-1.5">
+                                <span className={`font-barlow-numeric text-lg font-bold ${displayMode === 'hidden' ? 'blur-sm opacity-50' : ''}`} style={{ color: drawdownColor }}>
+                                    {displayMode === 'hidden' ? '00.00' : formatDecimal(Math.abs(metrics.maxDD))}%
+                                </span>
+                                <span className="text-[#555] text-[10px] font-bold uppercase tracking-wider translate-y-[1px]">回撤</span>
                             </div>
-                        )}
-                        {displayMode === 'percent' && (
-                            <span 
-                                className="text-[40px] font-black font-barlow-numeric tracking-tighter leading-none drop-shadow-[0_4px_20px_rgba(0,0,0,0.5)] bg-clip-text text-transparent"
-                                style={{ 
-                                    backgroundImage: mainNumberGradient,
-                                    filter: `drop-shadow(0 0 30px ${isProfit ? 'rgba(208, 90, 90, 0.15)' : 'rgba(91, 154, 139, 0.15)'})`
-                                }}
-                            >
-                                {formatDecimal(periodReturnPct)}%
-                            </span>
-                        {displayMode !== 'hidden' && (
-                            <div 
-                                className="text-[42px] font-black font-barlow-numeric tracking-tighter leading-none drop-shadow-2xl mt-2 bg-clip-text text-transparent"
-                                style={{ backgroundImage: mainNumberGradient }}
-                            >
-                                {displayMode === 'amount' 
-                                    ? formatCompactNumber(metrics.netProfit, false).replace('+', '') 
-                                    : `${formatDecimal(periodReturnPct)}%`
-                                }
-                            </div>
-                        )}
-                        {displayMode === 'hidden' && (
-                             <div className="text-3xl font-bold text-white/20 mt-4 tracking-widest opacity-0">HIDDEN</div>
-                        )}
+                        </div>
                     </div>
 
-                    {/* Background Chart */}
+                    {/* Background Chart - Area Chart for smoother look */}
                     {showChart && chartData.length > 0 && (
-                        <div className="absolute inset-x-0 bottom-[28%] top-[40%] opacity-100 pointer-events-none z-0">
+                        <div className="absolute inset-x-0 bottom-[25%] top-[40%] opacity-100 pointer-events-none">
                             <ResponsiveContainer width="100%" height="100%">
                                 <ComposedChart data={chartData}>
                                     <defs>
-                                        <filter id="glow-line-share" height="200%">
-                                            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-                                            <feColorMatrix in="blur" type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0" result="coloredBlur" />
-                                            <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                                        </filter>
-                                        <linearGradient id="equityLineGradient" x1="0" y1="0" x2="1" y2="0">
-                                            <stop offset="0%" stopColor="#fff" stopOpacity={0.2}/>
-                                            <stop offset="50%" stopColor="#fff" stopOpacity={0.8}/>
-                                            <stop offset="100%" stopColor="#fff" stopOpacity={0.2}/>
-                                        </linearGradient>
-                                    </defs>
-                                    
-                                    <Bar dataKey="pnl" yAxisId="pnl" radius={[2, 2, 0, 0]} barSize={6}>
-                                        {chartData.map((entry, index) => {
-                                            const opacity = Math.max(0.15, Math.min(0.6, Math.abs(entry.pnl) / (Math.max(1, Math.abs(metrics.avgWin)) * 2)));
-                                            return (
-                                                <Cell 
-                                                    key={`cell-${index}`} 
-                                                    fill={entry.pnl >= 0 ? '#D05A5A' : '#5B9A8B'} 
-                                                    fillOpacity={opacity} 
-                                                    strokeWidth={0}
-                                                />
-                                            );
-                                        })}
+                                        <filter id={glowId} height="200%">
+                                            <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+                                            {/* Blue Glow Matrix matching THEME.BLUE */}
                                             <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.32 0 0 0 0 0.43 0 0 0 0 0.51 0 0 0 0.5 0" result="coloredBlur" />
                                             <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
                                         </filter>
-                                        <linearGradient id="equityLineGradient" x1="0" y1="0" x2="1" y2="0">
-                                            <stop offset="0%" stopColor="#87A6C1" stopOpacity={0.4}/>
-                                            <stop offset="50%" stopColor="#A9D0F5" stopOpacity={1}/>
-                                            <stop offset="100%" stopColor="#87A6C1" stopOpacity={0.4}/>
+                                        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#526D82" stopOpacity={0.2}/>
+                                            <stop offset="95%" stopColor="#526D82" stopOpacity={0}/>
                                         </linearGradient>
                                     </defs>
                                     
-                                    <Bar dataKey="pnl" yAxisId="pnl" radius={[2, 2, 0, 0]} barSize={4}>
+                                    {/* PnL Bars (Subtle Background) */}
+                                    <Bar dataKey="pnl" yAxisId="pnl" radius={[1, 1, 0, 0]} barSize={3}>
                                         {chartData.map((entry, index) => (
                                             <Cell 
                                                 key={`cell-${index}`} 
@@ -306,25 +231,28 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                                         ))}
                                     </Bar>
 
-                                    <Line 
+                                    {/* Equity Area (Prominent Foreground) */}
+                                    <Area
                                         yAxisId="equity"
-                                        type="monotone" 
-                                        dataKey="equity" 
-                                        stroke="url(#equityLineGradient)" 
-                                        strokeWidth={3} 
-                                        dot={({cx, cy, payload}) => {
-                                            if (payload.isNewPeak) return (
-                                                <g>
-                                                    <circle cx={cx} cy={cy} r={6} fill="#C8B085" fillOpacity={0.2} />
-                                                    <circle cx={cx} cy={cy} r={3} fill="#C8B085" stroke="rgba(0,0,0,0.8)" strokeWidth={1} />
-                                                </g>
-                                            );
+                                        type="monotone"
+                                        dataKey="equity"
+                                        stroke="#526D82"
+                                        strokeWidth={2}
+                                        fill={`url(#${gradientId})`}
+                                        fillOpacity={1}
+                                        filter={`url(#${glowId})`}
+                                        isAnimationActive={false}
+                                        dot={({cx, cy, payload, index}) => {
+                                            // Only show dots for peaks or ends to reduce clutter
+                                            const isLast = index === chartData.length - 1;
+                                            if (payload.isNewPeak || isLast) {
+                                                return <circle cx={cx} cy={cy} r={3} fill="#C8B085" stroke="#1A1B23" strokeWidth={1} />;
+                                            }
                                             return <></>;
                                         }}
-                                        isAnimationActive={false}
-                                        filter="url(#glow-line-share)"
                                     />
 
+                                    {/* Hidden Axes */}
                                     <YAxis yAxisId="pnl" hide domain={['auto', 'auto']} />
                                     <YAxis yAxisId="equity" orientation="right" hide domain={['auto', 'auto']} />
                                 </ComposedChart>
@@ -333,54 +261,29 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     )}
 
                     {/* Footer Grid Stats */}
-                    <div className={`mt-auto border-t border-white/5 bg-white/[0.02] backdrop-blur-md z-10 grid ${showDD ? 'grid-cols-4' : 'grid-cols-3'} divide-x divide-white/5`}>
-                        <div className="py-7 flex flex-col items-center justify-center gap-1.5">
-                             <span className="text-white/30 text-[9px] font-bold uppercase tracking-[0.2em]">{t.winRate}</span>
-                             <span className="text-white/90 font-black font-barlow-numeric text-xl tracking-tight">
-                                 {formatDecimal(metrics.winRate)}<span className="text-sm ml-0.5 text-white/40">%</span>
+                    <div className="mt-auto border-t border-white/10 bg-white/[0.02] backdrop-blur-sm z-10 grid grid-cols-3 divide-x divide-white/10">
+                        <div className="py-5 flex flex-col items-center justify-center">
+                             <span className="text-[#555] text-[9px] font-bold uppercase tracking-widest mb-1">
+                                {t.winRate || '勝率'}
+                             </span>
+                             <span className="text-white font-bold font-barlow-numeric text-lg tracking-wide">
+                                 {formatDecimal(metrics.winRate)}<span className="text-xs opacity-60 ml-0.5">%</span>
                              </span>
                         </div>
-                        <div className="py-7 flex flex-col items-center justify-center gap-1.5">
-                             <span className="text-white/30 text-[9px] font-bold uppercase tracking-[0.2em]">交�?筆數</span>
-                             <span className="text-white/90 font-black font-barlow-numeric text-xl tracking-tight">
-                        <div className="py-6 flex flex-col items-center justify-center gap-1">
-                             <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">{t.winRate}</span>
-                             <span className="text-white font-black font-barlow-numeric text-xl tracking-tight">
-                                 {formatDecimal(metrics.winRate)}%
+                        <div className="py-5 flex flex-col items-center justify-center">
+                             <span className="text-[#555] text-[9px] font-bold uppercase tracking-widest mb-1">
+                                {t.totalTrades || '交易筆數'}
                              </span>
-                        </div>
-                        <div className="py-6 flex flex-col items-center justify-center gap-1">
-                             <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">交�?筆數</span>
-                             <span className="text-white font-black font-barlow-numeric text-xl tracking-tight">
+                             <span className="text-white font-bold font-barlow-numeric text-lg tracking-wide">
                                  {metrics.totalTrades}
                              </span>
                         </div>
-                        {showDD && (
-                            <div className="py-7 flex flex-col items-center justify-center gap-1.5">
-                                <span className="text-white/30 text-[9px] font-bold uppercase tracking-[0.2em]">{t.maxDD}</span>
-                                <span className="text-[#5B9A8B] font-black font-barlow-numeric text-xl tracking-tight">
-                                    {formatDecimal(metrics.maxDD)}<span className="text-sm ml-0.5 opacity-60">%</span>
-                                </span>
-                            </div>
-                        )}
-                        <div className="py-7 flex flex-col items-center justify-center gap-1.5">
-                             <span className="text-white/30 text-[9px] font-bold uppercase tracking-[0.2em]">{t.riskReward}</span>
-                             <div className="flex items-baseline">
-                                 <span className="text-white/90 font-black font-barlow-numeric text-xl tracking-tight">
-                                     {rrDisplay.val}
-                                 </span>
-                                 {rrDisplay.sub && <span className="text-[9px] ml-1 text-white/40 font-bold uppercase">{rrDisplay.sub}</span>}
-                             </div>
-                                <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">{t.maxDD}</span>
-                                <span className="text-[#5B9A8B] font-black font-barlow-numeric text-xl tracking-tight">
-                                    {formatDecimal(metrics.maxDD)}%
-                                </span>
-                            </div>
-                        )}
-                        <div className="py-6 flex flex-col items-center justify-center gap-1">
-                             <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">{t.riskReward}</span>
-                             <span className="text-white font-black font-barlow-numeric text-xl tracking-tight">
-                                 {formatDecimal(metrics.riskReward)}
+                        <div className="py-5 flex flex-col items-center justify-center">
+                             <span className="text-[#555] text-[9px] font-bold uppercase tracking-widest mb-1">
+                                {t.riskReward || '賺賠比'}
+                             </span>
+                             <span className="text-white font-bold font-barlow-numeric text-lg tracking-wide">
+                                 {metrics.riskReward === Infinity ? '∞' : formatDecimal(metrics.riskReward)}
                              </span>
                         </div>
                     </div>
@@ -390,31 +293,21 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
             {/* Controls Bar (Fixed Bottom) */}
             <div className="bg-[#141619] border-t border-white/10 p-4 pb-8 safe-area-bottom z-50">
                 <div className="max-w-md mx-auto space-y-4">
-                    {/* Toggles Row 1 */}
+                    {/* Toggles */}
                     <div className="flex gap-3">
                         <button 
                             onClick={toggleDisplayMode}
-                            className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors active:scale-95"
+                            className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors"
                         >
                             {displayMode === 'hidden' ? <Eye size={16}/> : <ArrowLeftRight size={16}/>}
                             <span>{getDisplayModeLabel()}</span>
                         </button>
-                    </div>
-                    {/* Toggles Row 2 */}
-                    <div className="flex gap-3">
-                         <button 
+                        <button 
                             onClick={() => setShowChart(!showChart)}
-                            className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors active:scale-95"
+                            className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors"
                         >
                             <Layers size={16} className={showChart ? 'text-[#C8B085]' : ''}/>
-                            <span>{showChart ? '顯示?�表' : '?��??�表'}</span>
-                        </button>
-                        <button 
-                            onClick={() => setShowDD(!showDD)}
-                            className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors active:scale-95"
-                        >
-                            <Share2 size={16} className={showDD ? 'text-[#D05A5A]' : ''}/>
-                            <span>{showDD ? '?��??�撤' : '顯示?�撤'}</span>
+                            <span>{showChart ? '顯示圖表' : '隱藏圖表'}</span>
                         </button>
                     </div>
 
@@ -422,17 +315,17 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     <div className="flex gap-3">
                         <button 
                             onClick={onClose}
-                            className="w-14 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 active:scale-95"
+                            className="w-14 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10"
                         >
                             <X size={20} />
                         </button>
                         <button 
                             onClick={handleSaveImage}
                             disabled={isSharing}
-                            className="flex-1 py-4 rounded-xl bg-[#C8B085] text-black font-bold text-sm uppercase tracking-wider shadow-[0_0_20px_rgba(200,176,133,0.3)] hover:bg-[#D9C298] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                            className="flex-1 py-4 rounded-xl bg-[#C8B085] text-black font-bold text-sm uppercase tracking-wider shadow-lg shadow-[#C8B085]/20 hover:bg-[#D9C298] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                         >
                             {isSharing ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-                            ?��??��?
+                            儲存圖片
                         </button>
                     </div>
                 </div>
