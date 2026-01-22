@@ -11,8 +11,11 @@ import { formatCompactNumber, formatDecimal } from '../../utils/format';
 
 type DisplayMode = 'amount' | 'percent' | 'hidden';
 
-export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing, strategies, emotions, portfolios, lang, metrics }: TradeModalProps) => {
+import { useTradeContext } from '../../context/TradeContext';
+
+export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing }: TradeModalProps) => {
     if (!isOpen) return null;
+    const { strategies, emotions, portfolios, lang, metrics } = useTradeContext();
     const t = I18N[lang] || I18N['zh'];
     
     // Share State

@@ -12,15 +12,22 @@ import { useTradeContext } from '../../context/TradeContext';
 // Interfaces removed (now defined locally or unused)
 
 // --- INTERNAL COMPONENT: StatCard ---
-const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName }: any) => (
+const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName, unit }: any) => (
     <div className={`p-3 rounded-xl border flex flex-col items-center justify-center min-h-[72px] relative overflow-hidden group transition-colors shadow-lg shadow-black/20 backdrop-blur-md ${className || 'border-white/5 bg-[#1A1C20]/40 hover:bg-[#1A1C20]/60'}`}>
         <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-        <span 
-            className={`text-lg font-bold font-barlow-numeric tracking-tight mb-0.5 ${valueClassName || ''}`} 
-            style={{ color: valueColor || '#E0E0E0' }}
-        >
-            {value}
-        </span>
+        <div className="flex items-baseline gap-0.5 mb-0.5">
+            <span 
+                className={`text-2xl font-black font-barlow-numeric tracking-tight ${valueClassName || ''}`} 
+                style={{ color: valueColor || '#E0E0E0' }}
+            >
+                {value}
+            </span>
+            {unit && (
+                <span className="text-xs font-bold opacity-60 font-barlow-numeric" style={{ color: valueColor || '#E0E0E0' }}>
+                    {unit}
+                </span>
+            )}
+        </div>
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
             {label}
             {subLabel && <span className="opacity-50 text-[8px]">({subLabel})</span>}
@@ -374,20 +381,28 @@ export const StatsContent = ({ setDetailStrategy, stratView, setStratView }: Sta
     }, [metrics.stratStats]);
 
     const absDD = Math.abs(metrics.maxDD);
-    const isDDBreach = absDD >= ddThreshold;
-    const isDDWarning = absDD >= (ddThreshold - 3) && !isDDBreach;
+    const isDDBreach = absDD >= 30; // Changed threshold to 30 as requested
+    const isDDWarning = absDD >= 20 && !isDDBreach;
+    
     let ddCardClass = "";
     let ddValueClass = "";
-    let ddValueColor = Math.abs(metrics.maxDD) > 20 ? THEME.GREEN : '#E0E0E0';
-    if (isDDBreach) { ddCardClass = "bg-[#5B9A8B]/10 border-[#5B9A8B]/30 shadow-[0_0_20px_rgba(91,154,139,0.2)]"; ddValueColor = THEME.GREEN; } 
-    else if (isDDWarning) { ddValueColor = THEME.GREEN; ddValueClass = "animate-pulse"; }
+    let ddValueColor = THEME.GREEN; // Default to green for DD
+
+    if (isDDBreach) { 
+        // DANGER ZONE (>30%): Red background hint + border
+        ddCardClass = "bg-red-500/10 border-red-500/30 shadow-[0_0_20px_rgba(208,90,90,0.2)]"; 
+        ddValueColor = THEME.RED; 
+    } else if (isDDWarning) { 
+        // WARNING ZONE (20-30%): Pulse
+        ddValueClass = "animate-pulse"; 
+    }
 
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
              <div className="flex flex-col gap-2">
                  <div className="grid grid-cols-4 gap-2">
-                    <StatCard label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate >= 50 ? THEME.RED : '#E0E0E0'} />
-                    <StatCard label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={THEME.GREEN} className={ddCardClass} valueClassName={ddValueClass} />
+                    <StatCard label={t.winRate} value={formatDecimal(metrics.winRate)} unit="%" valueColor={metrics.winRate >= 50 ? THEME.RED : '#E0E0E0'} />
+                    <StatCard label={t.maxDD} value={formatDecimal(metrics.maxDD)} unit="%" valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
                     <StatCard label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
                     <StatCard label={t.sharpe} value={formatDecimal(metrics.sharpe)} valueColor={metrics.sharpe >= 1 ? THEME.RED : '#E0E0E0'} />
                  </div>

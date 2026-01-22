@@ -206,11 +206,7 @@ export interface TradeModalProps {
     setForm: (t: Trade) => void;
     onSubmit: (e: React.FormEvent) => void;
     isEditing: boolean;
-    strategies: string[];
-    emotions: string[];
-    portfolios: Portfolio[];
-    lang: Lang;
-    metrics?: Metrics; // Added for Share Card context
+    // Context provided: strategies, emotions, portfolios, lang, metrics
 }
 
 export interface StrategyDetailModalProps {

@@ -85,7 +85,7 @@ export default function App() {
 
     // 2. UI-Only local state (Not in context yet)
     const [showFullEquity, setShowFullEquity] = useState(false);
-    const [stratView, setStratView] = useState<'list' | 'chart'>('list');
+    // stratView moved to StatsPage
     
     // Modals & Forms
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -101,16 +101,8 @@ export default function App() {
         return calculateMetrics(sTrades, portfolios, activePortfolioIds, 'daily', lang, null, null);
     }, [detailStrategy, trades, portfolios, activePortfolioIds, lang]);
     
-    const monthlyStats = useMemo(() => {
-        const year = currentMonth.getFullYear();
-        const month = currentMonth.getMonth();
-        const tradesInMonth = filteredTrades.filter(t => { if (!t.date) return false; const [tY, tM] = t.date.split('-').map(Number); return tY === year && (tM - 1) === month; });
-        const pnl = tradesInMonth.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-        const wins = tradesInMonth.filter(t => (Number(t.pnl) || 0) > 0).length;
-        const count = tradesInMonth.length;
-        const winRate = count > 0 ? (wins / count) * 100 : 0;
-        return { pnl, count, winRate };
-    }, [filteredTrades, currentMonth]);
+    // monthlyStats Logic moved to JournalPage
+
 
     const isStreakAlert = riskStreaks.currentLoss >= maxLossStreak;
     const isDDAlert = Math.abs(metrics.currentDD) >= ddThreshold;
@@ -160,131 +152,29 @@ export default function App() {
                 <Route path="/" element={<Layout lang={lang} onFabClick={() => { setEditingId(null); setForm({ id: '', pnl: 0, date: getLocalDateStr(), amount: '', type: 'profit', strategy: '', note: '', emotion: '', image: '', portfolioId: activePortfolioIds[0] || '' }); setIsModalOpen(true); }} />}>
                     <Route index element={
                         <StatsPage 
-                            metrics={metrics} 
-                            portfolios={portfolios} 
-                            activePortfolioIds={activePortfolioIds} 
-                            setActivePortfolioIds={setActivePortfolioIds}
-                            frequency={frequency}
-                            setFrequency={setFrequency}
-                            lang={lang}
-                            hideAmounts={hideAmounts}
-                            setHideAmounts={setHideAmounts}
-                            chartHeight={chartHeight}
-                            setChartHeight={setChartHeight}
-                            timeRange={timeRange}
-                            setTimeRange={setTimeRange}
-                            customRange={customRange}
-                            setCustomRange={setCustomRange}
-                            setIsDatePickerOpen={setIsDatePickerOpen}
-                            setIsFilterOpen={setIsFilterOpen}
-                            isFilterOpen={isFilterOpen}
-                            hasActiveFilters={hasActiveFilters}
-                            availableStrategies={availableStrategies}
-                            availableEmotions={availableEmotions}
-                            filterStrategy={filterStrategy}
-                            setFilterStrategy={setFilterStrategy}
-                            filterEmotion={filterEmotion}
-                            setFilterEmotion={setFilterEmotion}
-                            stratView={stratView}
-                            setStratView={setStratView}
+                            setIsShareModalOpen={setIsShareModalOpen}
                             detailStrategy={detailStrategy}
                             setDetailStrategy={setDetailStrategy}
-                            ddThreshold={ddThreshold}
-                            showFullEquity={showFullEquity}
-                            setShowFullEquity={setShowFullEquity}
-                            setIsShareModalOpen={setIsShareModalOpen}
-                            syncStatus={syncStatus}
-                            authStatus={authStatus}
-                            user={user}
-                            t={t}
-                            retrySync={triggerCloudBackup}
                         />
                     } />
                     
                     <Route path="journal" element={
                         <JournalPage 
-                            dailyPnlMap={dailyPnlMap} 
-                            currentMonth={currentMonth} 
-                            setCurrentMonth={setCurrentMonth} 
-                            onDateClick={(d: string) => { setForm({ id: '', pnl: 0, date: d, amount: '', type: 'profit', strategy: '', note: '', emotion: '', image: '', portfolioId: activePortfolioIds[0] || '' }); setEditingId(null); setIsModalOpen(true); }} 
-                            monthlyStats={monthlyStats.count > 0 ? monthlyStats : { pnl: 0, count: 0, winRate: 0 }} 
-                            hideAmounts={hideAmounts} 
-                            lang={lang} 
-                            streaks={streaks} 
-                            availableStrategies={availableStrategies}
-                            availableEmotions={availableEmotions}
-                            filterStrategy={filterStrategy} 
-                            setFilterStrategy={setFilterStrategy} 
-                            filterEmotion={filterEmotion} 
-                            setFilterEmotion={setFilterEmotion} 
-                            // Header Props
-                            metrics={metrics}
-                            portfolios={portfolios}
-                            activePortfolioIds={activePortfolioIds}
-                            setActivePortfolioIds={setActivePortfolioIds}
-                            frequency={frequency}
-                            setFrequency={setFrequency}
-                            setHideAmounts={setHideAmounts}
-                            chartHeight={chartHeight}
-                            setChartHeight={setChartHeight}
-                            timeRange={timeRange}
-                            setTimeRange={setTimeRange}
-                            customRange={customRange}
-                            setCustomRange={setCustomRange}
-                            setIsDatePickerOpen={setIsDatePickerOpen}
-                            setIsFilterOpen={setIsFilterOpen}
-                            isFilterOpen={isFilterOpen}
-                            hasActiveFilters={hasActiveFilters}
-                            showFullEquity={showFullEquity}
-                            setShowFullEquity={setShowFullEquity}
                             setIsShareModalOpen={setIsShareModalOpen}
-                            syncStatus={syncStatus}
-                            authStatus={authStatus}
-                            user={user}
-                            t={t}
-                            retrySync={triggerCloudBackup}
+                            onDateClick={(d: string) => { setForm({ id: '', pnl: 0, date: d, amount: '', type: 'profit', strategy: '', note: '', emotion: '', image: '', portfolioId: activePortfolioIds[0] || '' }); setEditingId(null); setIsModalOpen(true); }} 
                         />
                     } />
                     
                     <Route path="logs" element={
                         <LogsPage 
-                            trades={filteredTrades} 
-                            lang={lang} 
-                            hideAmounts={hideAmounts} 
-                            portfolios={portfolios} 
                             onEdit={(t: Trade) => { setForm({...t, amount: String(Math.abs(t.pnl)), type: t.pnl >= 0 ? 'profit' : 'loss', portfolioId: t.portfolioId || ''}); setEditingId(t.id); setIsModalOpen(true); }} 
                             onDelete={actions.deleteTrade} 
-                            availableStrategies={availableStrategies}
-                            availableEmotions={availableEmotions}
-                            filterStrategy={filterStrategy} 
-                            setFilterStrategy={setFilterStrategy} 
-                            filterEmotion={filterEmotion} 
-                            setFilterEmotion={setFilterEmotion} 
                         />
                     } />
                     
                     <Route path="settings" element={
                         <SettingsPage 
-                            lang={lang} 
-                            setLang={setLang} 
-                            trades={trades} 
-                            actions={actions} 
-                            ddThreshold={ddThreshold} 
-                            setDdThreshold={setDdThreshold} 
-                            maxLossStreak={maxLossStreak} 
-                            setMaxLossStreak={setMaxLossStreak} 
-                            lossColor={lossColor} 
-                            setLossColor={setLossColor} 
-                            strategies={strategies} 
-                            emotions={emotions} 
-                            portfolios={portfolios} 
-                            activePortfolioIds={activePortfolioIds} 
-                            setActivePortfolioIds={setActivePortfolioIds} 
-                            onBack={() => {}} // Not needed with Router, link handles back
-                            user={user} 
-                            login={login} 
-                            logout={logout} 
-                            lastBackupTime={lastBackupTime} 
+                            onBack={() => {}} // Not needed with Router
                         />
                     } />
                 </Route>
@@ -299,14 +189,9 @@ export default function App() {
                 setForm={setForm} 
                 onSubmit={(e: React.FormEvent) => { e.preventDefault(); actions.saveTrade({ id: form.id, date: form.date, pnl: form.type === 'profit' ? Math.abs(parseFloat(form.amount || '0')) : -Math.abs(parseFloat(form.amount || '0')), strategy: form.strategy, note: form.note, emotion: form.emotion, image: form.image, portfolioId: form.portfolioId }, editingId); setIsModalOpen(false); }} 
                 isEditing={!!editingId} 
-                strategies={strategies} 
-                emotions={emotions} 
-                portfolios={portfolios} 
-                lang={lang} 
-                metrics={metrics} 
             />
             <StrategyDetailModal strategy={detailStrategy} metrics={strategyMetrics} onClose={() => setDetailStrategy(null)} lang={lang} hideAmounts={hideAmounts} ddThreshold={ddThreshold} />
-            <CustomDateRangeModal isOpen={isDatePickerOpen} onClose={() => setIsDatePickerOpen(false)} onApply={(s: string, e: string) => { setCustomRange({ start: s, end: e }); setTimeRange('CUSTOM'); setIsDatePickerOpen(false); }} initialRange={customRange} lang={lang} />
+            <CustomDateRangeModal isOpen={isDatePickerOpen} onClose={() => setIsDatePickerOpen(false)} onApply={(s: string | null, e: string | null) => { setCustomRange({ start: s, end: e }); setTimeRange('CUSTOM'); setIsDatePickerOpen(false); }} initialRange={customRange} lang={lang} />
             <SyncConflictModal isOpen={isSyncModalOpen} onResolve={onResolveSyncConflict} lang={lang} isSyncing={isSyncing} />
             <ShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} metrics={metrics} lang={lang} />
         </div>

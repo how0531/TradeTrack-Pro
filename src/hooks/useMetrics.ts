@@ -15,7 +15,8 @@ export const useMetrics = (
     filterEmotion: string[],
     timeRange: TimeRange
 ) => {
-    return useMemo(() => {
+    // 1. Filter Trades (Expensive)
+    const filteredTrades = useMemo(() => {
         // 1. Filter by Portfolio
         const relevantTrades = trades.filter(t => {
             const pid = t.portfolioId || 'main';
@@ -55,7 +56,7 @@ export const useMetrics = (
             }
         }
 
-        const filteredTrades = filtered.filter(t => {
+        const result = filtered.filter(t => {
             if (!startDate) return true;
             const d = new Date(t.date);
             if (endDate) return d >= startDate && d <= endDate;
@@ -63,25 +64,50 @@ export const useMetrics = (
         });
 
         // Sort descending by date
-        filteredTrades.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        // 4. Calculate Metrics
-        const metrics = calculateMetrics(filteredTrades, portfolios, activePortfolioIds, frequency, lang, startDate, endDate);
+    }, [trades, activePortfolioIds, filterStrategy, filterEmotion, timeRange, customRange]);
 
-        // 5. Calculate Streaks
-        const streaks = calculateStreaks(filteredTrades);
+    // 2. Calculate Metrics (Dependent on filteredTrades + Frequency) - RECALCS ONLY ON FREQ CHANGE
+    const metrics = useMemo(() => {
+        // Re-derive start/end date for metrics calc normalization if needed or pass null
+        // The original logic calculated dates inside. We should pass the same logic or let calcMetrics handle it.
+        // But calculateMetrics takes startDate/endDate.
+        // We need to replicate the date logic or extract it?
+        // Actually calculateMetrics uses startDate/endDate to Normalize the curve start?
+        // Let's re-calculate dates here cheaply.
+        
+        const now = new Date();
+        let startDate: Date | null = null;
+        let endDate: Date | null = null;
 
-        // 6. Risk Streaks
-        const riskStreaks = streaks; 
+        if (timeRange === '1M') { start: startDate = new Date(); startDate.setMonth(now.getMonth() - 1); startDate.setHours(0,0,0,0); }
+        else if (timeRange === '3M') { startDate = new Date(); startDate.setMonth(now.getMonth() - 3); startDate.setHours(0,0,0,0); }
+        else if (timeRange === 'YTD') { startDate = new Date(now.getFullYear(), 0, 1); startDate.setHours(0,0,0,0); }
+        else if (timeRange === 'CUSTOM' && customRange.start) {
+            startDate = new Date(customRange.start);
+            if (customRange.end) { endDate = new Date(customRange.end); endDate.setHours(23,59,59,999); }
+        }
 
-        // 7. Daily PnL Map
-        const dailyPnlMap: Record<string, number> = {};
+        return calculateMetrics(filteredTrades, portfolios, activePortfolioIds, frequency, lang, startDate, endDate);
+    }, [filteredTrades, portfolios, activePortfolioIds, frequency, lang, timeRange, customRange]);
+
+    // 3. Streaks (Dependent only on filteredTrades)
+    const streaks = useMemo(() => calculateStreaks(filteredTrades), [filteredTrades]);
+    
+    // 4. Risk Streaks (Alias)
+    const riskStreaks = streaks;
+
+    // 5. Daily PnL Map (Dependent only on filteredTrades)
+    const dailyPnlMap = useMemo(() => {
+        const map: Record<string, number> = {};
         filteredTrades.forEach(t => {
             const date = t.date;
-            dailyPnlMap[date] = (dailyPnlMap[date] || 0) + (Number(t.pnl) || 0);
+            map[date] = (map[date] || 0) + (Number(t.pnl) || 0);
         });
+        return map;
+    }, [filteredTrades]);
 
-        return { filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap };
-
-    }, [trades, portfolios, activePortfolioIds, frequency, lang, customRange, filterStrategy, filterEmotion, timeRange]);
+    return { filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap };
 };
+

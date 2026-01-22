@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, setDoc, onSnapshot, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, Timestamp, Firestore } from 'firebase/firestore';
 import { useLocalStorage } from './useLocalStorage';
 import { SyncStatus, User, Trade, Portfolio } from '../types';
 import { stableStringify } from '../utils/storage';
@@ -17,7 +17,7 @@ interface SyncData {
 interface UseSyncProps {
     user: User | null;
     authStatus: string;
-    db: any; // Firestore instance type is complex, keeping as any or could use Firestore type if imported
+    db: Firestore; 
     data: SyncData;
     onPull: (data: Partial<SyncData> & { lastUpdated?: any }) => void; // Callback when data is pulled from cloud
 }
@@ -79,6 +79,8 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
             if (docSnap.exists()) {
                 const cloudData = docSnap.data();
                 
+                if (docSnap.metadata.hasPendingWrites) return; // Ignore local writes (latency compensation)
+                
                 if (syncStatusRef.current === 'saving') return; 
 
                 const localData = dataRef.current;
@@ -107,19 +109,33 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                     const cloudStr = stableStringify(cloudData.trades);
                     
                     if (localStr !== cloudStr) {
-                        if (!lastBackupTimeRef.current) {
+                        // Relaxed Check: Only flag conflict if we have NO record of ever syncing, 
+                        // AND we have local data.
+                        const hasEverSynced = !!lastBackupTimeRef.current || !!lastSyncTimeStrRef.current;
+                        
+                        if (!hasEverSynced) {
                              setIsSyncModalOpen(true);
                         } else {
                              const cloudTime = cloudData.lastUpdated?.toDate().getTime();
-                             const localTime = lastBackupTimeRef.current.getTime();
+                             // Use backup time OR parse the string from LS
+                             const localTime = lastBackupTimeRef.current?.getTime() || (lastSyncTimeStrRef.current ? new Date(lastSyncTimeStrRef.current).getTime() : 0);
+                             
+                             // If cloud is significantly newer (>5s), and data differs -> Conflict
                              if (cloudTime && cloudTime > localTime + 5000) {
                                  setIsSyncModalOpen(true);
                              } else {
+                                 // Otherwise, assume local is newer or equal (latency), or harmless drift.
+                                 // Auto-resolve to 'synced' if we just saved or close enough.
+                                 // Actually, if data differs and cloud is OLDER, efficient overwrite (we just saved).
+                                 // If data differs and cloud is NEWER, we truly have a conflict?
+                                 // But we just filtered cloudTime > localTime + 5000.
+                                 // So here cloud is NOT significantly newer.
                                  setSyncStatus('synced');
                                  setLastBackupTime(cloudData.lastUpdated?.toDate());
                                  if (cloudData.lastUpdated) setLastSyncTimeStr(cloudData.lastUpdated.toDate().toISOString());
                              }
                         }
+
                     } else {
                         setSyncStatus('synced');
                         setLastBackupTime(cloudData.lastUpdated?.toDate());

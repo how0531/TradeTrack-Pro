@@ -171,7 +171,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 8. Import/Export State & Handlers (Refactored from old useTradeData)
     const [pendingImport, setPendingImport] = useState<any>(null);
 
-    const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>, t: any) => {
+    const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>, t: Translation) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
@@ -246,7 +246,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTimeout(triggerCloudBackup, 0);
     };
 
-    const resetAllData = async (t: any) => {
+    const resetAllData = async (t: Translation) => {
         if (window.confirm(t.resetConfirm)) {
             try {
                 // Cloud Reset
