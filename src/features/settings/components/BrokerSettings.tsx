@@ -308,8 +308,17 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
                                 onClick={handleTestConnection}
                                 className="flex-2 py-4 px-8 rounded-2xl bg-[#C8B085] text-black font-bold text-xs uppercase hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-[#C8B085]/10 disabled:opacity-50"
                             >
-                                {isTesting ? <Loader2 className="animate-spin" size={16}/> : <Check size={16}/>}
-                                {isTesting ? '驗證中...' : '儲存並驗證連線'}
+                                {isTesting ? (
+                                    <>
+                                        <Loader2 className="animate-spin" size={16}/>
+                                        <span>驗證中...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check size={16}/>
+                                        <span>儲存並驗證連線</span>
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>
