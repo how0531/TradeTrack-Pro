@@ -188,6 +188,15 @@ def login_and_fetch_pnl(
         total_realized_pnl = 0
 
         if start_date and end_date:
+            # 只有在獲取損益時才下載合約，以確保能顯示股名
+            # 這樣可以保持單純登入驗證 (Profile) 的速度
+            try:
+                print("DEBUG: Fetching contracts for stock names...", flush=True)
+                api.fetch_contracts(contract_download=True)
+                print("DEBUG: Contracts fetched successfully.", flush=True)
+            except Exception as e:
+                print(f"[WARNING] Contract fetch failed: {e}", flush=True)
+
             total_pnl = 0
             daily_map = {}
             code_name_map = {}
@@ -271,11 +280,21 @@ def login_and_fetch_pnl(
         }
 
     except Exception as login_err:
+        print(f"[ERROR] Login exception: {str(login_err)}", flush=True)
         return {
             "status": "error",
             "message": f"Login Failed: {str(login_err)}",
         }
     finally:
+        # 確保 API 連線被正確關閉，避免 "Too Many Connections" 錯誤
+        try:
+            if "api" in locals():
+                print("DEBUG: Logging out from Shioaji...", flush=True)
+                api.logout()
+                print("DEBUG: Logout successful.", flush=True)
+        except Exception as logout_err:
+            print(f"[WARNING] Logout error (non-critical): {logout_err}", flush=True)
+
         # Cleanup temp file
         if temp_ca_path and os.path.exists(temp_ca_path):
             try:

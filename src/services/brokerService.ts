@@ -89,13 +89,15 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 caPath: config.caPath,
                 caPassword: config.caPassword,
                 caContent: config.caContent, // 傳送 Base64 憑證內容
+                branchCode: config.branchCode, // ✅ 傳遞分公司代碼
                 startDate: startDate.toISOString().split('T')[0],
                 endDate: endDate.toISOString().split('T')[0]
             };
             console.log('Sending PNL request to backend:', {
                 url: `${API_BASE}/api/broker/pnl`,
                 dateRange: `${payload.startDate} to ${payload.endDate}`,
-                personId: payload.personId
+                personId: payload.personId,
+                branchCode: payload.branchCode // ✅ 顯示分公司代碼
             });
 
             const response = await fetch(`${API_BASE}/api/broker/pnl`, {

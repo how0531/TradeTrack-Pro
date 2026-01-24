@@ -197,19 +197,62 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         </div>
                                         {accountChoices.map(acc => (
                                             <button
+                                                type="button"
                                                 key={acc.account_id}
-                                                onClick={() => {
-                                                    handleChange('branchCode', acc.branch_code);
-                                                    handleChange('branch', acc.branch_name);
-                                                    setTimeout(handleTestConnection, 100);
+                                                disabled={isTesting}
+                                                onClick={async () => {
+                                                    console.log('Branch selected:', acc.branch_code, acc.branch_name);
+                                                    setErrorMsg(null);
+                                                    setIsTesting(true);
+                                                    
+                                                    // 先更新配置，確保 branchCode 已設置
+                                                    const updatedConfig = {
+                                                        ...localConfig,
+                                                        branchCode: acc.branch_code,
+                                                        branch: acc.branch_name
+                                                    };
+                                                    setLocalConfig(updatedConfig);
+                                                    
+                                                    // 稍微延遲以確保狀態更新完成
+                                                    await new Promise(resolve => setTimeout(resolve, 50));
+                                                    
+                                                    // 使用更新後的配置重新驗證
+                                                    try {
+                                                        const result = await fetchBrokerProfile(updatedConfig);
+                                                        
+                                                        if (result.status === 'success') {
+                                                            const finalConfig = {
+                                                                ...updatedConfig,
+                                                                isConnected: true,
+                                                                brokerUsername: result.username,
+                                                                environment: result.environment
+                                                            };
+                                                            
+                                                            if (isEditing === 'new') onAdd(finalConfig);
+                                                            else onUpdate(updatedConfig.id, finalConfig);
+                                                            
+                                                            setIsEditing(null);
+                                                            setAccountChoices([]);
+                                                        } else {
+                                                            setErrorMsg('驗證失敗，請重試');
+                                                        }
+                                                    } catch (error: any) {
+                                                        setErrorMsg(error?.message || '連線失敗');
+                                                    } finally {
+                                                        setIsTesting(false);
+                                                    }
                                                 }}
-                                                className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085]/10 border-[#C8B085]/50' : 'bg-black/40 border-white/5 hover:border-white/20'}`}
+                                                className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085]/10 border-[#C8B085]/50' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}`}
                                             >
                                                 <div className="flex flex-col items-start font-mono">
                                                     <span className="text-xs font-bold text-white">永豐金 - {acc.branch_name} ({acc.branch_code})</span>
                                                     <span className="text-[9px] text-zinc-600 mt-1">{acc.account_id}</span>
                                                 </div>
-                                                <div className={`w-4 h-4 rounded-full border-2 ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085] border-[#C8B085]' : 'border-white/10'}`} />
+                                                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085] border-[#C8B085]' : 'border-white/10'}`}>
+                                                    {isTesting && localConfig.branchCode === acc.branch_code && (
+                                                        <Loader2 size={10} className="animate-spin text-black" />
+                                                    )}
+                                                </div>
                                             </button>
                                         ))}
                                     </div>
