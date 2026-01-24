@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { X, RefreshCw, Calendar as CalendarIcon, CheckCircle2, AlertTriangle, ShieldCheck, MessageSquare, Check } from 'lucide-react';
 import { Trade, BrokerConfig, Portfolio } from '../../types';
 import { fetchBrokerPnl, fetchBrokerProfile } from '../../services/brokerService';
+import { getLocalDateStr } from '../../utils/format';
 
 interface WizardProps {
     isOpen: boolean;
@@ -57,8 +58,8 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
     const [step, setStep] = useState<1 | 2>(1);
     
     // Step 1: Config
-    const [startDate, setStartDate] = useState(currentDate.toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState(currentDate.toISOString().split('T')[0]);
+    const [startDate, setStartDate] = useState(getLocalDateStr());
+    const [endDate, setEndDate] = useState(getLocalDateStr());
     const [targetPortfolioId, setTargetPortfolioId] = useState(activePortfolioIds[0] || portfolios[0]?.id || 'main');
     const [selectedConfigIds, setSelectedConfigIds] = useState<string[]>(activeId ? [activeId] : (configs[0] ? [configs[0].id] : []));
     
@@ -293,18 +294,29 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                                                     {selectedConfigIds.includes(config.id) && <Check size={10} className="text-black stroke-[4]"/>}
                                                 </div>
                                                 <div className="flex flex-col gap-0.5">
+                                                    {/* Top Line: Broker - Branch */}
                                                     <div className="flex items-center gap-2">
                                                         <span className={`text-sm font-bold tracking-wide ${selectedConfigIds.includes(config.id) ? 'text-white' : 'text-slate-400'}`}>
-                                                            {config.alias || config.brokerUsername || (config.provider === 'shioaji' ? '永豐金' : '模擬券商')}
+                                                            {config.provider === 'shioaji' ? '永豐金' : 'Broker'} - {config.branch || (lang === 'zh' ? '未知分公司' : 'Unknown Branch')}
                                                         </span>
                                                         {config.isConnected && (
                                                             <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-black text-[8px] uppercase tracking-tighter border border-emerald-500/20">已驗證</span>
                                                         )}
                                                     </div>
-                                                    <div className="text-[10px] text-zinc-500 font-bold flex items-center gap-1.5 mt-0.5">
-                                                        {config.alias && config.brokerUsername && <span>{config.brokerUsername}</span>}
-                                                        {config.alias && config.brokerUsername && <span className="opacity-30">•</span>}
-                                                        <span>{config.branch || (config.provider === 'shioaji' ? '永豐金' : '模擬')}</span>
+                                                    
+                                                    {/* Bottom Line: Name | Person ID */}
+                                                    <div className="text-[10px] text-zinc-500 font-bold flex items-center gap-1.5 mt-0.5 font-mono">
+                                                        <span className="text-zinc-400">
+                                                            {(() => {
+                                                                const name = config.alias || config.brokerUsername || 'User';
+                                                                if (name.includes('永豐金')) {
+                                                                    return name.split('永豐金')[0].trim();
+                                                                }
+                                                                return name;
+                                                            })()}
+                                                        </span>
+                                                        <span className="opacity-30">|</span>
+                                                        <span className="text-zinc-500">{config.personId}</span>
                                                     </div>
                                                 </div>
                                             </div>
