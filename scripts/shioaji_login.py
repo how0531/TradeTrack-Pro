@@ -71,6 +71,7 @@ def login_and_fetch_pnl(
 
     # 1. 如果有傳入 Base64 內容，優先建立臨時檔案
     if ca_content:
+        print(f"DEBUG: Processing Base64 CA Content (Length: {len(ca_content)})")
         try:
             # 建立臨時檔案
             with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as tf:
@@ -78,12 +79,20 @@ def login_and_fetch_pnl(
                 tf.write(cert_data)
                 temp_ca_path = tf.name
             ca_path = temp_ca_path
-            print(f"DEBUG: Using temporary CA from Base64: {ca_path}")
+            print(f"DEBUG: Temporary CA created successfully at: {ca_path}")
+            print(f"DEBUG: File exists check: {os.path.exists(ca_path)}")
+            print(f"DEBUG: File size: {os.path.getsize(ca_path)} bytes")
         except Exception as e:
-            print(f"ERROR: Failed to process ca_content: {e}")
+            print(f"ERROR: Failed to create temporary CA file: {e}")
+            print(f"ERROR: Exception type: {type(e)}")
+            import traceback
+
+            traceback.print_exc()
+    else:
+        print("DEBUG: No Base64 CA content provided in request.")
 
     # 2. 如果沒有臨時檔案，執行既有的 Fallback 邏輯
-    elif not os.path.exists(ca_path):
+    if not temp_ca_path and not os.path.exists(ca_path):
         # 1. 優先嘗試使用身分證字號命名的檔名 (例如 R124731212.pfx)
         id_fallback = os.path.join(os.path.dirname(__file__), "ca", f"{person_id}.pfx")
 
