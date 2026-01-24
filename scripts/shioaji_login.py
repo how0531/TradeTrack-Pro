@@ -196,11 +196,13 @@ def login_and_fetch_pnl(
 
             # Use username if available, otherwise use person_id or account_id
             origin_username = getattr(stock_acc, "username", "")
-            if not origin_username or origin_username.lower() == "user":
-                origin_username = person_id
 
-            # Format as requested: 【Name】
-            username = f"【{origin_username}】"
+            # Logic: If valid name found -> 【Name】
+            #        If fallback to ID   -> ID (no brackets)
+            if origin_username and origin_username.lower() != "user":
+                username = f"【{origin_username}】"
+            else:
+                username = person_id
 
             # Branch Name resolution
             branch_name = BRANCH_MAP.get(branch_code, "未知分公司")
