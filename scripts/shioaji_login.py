@@ -327,14 +327,19 @@ def login_and_fetch_pnl(
                     code_name_map = {}
 
                     for item in pnl_data:
-                        pnl_val = getattr(item, "pnl", 0)
-                        tax_val = getattr(item, "tax", 0)
-                        fee_val = getattr(item, "fee", 0)
+                        # User Spec: 'pnl' is the net realized amount (tax/fee deducted)
+                        realized = getattr(item, "pnl", 0)
+
+                        # User Spec: 'pr_ratio' is the yield/profit ratio
+                        yield_ratio = getattr(item, "pr_ratio", 0)
+                        yield_pct = float(yield_ratio) * 100
+
                         raw_date = getattr(item, "date", start_date)
                         item_date = raw_date.replace("/", "-")
                         code = getattr(item, "code", "N/A")
+                        order_no = getattr(item, "dseq", getattr(item, "seqno", "N/A"))
 
-                        # 嘗試取得股票名稱
+                        # Cache contract name lookups
                         if code not in code_name_map:
                             try:
                                 contract = api.Contracts.Stocks[code]
@@ -347,21 +352,20 @@ def login_and_fetch_pnl(
                         name = code_name_map.get(code, "")
                         display_code = f"{code} {name}".strip()
 
-                        realized = pnl_val - tax_val - fee_val
                         total_pnl += realized
 
                         details.append(
                             {
                                 "date": item_date,
-                                "category": "現股",
+                                "category": getattr(item, "cond", "現股"),
                                 "code": display_code,
                                 "quantity": int(getattr(item, "quantity", 0)),
                                 "price": float(getattr(item, "price", 0)),
                                 "buyAmt": int(getattr(item, "buy_amt", 0)),
                                 "sellAmt": int(getattr(item, "sell_amt", 0)),
                                 "pnl": int(realized),
-                                "yield": float(getattr(item, "yield", 0)),
-                                "orderNo": getattr(item, "order_no", "N/A"),
+                                "yield": round(yield_pct, 2),
+                                "orderNo": order_no,
                                 "currency": "台幣",
                             }
                         )
