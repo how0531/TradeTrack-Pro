@@ -239,6 +239,7 @@ def login_and_fetch_pnl(
             )
 
             # 3. Activate CA
+            ca_status = "Not Attempted"
             try:
                 # Debug logging for CA path
                 abs_ca_path = os.path.abspath(ca_path)
@@ -264,17 +265,13 @@ def login_and_fetch_pnl(
                     person_id=person_id,
                 )
                 print("[LOGIN DEBUG] CA Activated Successfully", flush=True)
+                ca_status = "Success"
             except Exception as e:
-                err_msg = f"憑證啟用失敗: {str(e)} (Path: {ca_path}, Exists: {os.path.exists(ca_path)})"
-                print(f"[ERROR] {err_msg}", flush=True)
-                import traceback
-
-                traceback.print_exc()
-                return {
-                    "status": "error",
-                    "message": err_msg,
-                    "environment": environment,
-                }
+                # User asked if P&L can function without CA. We allow the script to proceed to test this.
+                err_msg = f"憑證啟用失敗 (警告: 略過): {str(e)} (Path: {ca_path}, Exists: {os.path.exists(ca_path)})"
+                print(f"[WARNING] {err_msg}", flush=True)
+                # We log it but DO NOT return error. Script proceeds.
+                ca_status = f"Failed: {str(e)}"
 
             # 4. Return Login Success Info + P&L Placeholder
 
