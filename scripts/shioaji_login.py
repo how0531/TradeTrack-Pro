@@ -89,7 +89,6 @@ def login_and_fetch_pnl(
         accounts = api.login(
             api_key=api_key,
             secret_key=secret_key,
-            person_id=person_id,
             contracts_timeout=10000,
         )
 
