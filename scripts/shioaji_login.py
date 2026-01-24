@@ -195,9 +195,120 @@ def login_and_fetch_pnl(
             )
 
             # Use username if available, otherwise use person_id or account_id
+            username = getattr(stock_acc, "username", person_id) or str(stock_acc.account_id)
+            
+            # Override "User" if it mistakenly appears (common Shioaji default)
+            if username == "User" and person_id:
+                username = person_id
 
-            # This means the P&L fetching logic (from "# 3. Activate CA" onwards) will become unreachable.
-            # I will proceed with this interpretation.
+            print(f"[LOGIN DEBUG] Selected Account: {stock_acc.account_id}, Branch: {branch_code}, User: {username}", flush=True)
+
+            # 3. Activate CA
+            print(f"[LOGIN DEBUG] Activating CA: {ca_path}", flush=True)
+            try:
+                api.activate_ca(
+                    ca_path=ca_path,
+                    ca_passwd=ca_password,
+                    person_id=person_id,
+                )
+                print("[LOGIN DEBUG] CA Activated Successfully", flush=True)
+            except Exception as e:
+                print(f"[ERROR] CA Activation Failed: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                return {
+                    "status": "error", 
+                    "message": f"CA Activation Failed: {str(e)}"
+                }
+
+            # 4. Return Login Success Info + P&L Placeholder
+            # (If the original script logic was to fetch P&L here, we should let it proceed or call it.)
+            # Based on app.py usage, it expects P&L data if getting P&L, but app.py has /profile and /pnl endpoints.
+            # API /profile expects just login info. API /pnl expects P&L.
+            # shioaji_login.py usually handles both?
+            # Let's look at the function signature... arguments 'start_date', 'end_date'.
+            
+            details = []
+            daily_stats = []
+            total_realized_pnl = 0
+
+            if start_date and end_date:
+                # 4. Fetch P&L (Realized)
+                if not start_date:
+                    start_date = datetime.now().strftime("%Y-%m-%d")
+                if not end_date:
+                    end_date = start_date
+
+                # api.list_profit_loss returns realized P&L within the range
+                target_account = stock_acc if stock_acc else api.stock_account
+                print(
+                    f"[LOGIN DEBUG] Requesting P&L for account: {target_account.account_id if target_account else 'NONE'}",
+                    flush=True,
+                )
+
+                pnl_data = api.list_profit_loss(target_account, start_date, end_date)
+
+                total_pnl = 0
+                details = []
+                daily_map = {}
+
+                if pnl_data:
+                    # 建立代碼快取以加速名稱查閱
+                    code_name_map = {}
+
+                    for item in pnl_data:
+                        pnl_val = getattr(item, "pnl", 0)
+                        tax_val = getattr(item, "tax", 0)
+                        fee_val = getattr(item, "fee", 0)
+                        raw_date = getattr(item, "date", start_date)
+                        item_date = raw_date.replace("/", "-")
+                        code = getattr(item, "code", "N/A")
+
+                        # 嘗試取得股票名稱
+                        if code not in code_name_map:
+                            try:
+                                contract = api.Contracts.Stocks[code]
+                                code_name_map[code] = (
+                                    contract.name if hasattr(contract, "name") else ""
+                                )
+                            except:
+                                code_name_map[code] = ""
+
+                        name = code_name_map.get(code, "")
+                        display_code = f"{code} {name}".strip()
+
+                        realized = pnl_val - tax_val - fee_val
+                        total_pnl += realized
+
+                        details.append(
+                            {
+                                "date": item_date,
+                                "category": "現股",
+                                "code": display_code,
+                                "quantity": int(getattr(item, "quantity", 0)),
+                                "price": float(getattr(item, "price", 0)),
+                                "buyAmt": int(getattr(item, "buy_amt", 0)),
+                                "sellAmt": int(getattr(item, "sell_amt", 0)),
+                                "pnl": int(realized),
+                                "yield": float(getattr(item, "yield", 0)),
+                                "orderNo": getattr(item, "order_no", "N/A"),
+                                "currency": "台幣",
+                            }
+                        )
+
+                        if item_date not in daily_map:
+                            daily_map[item_date] = 0
+                        daily_map[item_date] += realized
+
+                # Convert simple map to list of objects
+                daily_results = [{"date": k, "pnl": int(v)} for k, v in daily_map.items()]
+                total_realized_pnl = int(total_pnl)
+                daily_stats = daily_results
+            else:
+                print("[LOGIN DEBUG] No start_date/end_date provided, skipping P&L fetch.", flush=True)
+                daily_stats = []
+                details = []
+                total_realized_pnl = 0
 
             return {
                 "status": "success",
@@ -206,11 +317,13 @@ def login_and_fetch_pnl(
                 "branch_code": branch_code,
                 "username": username,
                 "person_id": person_id,
-                "branch": "永豐金" if branch_code else "Unknown",
+                "branch": BRANCH_MAP.get(branch_code, "未知分公司"),
                 "account_id": stock_acc.account_id,
                 "environment": environment,
-                "total_pnl": 0,
-                "details_count": 0,
+                "total_pnl": total_realized_pnl,
+                "daily_results": daily_stats,
+                "details": details,
+                "details_count": len(details),
             }
         else:
             # Capture Public IP for diagnosis
@@ -229,98 +342,6 @@ def login_and_fetch_pnl(
                 "message": f"Login Failed. Server IP: {public_ip}. Debug Info: {'; '.join(debug_logs)}",
             }
 
-        # The following P&L fetching logic is now unreachable due to the early returns above.
-        # If the intention was to *add* these returns while *still* fetching P&L,
-        # the structure of the provided snippet would need to be different.
-        # As per instructions, I'm applying the snippet as provided.
-
-        # 3. Activate CA
-        print(f"[LOGIN DEBUG] Activating CA: {ca_path}", flush=True)
-        api.activate_ca(ca_path=ca_path, ca_passwd=ca_password, person_id=person_id)
-
-        # 4. Fetch P&L (Realized)
-        if not start_date:
-            start_date = datetime.now().strftime("%Y-%m-%d")
-        if not end_date:
-            end_date = start_date
-
-        # api.list_profit_loss returns realized P&L within the range
-        target_account = stock_acc if stock_acc else api.stock_account
-        print(
-            f"[LOGIN DEBUG] Requesting P&L for account: {target_account.account_id if target_account else 'NONE'}",
-            flush=True,
-        )
-
-        pnl_data = api.list_profit_loss(target_account, start_date, end_date)
-
-        total_pnl = 0
-        details = []
-        daily_map = {}
-
-        if pnl_data:
-            # 建立代碼快取以加速名稱查閱
-            code_name_map = {}
-
-            for item in pnl_data:
-                pnl_val = getattr(item, "pnl", 0)
-                tax_val = getattr(item, "tax", 0)
-                fee_val = getattr(item, "fee", 0)
-                raw_date = getattr(item, "date", start_date)
-                item_date = raw_date.replace("/", "-")
-                code = getattr(item, "code", "N/A")
-
-                # 嘗試取得股票名稱
-                if code not in code_name_map:
-                    try:
-                        contract = api.Contracts.Stocks[code]
-                        code_name_map[code] = (
-                            contract.name if hasattr(contract, "name") else ""
-                        )
-                    except:
-                        code_name_map[code] = ""
-
-                name = code_name_map.get(code, "")
-                display_code = f"{code} {name}".strip()
-
-                realized = pnl_val - tax_val - fee_val
-                total_pnl += realized
-
-                details.append(
-                    {
-                        "date": item_date,
-                        "category": "現股",
-                        "code": display_code,
-                        "quantity": int(getattr(item, "quantity", 0)),
-                        "price": float(getattr(item, "price", 0)),
-                        "buyAmt": int(getattr(item, "buy_amt", 0)),
-                        "sellAmt": int(getattr(item, "sell_amt", 0)),
-                        "pnl": int(realized),
-                        "yield": float(getattr(item, "yield", 0)),
-                        "orderNo": getattr(item, "order_no", "N/A"),
-                        "currency": "台幣",
-                    }
-                )
-
-                if item_date not in daily_map:
-                    daily_map[item_date] = 0
-                daily_map[item_date] += realized
-
-        # Convert simple map to list of objects
-        daily_results = [{"date": k, "pnl": int(v)} for k, v in daily_map.items()]
-
-        return {
-            "status": "success",
-            "start_date": start_date,
-            "end_date": end_date,
-            "total_pnl": int(total_pnl),
-            "daily_results": daily_results,
-            "details": details,
-            "details_count": len(details),
-            "environment": "simulation" if simulation else "production",
-            "branch_code": branch_code,
-            "branch": BRANCH_MAP.get(branch_code, "未知分公司"),
-            "username": username,
-        }
     except Exception as e:
         return {
             "status": "error",
