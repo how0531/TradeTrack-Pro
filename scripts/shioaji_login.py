@@ -8,6 +8,54 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 
+BRANCH_MAP = {
+    "9A95": "經紀部",
+    "9A91": "松山",
+    "9A92": "萬盛",
+    "9A89": "敦北",
+    "9A9d": "古亭",
+    "9A9D": "忠孝",
+    "9A9g": "內湖",
+    "9A9G": "天母",
+    "9A9R": "信義",
+    "9A9S": "南京",
+    "9A9U": "中正",
+    "9A9Z": "復興",
+    "9A9B": "中和",
+    "9A9H": "新莊",
+    "9A9i": "新店",
+    "9A9J": "板新",
+    "9A9K": "三重",
+    "9A9Y": "板盛",
+    "9A98": "大園",
+    "9A99": "中壢",
+    "9A9N": "桃盛",
+    "9A9x": "桃園",
+    "9A97": "新竹",
+    "9A9X": "竹科",
+    "9A9P": "竹北",
+    "9A9Q": "豐原",
+    "9A9L": "台中",
+    "9A9W": "市政",
+    "9A9M": "南投",
+    "9A79": "埔里",
+    "9A9s": "彰化",
+    "9A9C": "員林",
+    "9A9j": "嘉義",
+    "9A9b": "虎尾",
+    "9A9c": "永康",
+    "9A9h": "台南",
+    "9A9e": "高雄",
+    "9A9r": "北高雄",
+    "9A61": "鳳山",
+    "9A9a": "苓雅",
+    "9A9q": "潮州",
+    "9A69": "屏東",
+    "9A81": "匯立",
+    "F002": "模擬分公司",
+}
+
+
 def login_and_fetch_pnl(
     api_key,
     secret_key,
@@ -80,49 +128,49 @@ def login_and_fetch_pnl(
         branch_code = "Unknown"
         username = "User"
 
-        # Priority 1: Look for a Stock Account that matches person_id (if available in acc)
-        # Priority 2: Look for any Stock Account ("S")
+        # Priority 1: Look for any Stock Account ("S" or "s")
         stock_acc = None
 
         # Try to find the BEST match
         for acc in accounts:
-            if acc.account_type == "S":
+            acc_type = str(getattr(acc, "account_type", "")).upper()
+            if acc_type == "S":
                 if not stock_acc:
                     stock_acc = acc
-                # If we find one that matches the provided credentials ID, that's likely the one
+                # If we find one that matches the provided credentials ID, that's definitely it
+                # Some accounts hide person_id, so we also check account_id
                 if hasattr(acc, "person_id") and acc.person_id == person_id:
                     stock_acc = acc
                     break
 
+        # Fallback 2: If no "S" account, take the first account available
+        if not stock_acc and len(accounts) > 0:
+            stock_acc = accounts[0]
+            print(
+                f"DEBUG: No 'S' type account found, falling back to first account: {stock_acc.account_id}"
+            )
+
         if stock_acc:
-            # broker_id is usually the branch code (4 digits)
             raw_broker_id = str(getattr(stock_acc, "broker_id", "Unknown")).strip()
             # Most Shioaji branch codes are 4 chars (e.g., 9A9J)
             branch_code = (
                 raw_broker_id[:4] if len(raw_broker_id) >= 4 else raw_broker_id
             )
-            username = getattr(stock_acc, "username", "User")
-            print(
-                f"DEBUG: Selected Stock Account: {stock_acc.account_id}, Branch: {branch_code}, User: {username}",
-                flush=True,
+
+            # Use username if available, otherwise use person_id or account_id
+            username = getattr(
+                stock_acc, "username", person_id if person_id else stock_acc.account_id
             )
-        elif accounts and len(accounts) > 0:
-            # Fallback to first account if no stock account found
-            stock_acc = accounts[0]
-            raw_broker_id = str(getattr(stock_acc, "broker_id", "Unknown")).strip()
-            branch_code = (
-                raw_broker_id[:4] if len(raw_broker_id) >= 4 else raw_broker_id
-            )
-            username = getattr(stock_acc, "username", "User")
+
             print(
-                f"DEBUG: No specific stock account found. Using first found: {stock_acc.account_id}, Branch: {branch_code}",
+                f"DEBUG: Selected Account: {stock_acc.account_id}, Branch: {branch_code}, User: {username}",
                 flush=True,
             )
         else:
             print("DEBUG: No accounts found at all.", flush=True)
             return {
                 "status": "error",
-                "message": "No valid account found in this login session.",
+                "message": "No accounts found for this user in Shioaji login.",
             }
 
         # 3. Activate CA
@@ -209,6 +257,7 @@ def login_and_fetch_pnl(
             "details_count": len(details),
             "environment": "simulation" if simulation else "production",
             "branch_code": branch_code,
+            "branch": BRANCH_MAP.get(branch_code, "未知分公司"),
             "username": username,
         }
     except Exception as e:
