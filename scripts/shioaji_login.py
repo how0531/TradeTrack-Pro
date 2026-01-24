@@ -239,8 +239,25 @@ def login_and_fetch_pnl(
             )
 
             # 3. Activate CA
-            print(f"[LOGIN DEBUG] Activating CA: {ca_path}", flush=True)
             try:
+                # Debug logging for CA path
+                abs_ca_path = os.path.abspath(ca_path)
+                ca_exists = os.path.exists(ca_path)
+                print(
+                    f"[LOGIN DEBUG] Activating CA. Path: {ca_path} (Abs: {abs_ca_path}), Exists: {ca_exists}",
+                    flush=True,
+                )
+
+                if not ca_exists:
+                    # Try CWD fallback if path is relative and not found
+                    cwd_path = os.path.join(os.getcwd(), os.path.basename(ca_path))
+                    if os.path.exists(cwd_path):
+                        print(
+                            f"[LOGIN DEBUG] CA found in CWD, using: {cwd_path}",
+                            flush=True,
+                        )
+                        ca_path = cwd_path
+
                 api.activate_ca(
                     ca_path=ca_path,
                     ca_passwd=ca_password,
@@ -248,11 +265,16 @@ def login_and_fetch_pnl(
                 )
                 print("[LOGIN DEBUG] CA Activated Successfully", flush=True)
             except Exception as e:
-                print(f"[ERROR] CA Activation Failed: {e}", flush=True)
+                err_msg = f"憑證啟用失敗: {str(e)} (Path: {ca_path}, Exists: {os.path.exists(ca_path)})"
+                print(f"[ERROR] {err_msg}", flush=True)
                 import traceback
 
                 traceback.print_exc()
-                return {"status": "error", "message": f"CA Activation Failed: {str(e)}"}
+                return {
+                    "status": "error",
+                    "message": err_msg,
+                    "environment": environment,
+                }
 
             # 4. Return Login Success Info + P&L Placeholder
 
