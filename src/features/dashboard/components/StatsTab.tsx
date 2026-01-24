@@ -1,33 +1,41 @@
-
 // [Manage] Last Updated: 2024-05-22
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { TrendingUp, List, ScatterChart as ScatterIcon, X, Calendar } from 'lucide-react';
 import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, ReferenceLine, ScatterChart, Scatter, ZAxis, BarChart, ReferenceArea } from 'recharts';
-import { StrategyListView } from '../../features/analytics/StrategyListView';
-import { THEME, I18N } from '../../constants';
-import { getPnlColor, formatCurrency, formatDecimal, formatChartAxisDate, formatCompactNumber, formatDate } from '../../utils/format';
-import { Metrics, StrategyStat, Lang } from '../../types';
-import { useTradeContext } from '../../context/TradeContext';
+import { StrategyListView } from '../../analytics/StrategyListView';
+import { THEME, I18N } from '../../../constants';
+import { getPnlColor, formatCurrency, formatDecimal, formatChartAxisDate, formatCompactNumber, formatDate } from '../../../utils/format';
+import { Metrics, StrategyStat, StatsChartProps, Lang } from '../../../types';
+import { vibrate } from '../../../utils/haptics';
 
-// Interfaces removed (now defined locally or unused)
+interface StatsCommonProps {
+    metrics: Metrics;
+    lang: Lang;
+    hideAmounts: boolean;
+    showPurePnl?: boolean; // Optional to avoid breaking other usages immediately if any
+}
+
+interface StatsContentProps extends StatsCommonProps {
+    stratView: 'list' | 'chart';
+    setStratView: (v: 'list' | 'chart') => void;
+    detailStrategy: string | null;
+    setDetailStrategy: (s: string | null) => void;
+    hasActiveFilters: boolean;
+    setFilterStrategy: (s: string[]) => void;
+    setFilterEmotion: (e: string[]) => void;
+    ddThreshold: number;
+}
 
 // --- INTERNAL COMPONENT: StatCard ---
-const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName, unit }: any) => (
+const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName }: any) => (
     <div className={`p-3 rounded-xl border flex flex-col items-center justify-center min-h-[72px] relative overflow-hidden group transition-colors shadow-lg shadow-black/20 backdrop-blur-md ${className || 'border-white/5 bg-[#1A1C20]/40 hover:bg-[#1A1C20]/60'}`}>
         <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-        <div className="flex items-baseline gap-0.5 mb-0.5">
-            <span 
-                className={`text-2xl font-black font-barlow-numeric tracking-tight ${valueClassName || ''}`} 
-                style={{ color: valueColor || '#E0E0E0' }}
-            >
-                {value}
-            </span>
-            {unit && (
-                <span className="text-xs font-bold opacity-60 font-barlow-numeric" style={{ color: valueColor || '#E0E0E0' }}>
-                    {unit}
-                </span>
-            )}
-        </div>
+        <span 
+            className={`text-lg font-bold font-barlow-numeric tracking-tight mb-0.5 ${valueClassName || ''}`} 
+            style={{ color: valueColor || '#E0E0E0' }}
+        >
+            {value}
+        </span>
         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
             {label}
             {subLabel && <span className="opacity-50 text-[8px]">({subLabel})</span>}
@@ -36,7 +44,7 @@ const StatCard = ({ label, value, valueColor, subLabel, className, valueClassNam
 );
 
 // --- TOOLTIPS ---
-const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios }: any) => {
+const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios, showPurePnl }: any) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
         const t = I18N[lang] || I18N['zh'];
@@ -44,12 +52,19 @@ const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios }: any) 
         const activePidsInPoint = Object.keys(data).filter(key => !systemKeys.includes(key) && !key.endsWith('_pos') && !key.endsWith('_neg') && data[key] !== 0);
         
         const isAllTimeHigh = data.isNewPeak || Math.abs(data.ddPct) < 0.01;
+        const displayLabel = showPurePnl ? "Net PnL" : t.currentEquity;
+        const displayValue = showPurePnl ? data.cumulativePnl : data.equity;
 
         return (
             <div className="p-3 rounded-xl border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.6)] bg-[#050505]/40 backdrop-blur-md text-xs min-w-[160px] z-[60] ring-1 ring-white/5">
                 <div className="text-slate-300 mb-2 font-medium flex items-center gap-2 border-b border-white/10 pb-2">{data.label || data.date}</div>
                 <div className="space-y-1.5">
-                    <div className="flex justify-between items-center gap-4"><span className="text-slate-300 font-bold">{t.currentEquity}</span><span className="font-barlow-numeric text-white font-bold text-sm">{formatCurrency(data.equity, hideAmounts)}</span></div>
+                    <div className="flex justify-between items-center gap-4">
+                        <span className="text-slate-300 font-bold">{displayLabel}</span>
+                        <span className={`font-barlow-numeric text-white font-bold text-sm ${hideAmounts ? 'blur-sm select-none opacity-50' : ''}`}>
+                            {formatCurrency(displayValue, false)}
+                        </span>
+                    </div>
                     {activePidsInPoint.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-white/10 space-y-1">
                             {activePidsInPoint.map((pid) => {
@@ -59,7 +74,9 @@ const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios }: any) 
                                 return (
                                     <div key={pid} className="flex justify-between items-center">
                                         <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}></div><span className="text-slate-300 text-[10px]">{portfolio?.name || pid}</span></div>
-                                        <span className="font-barlow-numeric text-[10px]" style={{ color }}>{isProfit ? '+' : ''}{formatCurrency(data[pid], hideAmounts)}</span>
+                                        <span className={`font-barlow-numeric text-[10px] ${hideAmounts ? 'blur-sm select-none opacity-50' : ''}`} style={{ color }}>
+                                            {isProfit ? '+' : ''}{formatCurrency(data[pid], false)}
+                                        </span>
                                     </div>
                                 );
                             })}
@@ -74,7 +91,9 @@ const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios }: any) 
                         ) : (
                             <div className="flex justify-between items-center gap-4">
                                 <span className="text-slate-400">{t.drawdown}</span>
-                                <span className="font-barlow-numeric font-medium" style={{ color: THEME.GREEN }}>{formatDecimal(data.ddPct)}%</span>
+                                <span className={`font-barlow-numeric font-medium ${hideAmounts ? 'blur-sm select-none opacity-50' : ''}`} style={{ color: THEME.GREEN }}>
+                                    {formatDecimal(data.ddPct)}%
+                                </span>
                             </div>
                         )}
                     </div>
@@ -94,10 +113,15 @@ const BubbleTooltip = ({ active, payload, hideAmounts, lang }: any) => {
                     {data.name}
                  </div>
                  <div className="space-y-1.5">
-                    <div className="flex justify-between gap-6"><span className="text-slate-400">Net PnL</span><span className="font-mono font-bold" style={{color: getPnlColor(data.pnl)}}>{formatCurrency(data.pnl, hideAmounts)}</span></div>
+                    <div className="flex justify-between gap-6">
+                        <span className="text-slate-400">Net PnL</span>
+                        <span className={`font-mono font-bold ${hideAmounts ? 'blur-sm select-none opacity-50' : ''}`} style={{color: getPnlColor(data.pnl)}}>
+                            {formatCurrency(data.pnl, false)}
+                        </span>
+                    </div>
                     <div className="flex justify-between gap-6"><span className="text-slate-400">Trades</span><span className="text-white font-mono">{data.trades}</span></div>
                     <div className="flex justify-between gap-6"><span className="text-slate-400">Win Rate</span><span className="text-white font-mono">{formatDecimal(data.x)}%</span></div>
-                    <div className="flex justify-between gap-6"><span className="text-slate-400">R:R</span><span className="text-white font-mono">{formatDecimal(data.y)}</span></div>
+                    <div className="flex justify-between gap-6"><span className="text-slate-400">R:R</span><span className="text-white font-mono">{!isFinite(data.y) ? '∞' : formatDecimal(data.y)}</span></div>
                  </div>
             </div>
         );
@@ -158,7 +182,19 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
     }, [data]);
 
     if (chartData.length === 0) return <div className="text-center py-8 text-slate-600 text-xs">{t.noData}</div>;
-    const axisMaxY = Math.max(...chartData.map(d => d.y), 2.5) * 1.2;
+
+    // Detect Max Finite Y for scaling
+    const finiteYValues = chartData.map(d => d.y).filter(y => isFinite(y));
+    const maxFiniteY = finiteYValues.length > 0 ? Math.max(...finiteYValues) : 0;
+    // Cap at reasonably high value (e.g. max * 1.5) or default 10 if all are infinite/zero
+    const axisMaxY = Math.max(maxFiniteY * 1.5, 5); 
+
+    // Remap Infinite Y for Plotting
+    const plottedData = chartData.map(d => ({
+        ...d,
+        yPlot: isFinite(d.y) ? d.y : axisMaxY, // Plot at the very top if infinite
+        isInfinite: !isFinite(d.y) // Flag for tooltip
+    }));
 
     return (
         <div className="w-full h-[320px] bg-black/20 rounded-3xl border border-white/5 p-4 relative overflow-hidden backdrop-blur-sm">
@@ -166,25 +202,22 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
             <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                     <XAxis type="number" dataKey="x" name="Win Rate" unit="%" domain={[0, 100]} tick={{ fill: '#525252', fontSize: 10, fontWeight: 500 }} tickLine={false} axisLine={{ stroke: '#333', strokeWidth: 1 }} ticks={[0, 25, 50, 75, 100]} />
-                    <YAxis type="number" dataKey="y" name="R:R" domain={[0, axisMaxY]} tick={{ fill: '#525252', fontSize: 10, fontWeight: 500 }} tickLine={false} axisLine={{ stroke: '#333', strokeWidth: 1 }} width={20} />
+                    <YAxis type="number" dataKey="yPlot" name="R:R" domain={[0, axisMaxY]} tick={{ fill: '#525252', fontSize: 10, fontWeight: 500 }} tickLine={false} axisLine={{ stroke: '#333', strokeWidth: 1 }} width={20} />
                     <ZAxis type="number" dataKey="z" range={[64, 2500]} name="PnL Volume" />
                     <Tooltip content={<BubbleTooltip hideAmounts={hideAmounts} lang={lang} />} cursor={{ strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.2)' }} />
                     <ReferenceLine x={50} stroke="#444" strokeOpacity={0.3} strokeDasharray="4 4" />
                     <ReferenceLine y={1.0} stroke="#444" strokeOpacity={0.3} strokeDasharray="4 4" />
-                    <Scatter name="Strategies" data={chartData} cursor="pointer" shape={(props: any) => <StrategyBubble {...props} onSelect={onSelect} />} />
+                    <Scatter name="Strategies" data={plottedData} cursor="pointer" shape={(props: any) => <StrategyBubble {...props} onSelect={onSelect} />} />
                 </ScatterChart>
             </ResponsiveContainer>
         </div>
     );
 };
 
-export const StatsChart = ({ onZoom }: { onZoom?: (s: string, e: string) => void }) => {
-    const { 
-        metrics, portfolios, activePortfolioIds, frequency, lang, hideAmounts, chartHeight, setChartHeight 
-    } = useTradeContext();
-    
+export const StatsChart = ({
+    metrics, portfolios, activePortfolioIds, frequency, lang, hideAmounts, chartHeight, setChartHeight, onZoom, showPurePnl
+}: StatsChartProps) => {
     const t = I18N[lang] || I18N['zh'];
-    // ... logic same as before ... using context values
     const { barSize, barRadius } = useMemo(() => {
         switch (frequency) {
             case 'weekly': return { barSize: 12, barRadius: [3, 3, 0, 0] as [number, number, number, number] };
@@ -227,7 +260,7 @@ export const StatsChart = ({ onZoom }: { onZoom?: (s: string, e: string) => void
             setIsLongPressing(true);
             setTempStart(activeLabel);
             setTempStartIdx(activeIndex);
-            if (navigator.vibrate) navigator.vibrate(50);
+            vibrate('impactHeavy');
         }, 1000); 
     };
 
@@ -322,7 +355,7 @@ export const StatsChart = ({ onZoom }: { onZoom?: (s: string, e: string) => void
                                 </defs>
                                 <XAxis dataKey="timestamp" type="category" hide={false} axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 10, dy: 3, fontWeight: 500 }} tickFormatter={(val) => formatChartAxisDate(val, frequency)} minTickGap={30} padding={{ left: 24, right: 24 }} interval="preserveStartEnd" height={24} />
                                 {!isLongPressing && !selection && (
-                                    <Tooltip content={(props: any) => <CustomTooltip {...props} hideAmounts={hideAmounts} lang={lang} portfolios={portfolios} />} cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} />
+                                    <Tooltip content={(props: any) => <CustomTooltip {...props} hideAmounts={hideAmounts} lang={lang} portfolios={portfolios} showPurePnl={showPurePnl} />} cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} />
                                 )}
                                 <ReferenceLine y={0} yAxisId="pnl" stroke="#FFFFFF" strokeOpacity={0.1} />
                                 {selection && <ReferenceArea x1={selection.start} x2={selection.end} yAxisId="equity" fill="#C8B085" fillOpacity={0.1} strokeOpacity={0.5} />}
@@ -332,7 +365,19 @@ export const StatsChart = ({ onZoom }: { onZoom?: (s: string, e: string) => void
                                         <Bar dataKey={`${pid}_neg`} stackId="a" fill={`url(#gradP-neg-${pid})`} radius={barRadius} barSize={barSize} yAxisId="pnl" isAnimationActive={false} />
                                     </React.Fragment>
                                 ))}
-                                <Line type="monotone" dataKey="equity" stroke={THEME.BLUE} strokeWidth={2} dot={(props) => <CustomPeakDot {...props} dataLength={metrics.curve.length} />} activeDot={{ r: 4, strokeWidth: 0 }} yAxisId="equity" isAnimationActive={false} filter="url(#glow-line)" />
+                                <Line 
+                                    type="monotone" 
+                                    dataKey={showPurePnl ? "cumulativePnl" : "equity"} 
+                                    stroke={THEME.BLUE} 
+                                    strokeWidth={2} 
+                                    dot={(props) => <CustomPeakDot {...props} dataLength={metrics.curve.length} />} 
+                                    activeDot={{ r: 4, strokeWidth: 0 }} 
+                                    yAxisId="equity" 
+                                    isAnimationActive={true} 
+                                    animationDuration={500}
+                                    animationEasing="ease-in-out"
+                                    filter="url(#glow-line)" 
+                                />
                                 <YAxis yAxisId="pnl" hide domain={['auto', 'auto']} />
                                 <YAxis yAxisId="equity" orientation="right" hide domain={['auto', 'auto']} />
                             </ComposedChart>
@@ -364,15 +409,7 @@ export const StatsChart = ({ onZoom }: { onZoom?: (s: string, e: string) => void
     );
 };
 
-interface StatsContentProps {
-    stratView: 'list' | 'chart';
-    setStratView: (v: 'list' | 'chart') => void;
-    detailStrategy: string | null;
-    setDetailStrategy: (s: string | null) => void;
-}
-
-export const StatsContent = ({ setDetailStrategy, stratView, setStratView }: StatsContentProps) => {
-    const { metrics, lang, hideAmounts, ddThreshold } = useTradeContext();
+export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, stratView, setStratView, ddThreshold }: StatsContentProps) => {
     const t = I18N[lang] || I18N['zh'];
     const strategyData = useMemo(() => {
         return Object.entries(metrics.stratStats)
@@ -381,33 +418,24 @@ export const StatsContent = ({ setDetailStrategy, stratView, setStratView }: Sta
     }, [metrics.stratStats]);
 
     const absDD = Math.abs(metrics.maxDD);
-    const isDDBreach = absDD >= 30; // Changed threshold to 30 as requested
-    const isDDWarning = absDD >= 20 && !isDDBreach;
-    
+    const isDDBreach = absDD >= ddThreshold;
+    const isDDWarning = absDD >= (ddThreshold - 3) && !isDDBreach;
     let ddCardClass = "";
     let ddValueClass = "";
-    let ddValueColor = THEME.GREEN; // Default to green for DD
-
-    if (isDDBreach) { 
-        // DANGER ZONE (>30%): Red background hint + border
-        ddCardClass = "bg-red-500/10 border-red-500/30 shadow-[0_0_20px_rgba(208,90,90,0.2)]"; 
-        ddValueColor = THEME.RED; 
-    } else if (isDDWarning) { 
-        // WARNING ZONE (20-30%): Pulse
-        ddValueClass = "animate-pulse"; 
-    }
+    let ddValueColor = Math.abs(metrics.maxDD) > 20 ? THEME.GREEN : '#E0E0E0';
+    if (isDDBreach) { ddCardClass = "bg-[#5B9A8B]/10 border-[#5B9A8B]/30 shadow-[0_0_20px_rgba(91,154,139,0.2)]"; ddValueColor = THEME.GREEN; } 
+    else if (isDDWarning) { ddValueColor = THEME.GREEN; ddValueClass = "animate-pulse"; }
 
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
              <div className="flex flex-col gap-2">
-                 <div className="grid grid-cols-4 gap-2">
-                    <StatCard label={t.winRate} value={formatDecimal(metrics.winRate)} unit="%" valueColor={metrics.winRate >= 50 ? THEME.RED : '#E0E0E0'} />
-                    <StatCard label={t.maxDD} value={formatDecimal(metrics.maxDD)} unit="%" valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
-                    <StatCard label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={THEME.GREEN} className={ddCardClass} valueClassName={ddValueClass} />
+                 <div className="grid grid-cols-3 gap-2">
+                    <StatCard label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate < 40 ? THEME.GREEN : THEME.RED} />
                     <StatCard label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
                     <StatCard label={t.sharpe} value={formatDecimal(metrics.sharpe)} valueColor={metrics.sharpe >= 1 ? THEME.RED : '#E0E0E0'} />
                  </div>
-                 <div className="grid grid-cols-3 gap-2">
+                 <div className="grid grid-cols-4 gap-2">
+                    <StatCard label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
                     <StatCard label={t.riskReward} value={formatDecimal(metrics.riskReward)} valueColor="#E0E0E0" />
                     <StatCard label={t.daysSincePeak} value={metrics.maxStagnationDays} valueColor={metrics.maxStagnationDays > 30 ? THEME.GREEN : '#E0E0E0'} />
                     <StatCard label={t.trades} value={metrics.totalTrades} valueColor="#E0E0E0" />

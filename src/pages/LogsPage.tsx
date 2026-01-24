@@ -1,17 +1,28 @@
 
 import React from 'react';
-import { LogsTab } from '../components/tabs/LogsTab';
-import { Trade } from '../types';
+import { LogsTab } from '../features/history/components/LogsTab';
+import { Trade, Lang, Portfolio } from '../types';
 import { I18N } from '../constants';
-import { useTradeContext } from '../context/TradeContext';
 
 interface LogsPageProps {
+    trades: Trade[];
+    lang: Lang;
+    hideAmounts: boolean;
+    portfolios: Portfolio[];
     onEdit: (t: Trade) => void;
     onDelete: (id: string) => void;
+    availableStrategies: string[];
+    availableEmotions: string[];
+    filterStrategy: string[];
+    setFilterStrategy: (s: string[]) => void;
+    filterEmotion: string[];
+    setFilterEmotion: (e: string[]) => void;
 }
 
-export const LogsPage: React.FC<LogsPageProps> = ({ onEdit, onDelete }) => {
-    const { lang } = useTradeContext();
+export const LogsPage: React.FC<LogsPageProps> = ({ 
+    trades, lang, hideAmounts, portfolios, onEdit, onDelete,
+    availableStrategies, availableEmotions, filterStrategy, setFilterStrategy, filterEmotion, setFilterEmotion
+}) => {
     const t = I18N[lang] || I18N['zh'];
 
     return (
@@ -24,8 +35,18 @@ export const LogsPage: React.FC<LogsPageProps> = ({ onEdit, onDelete }) => {
             <div className="relative w-full bg-transparent flex-1">
                 <div className="px-4 py-2 pb-32 space-y-5">
                     <LogsTab 
+                         trades={trades}
+                         lang={lang}
+                         hideAmounts={hideAmounts}
+                         portfolios={portfolios}
                          onEdit={onEdit}
                          onDelete={onDelete}
+                         strategies={availableStrategies} // Fixed
+                         emotions={availableEmotions}     // Fixed
+                         filterStrategy={filterStrategy}
+                         setFilterStrategy={setFilterStrategy}
+                         filterEmotion={filterEmotion}
+                         setFilterEmotion={setFilterEmotion}
                     />
                 </div>
             </div>

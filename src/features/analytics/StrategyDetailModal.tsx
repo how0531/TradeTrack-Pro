@@ -2,7 +2,7 @@
 // [Manage] Last Updated: 2024-05-22
 import React from 'react';
 import { X, Target, Zap, TrendingUp, TrendingDown } from 'lucide-react';
-import { ResponsiveContainer, AreaChart, Area, Tooltip, PieChart, Pie, Cell } from 'recharts';
+import { ResponsiveContainer, Area, Tooltip, PieChart, Pie, Cell, ComposedChart, Bar } from 'recharts';
 import { StrategyDetailModalProps } from '../../types';
 import { I18N, THEME } from '../../constants';
 import { formatCurrency, formatDecimal, getPnlColor } from '../../utils/format';
@@ -151,14 +151,24 @@ export const StrategyDetailModal = ({ strategy, metrics, onClose, lang, hideAmou
                         </div>
                         <div className="h-20 w-full -ml-1">
                              <ResponsiveContainer width="100%" height="100%">
-                                 <AreaChart data={metrics.curve}>
+                                 <ComposedChart data={metrics.curve}>
                                     <defs>
                                         <linearGradient id="gradStratGold" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="0%" stopColor="#C8B085" stopOpacity={0.4}/>
                                             <stop offset="100%" stopColor="#C8B085" stopOpacity={0}/>
                                         </linearGradient>
                                     </defs>
+                                    <Bar dataKey="pnl" yAxisId="pnl" radius={[2, 2, 0, 0]} barSize={2}>
+                                        {metrics.curve.map((entry: any, index: number) => (
+                                            <Cell 
+                                                key={`cell-${index}`} 
+                                                fill={entry.pnl >= 0 ? '#D05A5A' : '#5B9A8B'} 
+                                                fillOpacity={0.5} 
+                                            />
+                                        ))}
+                                    </Bar>
                                     <Area 
+                                        yAxisId="equity"
                                         type="monotone" 
                                         dataKey="cumulativePnl" 
                                         stroke="#C8B085" 
@@ -167,7 +177,7 @@ export const StrategyDetailModal = ({ strategy, metrics, onClose, lang, hideAmou
                                         isAnimationActive={true}
                                     />
                                     <Tooltip content={<EquityCurveTooltip hideAmounts={hideAmounts} />} cursor={{stroke: 'white', strokeOpacity: 0.1, strokeDasharray: '3 3'}} />
-                                 </AreaChart>
+                                 </ComposedChart>
                              </ResponsiveContainer>
                         </div>
                     </div>

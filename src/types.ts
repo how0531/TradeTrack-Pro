@@ -278,4 +278,5 @@ export interface StatsChartProps {
     chartHeight: number;
     setChartHeight: (h: number) => void;
     onZoom?: (start: string, end: string) => void;
+    showPurePnl?: boolean;
 }

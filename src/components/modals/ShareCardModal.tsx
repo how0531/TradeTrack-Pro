@@ -68,6 +68,9 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
         } else if (start === 'Start') {
              // Only end date valid
              dateRangeStr = end; 
+        } else if (start === end) {
+             // Same date (e.g. Monthly single point)
+             dateRangeStr = start;
         } else {
              // Both valid
              dateRangeStr = `${start} - ${end.substring(5)}`;
@@ -86,26 +89,51 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
 
         setIsSharing(true);
         try {
-            // Short Render wait to ensure any repaints are finished
             await new Promise(resolve => setTimeout(resolve, 100)); 
             
             const canvas = await html2canvas(cardRef.current, {
-                backgroundColor: null, // Transparent background outside border-radius
-                scale: 3, // High Resolution
+                backgroundColor: null,
+                scale: 3,
                 useCORS: true,
                 logging: false,
-                // Attempt to fix potential DOM interaction issues:
-                ignoreElements: (element) => {
-                     // Ignore any elements that might cause issues if necessary, 
-                     // usually not needed unless specific plugins interfere
-                     return false;
-                }
             });
 
-            const link = document.createElement('a');
-            link.download = `tradetrack_stats_${Date.now()}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
+            // Native Share API Logic (Mobile/iOS)
+            if (navigator.share) {
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        alert('Generate failed');
+                        return;
+                    }
+                    const file = new File([blob], `tradetrack_stats_${Date.now()}.png`, { type: 'image/png' });
+                    
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        try {
+                            await navigator.share({
+                                files: [file],
+                                title: 'TradeTrack Performance',
+                                text: 'Check out my trading performance!'
+                            });
+                        } catch (err) {
+                            // User cancelled share, seemingly safe to ignore
+                            console.log('Share cancelled', err);
+                        }
+                    } else {
+                        // Fallback if file sharing not supported
+                         const link = document.createElement('a');
+                         link.download = `tradetrack_stats_${Date.now()}.png`;
+                         link.href = canvas.toDataURL('image/png');
+                         link.click();
+                    }
+                }, 'image/png');
+            } else {
+                // Desktop Fallback
+                const link = document.createElement('a');
+                link.download = `tradetrack_stats_${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            }
+
         } catch (error) {
             console.error('Share failed', error);
             alert('Failed to generate image');
@@ -127,11 +155,14 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
     };
 
     // Helper to split number and unit for styling
+    // Helper to split number and unit for styling
     const getFormattedValueParts = () => {
-        if (displayMode === 'hidden') return { value: '****', unit: '' };
+        // If hidden, we still return the values but relies on CSS blur
+        // Previously returned **** or 888.88 placeholder
         
         let fullStr = '';
-        if (displayMode === 'amount') {
+        if (displayMode === 'amount' || displayMode === 'hidden') {
+            // Even if hidden, use the amount format so we blur the actual amount
             fullStr = formatCompactNumber(metrics.netProfit, false).replace('+', '');
         } else {
             fullStr = `${formatDecimal(metrics.netProfitPct)}%`;
@@ -176,34 +207,36 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     {/* Main Stats Area - REVISED LAYOUT */}
                     <div className="w-full px-6 z-10 relative flex flex-col items-start min-h-[80px] mt-4">
                         {/* Changed to flex-row and whitespace-nowrap to FORCE side-by-side */}
-                        <div className="flex flex-row items-baseline gap-3 whitespace-nowrap">
+                        {/* CHANGED: items-baseline to items-end for bottom alignment */}
+                        <div className="flex flex-row items-end gap-3 whitespace-nowrap">
                              {/* Main Number */}
                              <div className="flex items-baseline">
                                 <span 
                                     className={`font-bold font-barlow-numeric tracking-tighter leading-none drop-shadow-2xl transition-all duration-300 ${displayMode === 'hidden' ? 'blur-md opacity-50 select-none' : ''}`}
                                     style={{ color: themeColor, fontSize: '40px' }}
                                 >
-                                    {displayMode === 'hidden' ? '888.88' : value}
+                                    {value}
                                 </span>
-                                {unit && displayMode !== 'hidden' && (
-                                    <span className="text-xl font-bold opacity-80 ml-1" style={{ color: themeColor }}>
+                                {(unit || displayMode === 'hidden') && (
+                                    <span className={`text-xl font-bold opacity-80 ml-1 ${displayMode === 'hidden' ? 'blur-md opacity-50' : ''}`} style={{ color: themeColor }}>
                                         {unit}
                                     </span>
                                 )}
                              </div>
 
-                             {/* Max Drawdown - Right Aligned, aligned to baseline */}
-                             <div className="flex items-center gap-1.5">
+                             {/* Max Drawdown - Right Aligned, stacked */}
+                             {/* CHANGED: Removed self-center to allow items-end to work */}
+                             <div className="flex flex-col items-end leading-none ml-auto">
+                                <span className={`text-[#555] text-[9px] font-bold uppercase tracking-widest mb-0.5 ${displayMode === 'hidden' ? 'blur-sm select-none' : ''}`}>區間最大回撤</span>
                                 <span className={`font-barlow-numeric text-lg font-bold ${displayMode === 'hidden' ? 'blur-sm opacity-50' : ''}`} style={{ color: drawdownColor }}>
-                                    {displayMode === 'hidden' ? '00.00' : formatDecimal(Math.abs(metrics.maxDD))}%
+                                    {formatDecimal(Math.abs(metrics.maxDD))}%
                                 </span>
-                                <span className="text-[#555] text-[10px] font-bold uppercase tracking-wider translate-y-[1px]">回撤</span>
                             </div>
                         </div>
                     </div>
 
                     {/* Background Chart - Area Chart for smoother look */}
-                    {showChart && chartData.length > 0 && (
+                    {chartData.length > 0 && (
                         <div className="absolute inset-x-0 bottom-[25%] top-[40%] opacity-100 pointer-events-none">
                             <ResponsiveContainer width="100%" height="100%">
                                 <ComposedChart data={chartData}>
@@ -220,21 +253,23 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                                         </linearGradient>
                                     </defs>
                                     
-                                    {/* PnL Bars (Subtle Background) */}
-                                    <Bar dataKey="pnl" yAxisId="pnl" radius={[1, 1, 0, 0]} barSize={3}>
-                                        {chartData.map((entry, index) => (
-                                            <Cell 
-                                                key={`cell-${index}`} 
-                                                fill={entry.pnl >= 0 ? '#D05A5A' : '#5B9A8B'} 
-                                                fillOpacity={0.3} 
-                                            />
-                                        ))}
-                                    </Bar>
+                                    {/* PnL Bars (Subtle Background) - Controlled by toggle */}
+                                    {showChart && (
+                                        <Bar dataKey="pnl" yAxisId="pnl" radius={[1, 1, 0, 0]} barSize={3}>
+                                            {chartData.map((entry, index) => (
+                                                <Cell 
+                                                    key={`cell-${index}`} 
+                                                    fill={entry.pnl >= 0 ? '#D05A5A' : '#5B9A8B'} 
+                                                    fillOpacity={0.3} 
+                                                />
+                                            ))}
+                                        </Bar>
+                                    )}
 
-                                    {/* Equity Area (Prominent Foreground) */}
+                                    {/* Equity Area (Prominent Foreground) - ALWAYS VISIBLE */}
                                     <Area
                                         yAxisId="equity"
-                                        type="monotone"
+                                        type="natural"
                                         dataKey="equity"
                                         stroke="#526D82"
                                         strokeWidth={2}
@@ -307,7 +342,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                             className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors"
                         >
                             <Layers size={16} className={showChart ? 'text-[#C8B085]' : ''}/>
-                            <span>{showChart ? '顯示圖表' : '隱藏圖表'}</span>
+                            <span>{showChart ? '顯示日損益' : '隱藏日損益'}</span>
                         </button>
                     </div>
 

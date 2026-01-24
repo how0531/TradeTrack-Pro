@@ -4,6 +4,7 @@ import { THEME } from '../constants';
 
 export const formatDecimal = (val: number | undefined | null) => {
     if (val === undefined || val === null || isNaN(val)) return '0.00';
+    if (!isFinite(val)) return '∞';
     return Number(val).toFixed(2);
 };
 
@@ -59,11 +60,14 @@ export const formatDate = (d: string | Date, lang: Lang = 'zh') => {
     try {
         if (typeof d === 'string' && d.match(/^\d{4}-\d{2}-\d{2}$/)) {
             const [y, m, day] = d.split('-');
-            return `${m}/${day}`;
+            return `${y}/${m}/${day}`;
         }
         const dateObj = new Date(d);
         if (isNaN(dateObj.getTime())) return String(d); 
-        return dateObj.toLocaleDateString(lang === 'zh' ? 'zh-TW' : 'en-US', { month: 'numeric', day: 'numeric' });
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}/${m}/${day}`;
     } catch (e) {
         return String(d);
     }

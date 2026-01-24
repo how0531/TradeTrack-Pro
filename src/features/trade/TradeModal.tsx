@@ -8,6 +8,7 @@ import { I18N, THEME } from '../../constants';
 import { StrategyChipsInput, EmotionChipsInput, PortfolioChipsInput } from '../../components/form/ChipInputs';
 import html2canvas from 'html2canvas';
 import { formatCompactNumber, formatDecimal } from '../../utils/format';
+import { vibrate } from '../../utils/haptics';
 
 type DisplayMode = 'amount' | 'percent' | 'hidden';
 
@@ -292,8 +293,8 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                         <div className="flex gap-2 items-center bg-white/5 p-1 rounded-xl border border-white/5">
                             <div className="flex bg-black/20 p-0.5 rounded-lg h-[40px] flex-shrink-0">
                                 {/* GLASS BUTTONS: PROFIT / LOSS */}
-                                <button type="button" onClick={() => updateForm('type', 'profit')} className={`px-4 rounded-md text-[10px] font-bold uppercase transition-all ${form.type === 'profit' ? 'bg-[#D05A5A]/20 text-[#D05A5A] shadow-[0_0_10px_rgba(208,90,90,0.2)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.profit}</button>
-                                <button type="button" onClick={() => updateForm('type', 'loss')} className={`px-4 rounded-md text-[10px] font-bold uppercase transition-all ${form.type === 'loss' ? 'bg-[#5B9A8B]/20 text-[#5B9A8B] shadow-[0_0_10px_rgba(91,154,139,0.2)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.loss}</button>
+                                <button type="button" onClick={() => { updateForm('type', 'profit'); vibrate('selection'); }} className={`px-4 rounded-md text-[10px] font-bold uppercase transition-all ${form.type === 'profit' ? 'bg-[#D05A5A]/20 text-[#D05A5A] shadow-[0_0_10px_rgba(208,90,90,0.2)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.profit}</button>
+                                <button type="button" onClick={() => { updateForm('type', 'loss'); vibrate('selection'); }} className={`px-4 rounded-md text-[10px] font-bold uppercase transition-all ${form.type === 'loss' ? 'bg-[#5B9A8B]/20 text-[#5B9A8B] shadow-[0_0_10px_rgba(91,154,139,0.2)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.loss}</button>
                             </div>
                             <input type="number" step="0.1" inputMode="decimal" required value={form.amount} onChange={e => updateForm('amount', e.target.value)} className="w-full h-[40px] px-2 text-2xl font-barlow-numeric font-bold bg-transparent border-none text-white placeholder-slate-600 outline-none text-right" placeholder="0.0" autoFocus />
                         </div>
@@ -315,7 +316,7 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                         />
                         
                         {/* GLASS BUTTON: SUBMIT */}
-                        <button type="submit" className={`w-full py-3.5 rounded-xl font-bold uppercase tracking-widest text-xs shadow-lg transition-all active:scale-[0.98] backdrop-blur-md border ${form.type === 'profit' ? 'bg-[#D05A5A]/20 text-[#D05A5A] border-[#D05A5A]/50 shadow-[0_0_20px_rgba(208,90,90,0.15)] hover:bg-[#D05A5A]/30' : 'bg-[#5B9A8B]/20 text-[#5B9A8B] border-[#5B9A8B]/50 shadow-[0_0_20px_rgba(91,154,139,0.15)] hover:bg-[#5B9A8B]/30'}`}>
+                        <button type="submit" onClick={() => vibrate('success')} className={`w-full py-3.5 rounded-xl font-bold uppercase tracking-widest text-xs shadow-lg transition-all active:scale-[0.98] backdrop-blur-md border ${form.type === 'profit' ? 'bg-[#D05A5A]/20 text-[#D05A5A] border-[#D05A5A]/50 shadow-[0_0_20px_rgba(208,90,90,0.15)] hover:bg-[#D05A5A]/30' : 'bg-[#5B9A8B]/20 text-[#5B9A8B] border-[#5B9A8B]/50 shadow-[0_0_20px_rgba(91,154,139,0.15)] hover:bg-[#5B9A8B]/30'}`}>
                             {isEditing ? t.update : t.save}
                         </button>
                     </form>

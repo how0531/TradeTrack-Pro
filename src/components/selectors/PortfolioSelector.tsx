@@ -45,15 +45,15 @@ export const PortfolioSelector = ({ portfolios, activeIds, onChange, lang }: any
             <button 
                 onClick={() => setIsOpen(!isOpen)} 
                 className={`
-                    relative z-[60] flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300 backdrop-blur-md
+                    relative z-[60] flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 backdrop-blur-md h-[32px]
                     ${isOpen 
-                        ? 'bg-[#C8B085]/10 border-[#C8B085]/40 text-[#C8B085] shadow-[0_0_15px_rgba(200,176,133,0.15)]' 
+                        ? 'bg-[#C8B085]/10 border-[#C8B085]/40 text-[#C8B085] shadow-[0_0_15px_rgba(200,176,133,0.1)]' 
                         : 'bg-white/5 border-white/10 text-slate-300 hover:text-white hover:bg-white/10 hover:border-white/20'
                     }
                 `}
             >
                 <Briefcase size={12} className={isOpen ? 'text-[#C8B085]' : 'text-slate-500'} />
-                <span className="text-[10px] font-bold uppercase tracking-wider max-w-[100px] truncate">{label}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider max-w-[140px] truncate">{label}</span>
                 <ChevronDown size={12} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 

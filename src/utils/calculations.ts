@@ -101,7 +101,7 @@ export const calculateMetrics = (
             mddPct: safeCapital > 0 ? (Math.abs(sMinDDAmt) / safeCapital) * 100 : 0, 
             curDDPct: safeCapital > 0 ? (Math.abs(sCurrentEquity - sPeak) / safeCapital) * 100 : 0, 
             isNewHigh: (sPnL >= sPeak - 0.01) && sTrades.length > 0,
-            riskReward: ((sTrades.length - sWin) > 0 && sGrossLoss > 0) ? (sGrossProfit/sWin) / (sGrossLoss/(sTrades.length-sWin)) : (sGrossProfit > 0 ? 10 : 0),
+            riskReward: ((sTrades.length - sWin) > 0 && sGrossLoss > 0) ? (sGrossProfit/sWin) / (sGrossLoss/(sTrades.length-sWin)) : (sGrossProfit > 0 ? Infinity : 0),
             avgWin: sWin > 0 ? sGrossProfit / sWin : 0, 
             avgLoss: (sTrades.length - sWin) > 0 ? sGrossLoss / (sTrades.length - sWin) : 0
         };
@@ -317,8 +317,8 @@ export const calculateMetrics = (
         currentDD: currentDD, 
         maxDD: maxDD, 
         winRate: sortedTrades.length > 0 ? (wins / sortedTrades.length) * 100 : 0, 
-        pf: gLoss === 0 ? (gProfit > 0 ? 999 : 0) : gProfit / gLoss, 
-        riskReward: (losses > 0 && gLoss > 0) ? (gProfit/wins) / (gLoss/losses) : 0, 
+        pf: gLoss === 0 ? (gProfit > 0 ? Infinity : 0) : gProfit / gLoss, 
+        riskReward: (losses > 0 && gLoss > 0) ? (gProfit/wins) / (gLoss/losses) : (wins > 0 ? Infinity : 0), 
         stratStats, 
         isPeak: currentEq >= peak - 0.01, 
         sharpe: 0, 

@@ -4,6 +4,7 @@ import { Scroll, Trash2, Edit2, Calendar, ArrowUpDown, StickyNote } from 'lucide
 import { Trade, LogsViewProps, Lang } from '../../types';
 import { I18N } from '../../constants';
 import { formatDate } from '../../utils/format';
+import { vibrate } from '../../utils/haptics';
 
 type SortType = 'date' | 'pnl_high' | 'pnl_low';
 
@@ -24,8 +25,8 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
 
     const handleDeleteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (deleteStatus === 'idle') setDeleteStatus('confirm');
-        else onDelete(trade.id);
+        if (deleteStatus === 'idle') { setDeleteStatus('confirm'); vibrate('warning'); }
+        else { onDelete(trade.id); vibrate('impactHeavy'); }
     };
 
     const theme = isProfit ? {

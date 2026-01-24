@@ -2,10 +2,9 @@
 // [Manage] Last Updated: 2024-05-22
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { TradeProvider } from './context/TradeContext';
+import { AuthProvider } from './context/AuthContext';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -16,11 +15,9 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
-        <TradeProvider>
-          <App />
-        </TradeProvider>
-      </BrowserRouter>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );
