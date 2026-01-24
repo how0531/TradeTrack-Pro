@@ -27,7 +27,7 @@ def index():
             {
                 "status": "online",
                 "message": "TradeTrack-Pro Backend is active.",
-                "version": "v1.1.5-fix-P",
+                "version": "v1.2.0-branch-fix",
                 "shioaji_version": getattr(shioaji, "__version__", "unknown"),
                 "endpoints": ["/health", "/api/broker/profile", "/api/broker/pnl"],
             }
