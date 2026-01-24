@@ -101,6 +101,24 @@ function MainApp() {
     const isRiskAlert = isDDAlert || isStreakAlert;
     const hasActiveFilters = filteredTrades.length !== trades.length;
 
+    const monthlyStats = useMemo(() => {
+        const year = currentMonth.getFullYear();
+        const month = currentMonth.getMonth();
+        const start = new Date(year, month, 1);
+        const end = new Date(year, month + 1, 0, 23, 59, 59);
+        
+        const monthlyTrades = trades.filter(t => {
+            const d = new Date(t.date);
+            return d >= start && d <= end;
+        });
+        
+        const pnl = monthlyTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
+        const wins = monthlyTrades.filter(t => (Number(t.pnl) || 0) > 0).length;
+        const winRate = monthlyTrades.length > 0 ? (wins / monthlyTrades.length) * 100 : 0;
+        
+        return { pnl, winRate, count: monthlyTrades.length };
+    }, [trades, currentMonth]);
+
     const moodGradient = useMemo(() => {
         if (isRiskAlert) return 'radial-gradient(circle at 50% -20%, rgba(208, 90, 90, 0.15), transparent 70%)';
         if (metrics.winRate > 60) return 'radial-gradient(circle at 50% -20%, rgba(74, 222, 128, 0.1), transparent 70%)';
@@ -182,7 +200,7 @@ function MainApp() {
                             currentMonth={currentMonth}
                             setCurrentMonth={setCurrentMonth}
                             onDateClick={(d: string) => { setForm({ id: '', pnl: 0, date: d, amount: '', type: 'profit', strategy: '', note: '', emotion: '', image: '', portfolioId: activePortfolioIds[0] || '' }); setEditingId(null); setIsModalOpen(true); }}
-                            monthlyStats={{ pnl: 0, winRate: 0, count: 0 }} // Simplified or add logic
+                            monthlyStats={monthlyStats}
                             hideAmounts={hideAmounts}
                             setHideAmounts={setHideAmounts}
                             lang={lang}
