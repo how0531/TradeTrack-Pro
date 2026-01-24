@@ -140,38 +140,33 @@ def login_and_fetch_pnl(
         # Priority 1: Look for any Stock Account
         # Note: acc.account_type might be "S" (str) or AccountType.Stock (Enum)
         stock_acc = None
+        debug_logs = []
 
         # Try to find the BEST match
         for acc in accounts:
             acc_type_str = str(getattr(acc, "account_type", "")).upper()
             acc_id = getattr(acc, "account_id", "N/A")
-            print(
-                f"DEBUG: Checking account {acc_id} (Type raw: {acc.account_type} -> {acc_type_str})",
-                flush=True,
-            )
+            p_id = getattr(acc, "person_id", "N/A")
+            log_line = f"Check: ID={acc_id}, Type={acc_type_str}, PersonID={p_id}"
+            debug_logs.append(log_line)
+            print(f"DEBUG: {log_line}", flush=True)
 
             # Match "S", "P" (Production), or "STOCK" (Enum string representation)
             if any(x in acc_type_str for x in ["STOCK", "S", "P"]):
                 # Filter out "FUTURES" or "H" if needed, but usually STOCK is unique enough
-                # AccountType.Stock -> "ACCOUNTTYPE.STOCK" -> contains "STOCK"
                 if not stock_acc:
                     stock_acc = acc
 
                 # Check for person_id match
                 if hasattr(acc, "person_id") and acc.person_id == person_id:
                     stock_acc = acc
-                    print(
-                        f"DEBUG: Found matching person_id for account: {acc_id}",
-                        flush=True,
-                    )
+                    debug_logs.append(f"-> MATCHED PersonID: {p_id}")
                     break
 
         # Fallback 2: If no "S" or "P" account, take the first account available
         if not stock_acc and len(accounts) > 0:
             stock_acc = accounts[0]
-            print(
-                f"DEBUG: No 'S' or 'P' type account found, falling back to first account: {stock_acc.account_id}"
-            )
+            debug_logs.append(f"-> FALLBACK used: {stock_acc.account_id}")
 
         if stock_acc:
             raw_broker_id = str(getattr(stock_acc, "broker_id", "Unknown")).strip()
@@ -181,8 +176,8 @@ def login_and_fetch_pnl(
             )
 
             # Use username if available, otherwise use person_id or account_id
-            username = getattr(
-                stock_acc, "username", person_id if person_id else stock_acc.account_id
+            username = getattr(stock_acc, "username", person_id) or str(
+                stock_acc.account_id
             )
 
             print(
