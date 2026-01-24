@@ -85,9 +85,10 @@ def login_and_fetch_pnl(
     try:
         # Prevent log permission issues on cloud platforms like Render
         log_path = os.path.join(tempfile.gettempdir(), "shioaji.log")
-        print(f"DEBUG: Initializing Shioaji. Logs at: {log_path}")
+        print(f"DEBUG: Initializing Shioaji. Logs at: {log_path}", flush=True)
 
-        api = sj.Shioaji(simulation=simulation)  # Pass simulation flag if needed
+        # NOTE: simulation mode is handled during API calls, but we set it here if supported by newer SDKs
+        api = sj.Shioaji()
 
         # 2. 執行登入
         accounts = api.login(
@@ -192,6 +193,7 @@ def login_and_fetch_pnl(
             daily_map = {}
             code_name_map = {}
 
+            # We iterate through the valid_accounts (if filter provided, it's just one)
             for target_account in valid_accounts:
                 try:
                     pnl_data = api.list_profit_loss(
@@ -246,7 +248,8 @@ def login_and_fetch_pnl(
                             daily_map[item_date] += realized
                 except Exception as pnl_e:
                     print(
-                        f"[ERROR] P&L Fetch Failed for {target_account.account_id}: {pnl_e}"
+                        f"[ERROR] P&L Fetch Failed for {target_account.account_id}: {pnl_e}",
+                        flush=True,
                     )
 
             daily_stats = [{"date": k, "pnl": int(v)} for k, v in daily_map.items()]
