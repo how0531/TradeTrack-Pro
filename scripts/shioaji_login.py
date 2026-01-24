@@ -212,7 +212,7 @@ def login_and_fetch_pnl(
             if not simulation and "模擬" in branch_name:
                 return {
                     "status": "error",
-                    "message": "Production mode required but Simulation account detected. Please check your credentials.",
+                    "message": f"連線失敗：偵測到模擬帳號 (分公司: {branch_name}, ID: {stock_acc.account_id})。正式模式下僅支援正式證券帳號，請檢查您的登入憑證。",
                     "environment": environment,
                 }
 
