@@ -113,6 +113,7 @@ def login_and_fetch_pnl(
 
     # Set simulation to True based on user request/testing
     api = sj.Shioaji(simulation=simulation)
+    environment = "simulation" if simulation else "production"
 
     try:
         # 1. Login
