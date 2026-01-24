@@ -121,22 +121,24 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4">
                                     <div className={`w-2.5 h-2.5 rounded-full ${config.isConnected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-slate-600'}`}></div>
-                                    <div className="flex flex-col">
+                                    <div className="flex flex-col gap-0.5">
+                                        {/* Top Line: Broker - Branch */}
                                         <div className="flex items-center gap-2">
                                             <span className="font-bold text-white text-base tracking-tight">
-                                                {config.alias || config.brokerUsername || (lang === 'zh' ? '未命名帳戶' : 'Unnamed')}
+                                                {config.provider === 'shioaji' ? '永豐金' : 'Broker'} - {config.branch || (lang === 'zh' ? '未知分公司' : 'Unknown Branch')}
                                             </span>
-                                            {activeId === config.id && <span className="bg-[#C8B085] text-black text-[8px] font-black px-1.5 py-0.5 rounded tracking-tighter">ACTIVE</span>}
-                                        </div>
-                                        <div className="text-[10px] text-zinc-500 font-bold flex items-center gap-1.5 mt-0.5">
-                                            {config.alias && config.brokerUsername && <span>{config.brokerUsername}</span>}
-                                            {config.alias && config.brokerUsername && <span className="opacity-30">•</span>}
-                                            <span>{config.branch || (config.provider === 'shioaji' ? '永豐金' : '模擬')}</span>
-                                            {config.apiKeyHint && (
-                                                <span className="text-[9px] bg-white/10 text-[#C8B085] px-1 py-0.5 rounded border border-white/5 ml-1">
-                                                    Key: {config.apiKeyHint}
+                                            {activeId === config.id && (
+                                                <span className="bg-[#C8B085] text-black text-[9px] font-black px-1.5 py-0.5 rounded tracking-tighter">
+                                                    現役
                                                 </span>
                                             )}
+                                        </div>
+                                        
+                                        {/* Bottom Line: Name | PersonID */}
+                                        <div className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5 font-mono">
+                                            <span className="text-zinc-300">{config.alias || config.brokerUsername || 'User'}</span>
+                                            <span className="text-zinc-600">|</span>
+                                            <span className="tracking-wide text-zinc-500">{config.personId}</span>
                                         </div>
                                     </div>
                                 </div>

@@ -222,8 +222,8 @@ def login_and_fetch_pnl(
             # Branch Name resolution
             branch_name = BRANCH_MAP.get(branch_code, "未知分公司")
 
-            # Final formatted string as requested: 【王大明】永豐金-永康 R124215487
-            username = f"{final_name}永豐金-{branch_name} {person_id}"
+            # Final formatted string: Just the name (Frontend will combine with Branch/ID)
+            username = final_name
 
             # STRICT PRODUCTION CHECK (Double-check, though loop should have handled it)
             if not simulation and "模擬" in branch_name:
