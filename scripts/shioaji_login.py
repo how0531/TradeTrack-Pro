@@ -172,7 +172,21 @@ def login_and_fetch_pnl(
 
             # Match "S", "P" (Production), or "STOCK" (Enum string representation)
             if any(x in acc_type_str for x in ["STOCK", "S", "P"]):
-                # Filter out "FUTURES" or "H" if needed, but usually STOCK is unique enough
+                # Filter out "FUTURES" or "H" if needed
+
+                # Check Branch for Simulation Filtering
+                raw_bid = str(getattr(acc, "broker_id", "Unknown")).strip()
+                b_code = raw_bid[:4] if len(raw_bid) >= 4 else raw_bid
+                b_name = BRANCH_MAP.get(b_code, "未知分公司")
+
+                # If Strict Production Check is ON (simulation=False), SKIP mock accounts
+                if not simulation and ("模擬" in b_name or b_code == "F002"):
+                    print(
+                        f"DEBUG: Skipping Mock Account {acc_id} in Production Mode.",
+                        flush=True,
+                    )
+                    continue
+
                 if not stock_acc:
                     stock_acc = acc
 
@@ -184,8 +198,9 @@ def login_and_fetch_pnl(
 
         # Fallback 2: If no "S" or "P" account, take the first account available
         if not stock_acc and len(accounts) > 0:
-            stock_acc = accounts[0]
-            debug_logs.append(f"-> FALLBACK used: {stock_acc.account_id}")
+            # If we blocked everything because of production check, we might end up here with nothing or just need to handle it.
+            # If strict check blocked all, stock_acc is None.
+            pass
 
         if stock_acc:
             raw_broker_id = str(getattr(stock_acc, "broker_id", "Unknown")).strip()
@@ -200,15 +215,17 @@ def login_and_fetch_pnl(
             # Logic: If valid name found -> 【Name】
             #        If fallback to ID   -> ID (no brackets)
             if origin_username and origin_username.lower() != "user":
-                username = f"【{origin_username}】"
+                final_name = f"【{origin_username}】"
             else:
-                username = person_id
+                final_name = person_id
 
             # Branch Name resolution
             branch_name = BRANCH_MAP.get(branch_code, "未知分公司")
 
-            # STRICT PRODUCTION CHECK
-            # If we are in Production Mode (simulation=False), reject Mock branches.
+            # Final formatted string as requested: 【王大明】永豐金-永康 R124215487
+            username = f"{final_name}永豐金-{branch_name} {person_id}"
+
+            # STRICT PRODUCTION CHECK (Double-check, though loop should have handled it)
             if not simulation and "模擬" in branch_name:
                 return {
                     "status": "error",
