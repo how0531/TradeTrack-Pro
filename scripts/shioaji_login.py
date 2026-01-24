@@ -16,14 +16,25 @@ def login_and_fetch_pnl(
     end_date=None,
     simulation=True,
 ):
-    # CA Path Handle (Cloud Compatibility)
+    # CA Path Handle (Cloud Compatibility & Multi-Account Support)
     if not os.path.exists(ca_path):
-        # 如果絕對路徑不存在，嘗試在腳本目錄下的 ca 資料夾尋找該檔名
+        # 1. 優先嘗試使用身分證字號命名的檔名 (例如 R124731212.pfx)
+        id_fallback = os.path.join(os.path.dirname(__file__), "ca", f"{person_id}.pfx")
+
+        # 2. 備案：嘗試使用原本的檔名 (例如 Sinopac.pfx)
         ca_filename = os.path.basename(ca_path)
-        fallback_path = os.path.join(os.path.dirname(__file__), "ca", ca_filename)
-        if os.path.exists(fallback_path):
-            print(f"DEBUG: CA Path not found, using fallback: {fallback_path}")
-            ca_path = fallback_path
+        name_fallback = os.path.join(os.path.dirname(__file__), "ca", ca_filename)
+
+        if os.path.exists(id_fallback):
+            print(f"DEBUG: CA Path not found, using ID fallback: {id_fallback}")
+            ca_path = id_fallback
+        elif os.path.exists(name_fallback):
+            print(f"DEBUG: CA Path not found, using filename fallback: {name_fallback}")
+            ca_path = name_fallback
+        else:
+            print(
+                f"DEBUG: CA Path not found locally, and no fallback in scripts/ca/ for ID: {person_id}"
+            )
 
     # Set simulation to True based on user request/testing
     api = sj.Shioaji(simulation=simulation)
