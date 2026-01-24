@@ -1,11 +1,10 @@
-
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useLocalData } from '../hooks/useLocalData';
 import { useSync } from '../hooks/useSync';
 import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks } from '../types';
+import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig } from '../types';
 import { doc, getDoc } from 'firebase/firestore'; 
 import { I18N } from '../constants'; 
 
@@ -49,6 +48,16 @@ interface TradeContextType {
     setChartHeight: (h: number) => void;
     lossColor: string;
     setLossColor: (c: string) => void;
+    
+    // Broker Accounts
+    brokerConfigs: BrokerConfig[];
+    activeBrokerId: string;
+    setActiveBrokerId: (id: string) => void;
+    updateBrokerConfig: (id: string, config: BrokerConfig) => void;
+    addBrokerConfig: (config: BrokerConfig) => void;
+    deleteBrokerConfig: (id: string) => void;
+    activeBrokerConfig: BrokerConfig | null;
+
 
     // Metrics
     filteredTrades: Trade[];
@@ -111,22 +120,69 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTrades, setStrategies, setEmotions, setPortfolios 
     } = useLocalData();
 
-    // 3. UI Filters State (Lifted from App.tsx)
-    const [currentMonth, setCurrentMonth] = useState(new Date());
-    const [filterStrategy, setFilterStrategy] = useState<string[]>([]);
-    const [filterEmotion, setFilterEmotion] = useState<string[]>([]);
-    const [timeRange, setTimeRange] = useState<TimeRange>('ALL');
-    const [frequency, setFrequency] = useState<Frequency>('daily');
-    const [customRange, setCustomRange] = useState<{start: string | null, end: string | null}>({ start: null, end: null });
-    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-    const [isFilterOpen, setIsFilterOpen] = useState(false); 
-
     // 4. Preferences (Lifted from App.tsx)
     const [lang, setLang] = useLocalStorage<'zh' | 'en'>('app_lang', 'zh');
     const [hideAmounts, setHideAmounts] = useLocalStorage<boolean>('app_hide_amounts', false);
     const [ddThreshold, setDdThreshold] = useLocalStorage<number>('app_dd_threshold', 20);
     const [maxLossStreak, setMaxLossStreak] = useLocalStorage<number>('app_max_loss_streak', 3);
     const [chartHeight, setChartHeight] = useLocalStorage<number>('app_chart_height', 220);
+
+    // 2.1 Multi-Broker Support
+    const [rawBrokerConfigs, setBrokerConfigs] = useLocalStorage<BrokerConfig[]>('broker_configs', []);
+    const brokerConfigs = useMemo(() => Array.isArray(rawBrokerConfigs) ? rawBrokerConfigs.filter(c => c && typeof c === 'object') : [], [rawBrokerConfigs]);
+    const [activeBrokerId, setActiveBrokerId] = useLocalStorage<string>('active_broker_id', '');
+
+    // Migration Logic
+    useEffect(() => {
+        const legacy = localStorage.getItem('broker_config');
+        if (legacy && brokerConfigs.length === 0) {
+            try {
+                const parsed = JSON.parse(legacy);
+                const initial: BrokerConfig = {
+                    ...parsed,
+                    id: parsed.id || Math.random().toString(36).substr(2, 9),
+                    alias: parsed.alias || '',
+                    isConnected: false
+                };
+                setBrokerConfigs([initial]);
+                setActiveBrokerId(initial.id);
+                localStorage.removeItem('broker_config');
+            } catch (e) {
+                console.error("Broker config migration error", e);
+            }
+        }
+    }, [brokerConfigs, setBrokerConfigs, setActiveBrokerId, lang]);
+
+    // Broker Config Actions
+    const addBrokerConfig = useCallback((config: BrokerConfig) => {
+        setBrokerConfigs(prev => [...prev, config]);
+    }, [setBrokerConfigs]);
+
+    const updateBrokerConfig = useCallback((id: string, updatedConfig: BrokerConfig) => {
+        setBrokerConfigs(prev => prev.map(config => config.id === id ? { ...config, ...updatedConfig } : config));
+    }, [setBrokerConfigs]);
+
+    const deleteBrokerConfig = useCallback((id: string) => {
+        setBrokerConfigs(prev => prev.filter(config => config.id !== id));
+        if (activeBrokerId === id) {
+            setActiveBrokerId(''); // Clear active if deleted
+        }
+    }, [setBrokerConfigs, activeBrokerId, setActiveBrokerId]);
+
+    const activeBrokerConfig = useMemo(() => {
+        if (!Array.isArray(brokerConfigs)) return null;
+        return brokerConfigs.find(config => config.id === activeBrokerId) || null;
+    }, [brokerConfigs, activeBrokerId]);
+
+    // UI State & Filters
+    const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [filterStrategy, setFilterStrategy] = useState<string[]>([]);
+    const [filterEmotion, setFilterEmotion] = useState<string[]>([]);
+    const [timeRange, setTimeRange] = useState<TimeRange>('ALL');
+    const [frequency, setFrequency] = useState<Frequency>('daily');
+    const [customRange, setCustomRange] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
+    const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
 
     // 5. Sync Logic
     const { 
@@ -319,6 +375,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteEmotion: (e: string) => { localActions.deleteEmotion(e); setTimeout(triggerCloudBackup, 0); },
     };
 
+
     const value: TradeContextType = {
         trades, strategies, emotions, portfolios,
         activePortfolioIds, setActivePortfolioIds,
@@ -336,6 +393,13 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         maxLossStreak, setMaxLossStreak,
         chartHeight, setChartHeight,
         lossColor, setLossColor,
+        brokerConfigs,
+        activeBrokerId,
+        setActiveBrokerId,
+        updateBrokerConfig,
+        addBrokerConfig,
+        deleteBrokerConfig,
+        activeBrokerConfig,
         filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap,
         availableStrategies, availableEmotions,
         isSyncing, syncStatus, lastBackupTime, triggerCloudBackup, isSyncModalOpen, onResolveSyncConflict,

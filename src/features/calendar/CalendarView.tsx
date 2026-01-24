@@ -1,10 +1,12 @@
 
 // [Manage] Last Updated: 2024-05-22
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
-import { CalendarViewProps, CalendarDay } from '../../types';
+import { ChevronLeft, ChevronRight, ChevronDown, RefreshCw, DownloadCloud } from 'lucide-react';
+import { CalendarViewProps, CalendarDay, BrokerConfig } from '../../types';
 import { I18N } from '../../constants';
 import { formatCurrency, formatDecimal, formatCompactNumber } from '../../utils/format';
+import { SyncDateModal } from '../../components/modals/SyncDateModal';
+import { useTradeContext } from '../../context/TradeContext';
 
 export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDateClick, monthlyStats, hideAmounts, lang }: CalendarViewProps) => {
     const year = currentMonth.getFullYear();
@@ -22,11 +24,16 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
     const pickerRef = useRef<HTMLDivElement>(null);
     const [pickerYear, setPickerYear] = useState(year);
 
+    // Sync State
+    const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+    const { trades, activeBrokerConfig, updateBrokerConfig, actions, activePortfolioIds, activeBrokerId } = useTradeContext();
+
     useEffect(() => {
         setPickerYear(year);
     }, [year]);
 
     useEffect(() => {
+        // ... existing click outside logic
         const handleClickOutside = (event: MouseEvent) => {
             if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
                 setIsPickerOpen(false);
@@ -51,6 +58,29 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
         calendarDays.forEach(d => { if (Math.abs(d.pnl) > max) max = Math.abs(d.pnl); });
         return max > 0 ? max : 1;
     }, [calendarDays]);
+
+    // HANDLE SYNC SUCCESS (Wizard)
+    const handleSyncSuccess = (transactions: any[]) => {
+         // Cleanup Legacy "Daily Summary" trades to prevent double counting
+         // If we are importing detailed trades for "2026-01-16", we should remove "sync-2026-01-16"
+         const affectedDates = new Set(transactions.map(t => t.date));
+         affectedDates.forEach(date => {
+             actions.deleteTrade(`sync-${date}`);
+         });
+
+         transactions.forEach(tx => {
+             const newTrade = {
+                 id: tx.id,
+                 date: tx.date,
+                 pnl: tx.pnl,
+                 strategy: tx.strategy || '',
+                 emotion: tx.emotion || '',
+                 note: tx.note, // Use the note from the modal (already formatted or edited)
+                 portfolioId: tx.portfolioId
+             };
+             actions.saveTrade(newTrade, null);
+         });
+    };
 
     // Enhanced Bubble Style with Rose/Emerald and Depth
     const getBubbleStyle = (pnl: number, day: string | number) => {
@@ -138,50 +168,79 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
                 <div className="flex justify-between items-center mb-8 px-1 relative z-20">
                     <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="p-2 rounded-full hover:bg-white/5 transition-colors text-zinc-500 hover:text-white group"><ChevronLeft size={20} className="group-hover:-translate-x-0.5 transition-transform"/></button>
                     
-                    <div className="relative" ref={pickerRef}>
-                        <button 
-                            onClick={() => setIsPickerOpen(!isPickerOpen)}
-                            className="text-xl font-bold font-barlow-numeric tracking-[0.1em] text-white uppercase flex items-center gap-3 select-none hover:bg-white/5 px-4 py-2 rounded-xl transition-colors"
-                        >
-                            <span className="opacity-90">{year}</span>
-                            <span className="w-1 h-1 rounded-full bg-zinc-600"></span>
-                            <span className="text-[#C8B085]">{String(month + 1).padStart(2, '0')}</span>
-                            <ChevronDown size={14} className={`text-zinc-600 transition-transform duration-300 ${isPickerOpen ? 'rotate-180' : ''}`} />
-                        </button>
+                    <div className="flex items-center gap-2">
+                        <div className="relative" ref={pickerRef}>
+                            <button 
+                                onClick={() => setIsPickerOpen(!isPickerOpen)}
+                                className="text-xl font-bold font-barlow-numeric tracking-[0.1em] text-white uppercase flex items-center gap-3 select-none hover:bg-white/5 px-4 py-2 rounded-xl transition-colors"
+                            >
+                                <span className="opacity-90">{year}</span>
+                                <span className="w-1 h-1 rounded-full bg-zinc-600"></span>
+                                <span className="text-[#C8B085]">{String(month + 1).padStart(2, '0')}</span>
+                                <ChevronDown size={14} className={`text-zinc-600 transition-transform duration-300 ${isPickerOpen ? 'rotate-180' : ''}`} />
+                            </button>
 
-                        {isPickerOpen && (
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#0A0A0A] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
-                                {/* Year Navigator */}
-                                <div className="flex justify-between items-center p-3 border-b border-white/5 bg-white/5">
-                                    <button onClick={() => setPickerYear(p => p - 1)} className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"><ChevronLeft size={16}/></button>
-                                    <span className="font-barlow-numeric font-bold text-white text-lg">{pickerYear}</span>
-                                    <button onClick={() => setPickerYear(p => p + 1)} className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"><ChevronRight size={16}/></button>
+                            {isPickerOpen && (
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#0A0A0A] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
+                                    {/* Year Navigator */}
+                                    <div className="flex justify-between items-center p-3 border-b border-white/5 bg-white/5">
+                                        <button onClick={() => setPickerYear(p => p - 1)} className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"><ChevronLeft size={16}/></button>
+                                        <span className="font-barlow-numeric font-bold text-white text-lg">{pickerYear}</span>
+                                        <button onClick={() => setPickerYear(p => p + 1)} className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"><ChevronRight size={16}/></button>
+                                    </div>
+                                    {/* Month Grid */}
+                                    <div className="grid grid-cols-4 gap-1 p-2">
+                                        {Array.from({length: 12}).map((_, i) => (
+                                            <button 
+                                                key={i} 
+                                                onClick={() => {
+                                                    setCurrentMonth(new Date(pickerYear, i, 1));
+                                                    setIsPickerOpen(false);
+                                                }}
+                                                className={`py-3 rounded-lg text-xs font-bold font-barlow-numeric transition-all ${
+                                                    year === pickerYear && month === i 
+                                                    ? 'bg-[#C8B085] text-black shadow-lg shadow-[#C8B085]/20' 
+                                                    : 'text-zinc-500 hover:text-white hover:bg-white/5'
+                                                }`}
+                                            >
+                                                {i + 1}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                                {/* Month Grid */}
-                                <div className="grid grid-cols-4 gap-1 p-2">
-                                    {Array.from({length: 12}).map((_, i) => (
-                                        <button 
-                                            key={i} 
-                                            onClick={() => {
-                                                setCurrentMonth(new Date(pickerYear, i, 1));
-                                                setIsPickerOpen(false);
-                                            }}
-                                            className={`py-3 rounded-lg text-xs font-bold font-barlow-numeric transition-all ${
-                                                year === pickerYear && month === i 
-                                                ? 'bg-[#C8B085] text-black shadow-lg shadow-[#C8B085]/20' 
-                                                : 'text-zinc-500 hover:text-white hover:bg-white/5'
-                                            }`}
-                                        >
-                                            {i + 1}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
+
+                        {/* SYNC BUTTON */}
+                        <button 
+                            onClick={() => setIsSyncModalOpen(true)}
+                            className="w-10 h-10 rounded-xl bg-white/5 hover:bg-[#C8B085]/20 hover:text-[#C8B085] flex items-center justify-center text-zinc-500 transition-all border border-transparent hover:border-[#C8B085]/30 group"
+                            title="Import P&L"
+                        >
+                            <DownloadCloud size={18} className="group-hover:scale-110 transition-transform"/>
+                        </button>
                     </div>
 
                     <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="p-2 rounded-full hover:bg-white/5 transition-colors text-zinc-500 hover:text-white group"><ChevronRight size={20} className="group-hover:translate-x-0.5 transition-transform"/></button>
                 </div>
+
+                {/* SYNC MODAL */}
+                <SyncDateModal 
+                    isOpen={isSyncModalOpen}
+                    onClose={() => setIsSyncModalOpen(false)}
+                    currentDate={new Date()}
+                    configs={useTradeContext().brokerConfigs}
+                    activeId={activeBrokerId}
+                    onUpdateBroker={updateBrokerConfig}
+                    onSuccess={handleSyncSuccess}
+                    lang={lang}
+                    portfolios={useTradeContext().portfolios}
+                    activePortfolioIds={activePortfolioIds}
+                    strategies={useTradeContext().strategies}
+                    emotions={useTradeContext().emotions}
+                    existingTrades={trades}
+                />
+
 
                 {/* Days Header */}
                 <div className="grid grid-cols-7 text-center mb-4">

@@ -3,7 +3,7 @@
 <div align="center">
   <img width="1200" height="475" alt="TradeTrack Pro Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
   <p align="center">
-    <img src="https://img.shields.io/badge/Version-1.0.0-gold?style=for-the-badge" alt="Version" />
+    <img src="https://img.shields.io/badge/Version-1.1.0-gold?style=for-the-badge" alt="Version" />
     <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" />
     <img src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
     <img src="https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
@@ -93,6 +93,16 @@
    ```bash
    npm run dev
    ```
+
+### 🔗 永豐金證券 (Shioaji API) 串接
+
+本專案支援原生串接永豐金證券損益資料。如需使用此功能，請先啟動後端服務：
+
+1. **啟動後端**
+   進入 `backend` 資料夾並執行 `start.bat`。系統會自動安裝 Python 依賴並啟動 Flask 伺服器。
+
+2. **雲端運行 (24h)**
+   如果您希望在電腦關閉時也能運作，請參考 [雲端佈署計畫](./cloud_deployment_plan.md) 將後端佈署至 Render 或 Railway。
 
 ## 📄 版本更新
 

@@ -10,6 +10,21 @@ export interface Portfolio {
   lossColor: string;
 }
 
+export interface BrokerConfig {
+  id: string; // Unique identifier for the account
+  alias?: string; // Optional user-defined name
+  provider: 'mock' | 'shioaji';
+  apiKey: string;
+  apiSecret: string;
+  personId: string;
+  branch?: string; // e.g. "新店" or "9A95"
+  brokerUsername?: string; // e.g. "SimulationUser"
+  environment?: 'production' | 'simulation';
+  caPath: string;
+  caPassword: string;
+  isConnected: boolean;
+}
+
 export interface Trade {
   id: string;
   date: string;

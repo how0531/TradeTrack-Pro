@@ -1,12 +1,17 @@
-
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useRef } from 'react';
-import { Cloud, UserCircle, Check, LogOut, Shield, Settings as SettingsIcon, Languages, Palette, HardDrive, Download, Upload, AlertOctagon, Target, Info, Layers, Plus as PlusIcon, X, Briefcase, Trash2, Pencil, Loader2 } from 'lucide-react';
+import { 
+    Cloud, UserCircle, Check, LogOut, Shield, Settings as SettingsIcon, Languages, Palette, 
+    HardDrive, Download, Upload, AlertOctagon, Target, Info, Layers, Plus as PlusIcon, 
+    X, Briefcase, Trash2, Pencil, Loader2, FileKey, ChevronRight, Eye, EyeOff, FolderOpen, Save, AlertCircle, User 
+} from 'lucide-react';
 import { SettingsViewProps, Portfolio, Lang } from '../../types';
 import { THEME, I18N, DEFAULT_PALETTE } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { ImportConflictModal } from '../../components/modals/ImportConflictModal';
 import { useTradeContext } from '../../context/TradeContext';
+import { BrokerSettings } from './components/BrokerSettings';
+
 
 // --- INTERNAL COMPONENT: GlassCard (UPDATED TRANSPARENCY) ---
 const GlassCard = ({ children, className = '', onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => {
@@ -274,17 +279,15 @@ export const AccountManager = ({
 
 // --- MAIN SETTINGS VIEW ---
 export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
-    const {
-        lang, setLang, trades, actions,
-        ddThreshold, setDdThreshold,
-        maxLossStreak, setMaxLossStreak,
-        lossColor, setLossColor,
+    const { 
+        trades, portfolios, actions, lang, setLang, 
+        authStatus, user: currentUser, login: onLogin, logout: onLogout, triggerCloudBackup, lastBackupTime,
         availableStrategies: strategies, availableEmotions: emotions,
-        portfolios, activePortfolioIds, setActivePortfolioIds,
-        user: currentUser, authStatus, login: onLogin, logout: onLogout,
-        lastBackupTime, triggerCloudBackup,
+        brokerConfigs, activeBrokerId, setActiveBrokerId, updateBrokerConfig, addBrokerConfig, deleteBrokerConfig,
+        lossColor, setLossColor, ddThreshold, setDdThreshold, maxLossStreak, setMaxLossStreak,
         isSyncModalOpen: isImportModalOpen
     } = useTradeContext();
+
     
     const t = I18N[lang] || I18N['zh'];
 
@@ -355,11 +358,11 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                             <Cloud size={10} className="text-[#5B9A8B]"/>
                                             <span className="text-[10px] font-bold text-[#5B9A8B] uppercase tracking-wider">{t.synced}</span>
                                         </div>
-                                        {lastBackupTime && (
-                                            <span className="text-[9px] text-slate-600 pl-1 font-mono">
-                                                {t.lastBackup}: {lastBackupTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                            </span>
-                                        )}
+                                         {lastBackupTime instanceof Date && (
+                                             <span className="text-[9px] text-slate-600 pl-1 font-mono">
+                                                 {t.lastBackup}: {lastBackupTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                             </span>
+                                         )}
                                     </div>
                                 </div>
                             </div>
@@ -382,7 +385,19 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                  </div>
             </div>
 
+            {/* BROKERAGE INTEGRATION */}
+            <BrokerSettings
+                configs={brokerConfigs}
+                activeId={activeBrokerId}
+                onSwitch={setActiveBrokerId}
+                onUpdate={updateBrokerConfig}
+                onAdd={addBrokerConfig}
+                onDelete={deleteBrokerConfig}
+                lang={lang}
+            />
+
             {/* RISK MANAGEMENT */}
+
             <div className="space-y-2">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2"><Shield size={12}/> {t.riskSettings}</h3>
                 <div className="p-4 rounded-xl border border-white/5 space-y-6">
