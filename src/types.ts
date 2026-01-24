@@ -24,6 +24,7 @@ export interface BrokerConfig {
   caPassword: string;
   isConnected: boolean;
   apiKeyHint?: string; // Hint derived from the actual key used by the backend
+  caContent?: string;  // Base64 content of the .pfx file for dynamic uploads
 }
 
 export interface Trade {

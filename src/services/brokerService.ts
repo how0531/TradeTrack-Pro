@@ -88,6 +88,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 personId: config.personId,
                 caPath: config.caPath,
                 caPassword: config.caPassword,
+                caContent: config.caContent, // 傳送 Base64 憑證內容
                 startDate: startDate.toISOString().split('T')[0],
                 endDate: endDate.toISOString().split('T')[0]
             };
@@ -259,7 +260,8 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<{ branch
                 apiSecret: config.apiSecret,
                 personId: config.personId,
                 caPath: config.caPath,
-                caPassword: config.caPassword
+                caPassword: config.caPassword,
+                caContent: config.caContent // 傳送 Base64 憑證內容
             };
             console.log('Sending LOGIN request to backend:', {
                 url: `${API_BASE}/api/broker/profile`,

@@ -2,6 +2,8 @@ import shioaji as sj
 import os
 import sys
 import json
+import base64
+import tempfile
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -12,12 +14,28 @@ def login_and_fetch_pnl(
     person_id,
     ca_path,
     ca_password,
+    ca_content=None,
     start_date=None,
     end_date=None,
     simulation=True,
 ):
-    # CA Path Handle (Cloud Compatibility & Multi-Account Support)
-    if not os.path.exists(ca_path):
+    temp_ca_path = None
+
+    # 1. 如果有傳入 Base64 內容，優先建立臨時檔案
+    if ca_content:
+        try:
+            # 建立臨時檔案
+            with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as tf:
+                cert_data = base64.b64decode(ca_content)
+                tf.write(cert_data)
+                temp_ca_path = tf.name
+            ca_path = temp_ca_path
+            print(f"DEBUG: Using temporary CA from Base64: {ca_path}")
+        except Exception as e:
+            print(f"ERROR: Failed to process ca_content: {e}")
+
+    # 2. 如果沒有臨時檔案，執行既有的 Fallback 邏輯
+    elif not os.path.exists(ca_path):
         # 1. 優先嘗試使用身分證字號命名的檔名 (例如 R124731212.pfx)
         id_fallback = os.path.join(os.path.dirname(__file__), "ca", f"{person_id}.pfx")
 
@@ -193,13 +211,19 @@ def login_and_fetch_pnl(
             "branch_code": branch_code,
             "username": username,
         }
-
     except Exception as e:
         return {
             "status": "error",
             "message": str(e),
             "environment": "simulation" if simulation else "production",
         }
+    finally:
+        if temp_ca_path and os.path.exists(temp_ca_path):
+            try:
+                os.remove(temp_ca_path)
+                print(f"DEBUG: Temporary CA deleted: {temp_ca_path}")
+            except Exception as cleanup_err:
+                print(f"ERROR: Failed to delete temporary CA: {cleanup_err}")
 
 
 if __name__ == "__main__":

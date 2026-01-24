@@ -46,6 +46,7 @@ def get_broker_profile():
             person_id=data["personId"],
             ca_path=data["caPath"],
             ca_password=data["caPassword"],
+            ca_content=data.get("caContent"),  # 新增 Base64 憑證支援
             start_date=None,
             end_date=None,
             simulation=False,
@@ -114,6 +115,7 @@ def get_broker_pnl():
             person_id=data["personId"],
             ca_path=data["caPath"],
             ca_password=data["caPassword"],
+            ca_content=data.get("caContent"),  # 新增 Base64 憑證支援
             start_date=data["startDate"],
             end_date=data["endDate"],
             simulation=False,

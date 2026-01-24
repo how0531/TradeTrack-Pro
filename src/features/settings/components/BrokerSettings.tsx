@@ -254,21 +254,44 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
 
                                 <div className="flex flex-col gap-2">
                                     <label className="text-[10px] font-bold text-[#C8B085] uppercase tracking-widest px-1 flex items-center gap-2">
-                                        <FileKey size={12}/> 憑證路徑 (.PFX PATH)
+                                        <FileKey size={12}/> 憑證檔案 (.PFX FILE)
                                     </label>
                                     <div className="group relative">
                                         <input 
-                                            type="text" 
-                                            value={localConfig.caPath} 
-                                            onChange={(e) => handleChange('caPath', e.target.value)}
-                                            placeholder="C:\ekey\...\Sinopac.pfx"
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-4 text-xs font-mono text-slate-400 outline-none focus:border-[#C8B085]"
+                                            type="file" 
+                                            accept=".pfx"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                    const reader = new FileReader();
+                                                    reader.onload = (event) => {
+                                                        const base64 = event.target?.result as string;
+                                                        // 移除 data:application/x-pkcs12;base64, 前綴
+                                                        const pureBase64 = base64.split(',')[1];
+                                                        handleChange('caContent', pureBase64);
+                                                        handleChange('caPath', file.name); // 儲存檔名作為參考
+                                                    };
+                                                    reader.readAsDataURL(file);
+                                                }
+                                            }}
+                                            className="hidden"
+                                            id="pfx-upload"
                                         />
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white/5 rounded-lg border border-white/5 text-slate-600 transition-colors">
-                                            <FolderOpen size={14}/>
-                                        </div>
+                                        <label 
+                                            htmlFor="pfx-upload"
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-4 text-xs font-mono text-slate-400 outline-none focus:border-[#C8B085] flex items-center justify-between cursor-pointer hover:bg-black/60 transition-colors"
+                                        >
+                                            <span>{localConfig.caPath || (lang === 'zh' ? '點擊選取 .pfx 憑證檔案' : 'Click to select .pfx file')}</span>
+                                            <div className="p-2 bg-white/5 rounded-lg border border-white/5 text-[#C8B085]">
+                                                <FolderOpen size={14}/>
+                                            </div>
+                                        </label>
                                     </div>
-                                    <p className="text-[9px] text-slate-600 font-bold italic px-1">註：目前僅支援正式環境 Python 原生連線</p>
+                                    <p className="text-[9px] text-zinc-600 font-bold italic px-1">
+                                        {lang === 'zh' 
+                                            ? '註：憑證僅供本次連線使用，不會儲存於伺服器。支援手機端選取檔案。' 
+                                            : 'Note: Certificate is used only for this connection and not stored. Supports mobile file selection.'}
+                                    </p>
                                 </div>
                             </div>
                         </div>
