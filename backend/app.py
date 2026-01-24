@@ -20,11 +20,15 @@ CORS(app)  # 允許跨域請求 (Cloud 佈署必備)
 
 @app.route("/", methods=["GET"])
 def index():
+    import shioaji
+
     return (
         jsonify(
             {
                 "status": "online",
                 "message": "TradeTrack-Pro Backend is active.",
+                "version": "v1.1.5-fix-P",
+                "shioaji_version": getattr(shioaji, "__version__", "unknown"),
                 "endpoints": ["/health", "/api/broker/profile", "/api/broker/pnl"],
             }
         ),
