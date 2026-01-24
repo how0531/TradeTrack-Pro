@@ -82,9 +82,9 @@ def login_and_fetch_pnl(
         except Exception as e:
             print(f"ERROR: Failed to create temporary CA file: {e}")
 
-    api = sj.Shioaji()
-
     try:
+        api = sj.Shioaji()
+
         # 2. 執行登入
         accounts = api.login(
             api_key=api_key,

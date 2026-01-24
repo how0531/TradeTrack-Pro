@@ -3,3 +3,4 @@ flask-cors==4.0.0
 shioaji
 gunicorn==21.2.0
 python-dotenv
+requests
