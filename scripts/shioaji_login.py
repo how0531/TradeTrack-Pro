@@ -83,7 +83,11 @@ def login_and_fetch_pnl(
             print(f"ERROR: Failed to create temporary CA file: {e}")
 
     try:
-        api = sj.Shioaji()
+        # Prevent log permission issues on cloud platforms like Render
+        log_path = os.path.join(tempfile.gettempdir(), "shioaji.log")
+        print(f"DEBUG: Initializing Shioaji. Logs at: {log_path}")
+
+        api = sj.Shioaji(simulation=simulation)  # Pass simulation flag if needed
 
         # 2. 執行登入
         accounts = api.login(
