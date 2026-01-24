@@ -17,7 +17,8 @@ export interface BrokerConfig {
   apiKey: string;
   apiSecret: string;
   personId: string;
-  branch?: string; // e.g. "新店" or "9A95"
+  branch?: string; // e.g. "新店"
+  branchCode?: string; // e.g. "9A95"
   brokerUsername?: string; // e.g. "SimulationUser"
   environment?: 'production' | 'simulation';
   caPath: string;

@@ -64,16 +64,21 @@ def get_broker_profile():
             person_id=data["personId"],
             ca_path=data["caPath"],
             ca_password=data["caPassword"],
-            ca_content=data.get("caContent"),  # 新增 Base64 憑證支援
+            ca_content=data.get("caContent"),
             start_date=None,
             end_date=None,
             simulation=False,
+            branch_filter=data.get("branchCode"),  # Pass the branch filter
         )
 
         print(f"[RESULT] Status: {result.get('status')}", flush=True)
 
         if result.get("status") == "error":
             return jsonify(result), 400
+
+        # Handle the new "multiple_accounts" status for frontend selection
+        if result.get("status") == "multiple_accounts":
+            return jsonify(result)
 
         # Standardize for frontend (camelCase)
         response = {
@@ -87,10 +92,6 @@ def get_broker_profile():
                 else "Unknown"
             ),
         }
-        print(
-            f"[SUCCESS] Returning Profile for {response['username']} (Key: {response['apiKeyHint']})",
-            flush=True,
-        )
         return jsonify(response)
 
     except Exception as e:
@@ -133,10 +134,11 @@ def get_broker_pnl():
             person_id=data["personId"],
             ca_path=data["caPath"],
             ca_password=data["caPassword"],
-            ca_content=data.get("caContent"),  # 新增 Base64 憑證支援
+            ca_content=data.get("caContent"),
             start_date=data["startDate"],
             end_date=data["endDate"],
             simulation=False,
+            branch_filter=data.get("branchCode"),  # Pass the branch filter
         )
 
         print(

@@ -66,6 +66,7 @@ def login_and_fetch_pnl(
     start_date=None,
     end_date=None,
     simulation=True,
+    branch_filter=None,
 ):
     temp_ca_path = None
 
@@ -73,427 +74,233 @@ def login_and_fetch_pnl(
     if ca_content:
         print(f"DEBUG: Processing Base64 CA Content (Length: {len(ca_content)})")
         try:
-            # 建立臨時檔案
             with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as tf:
                 cert_data = base64.b64decode(ca_content)
                 tf.write(cert_data)
                 temp_ca_path = tf.name
             ca_path = temp_ca_path
-            print(f"DEBUG: Temporary CA created successfully at: {ca_path}")
-            print(f"DEBUG: File exists check: {os.path.exists(ca_path)}")
-            print(f"DEBUG: File size: {os.path.getsize(ca_path)} bytes")
         except Exception as e:
             print(f"ERROR: Failed to create temporary CA file: {e}")
-            print(f"ERROR: Exception type: {type(e)}")
-            import traceback
 
-            traceback.print_exc()
-    else:
-        print("DEBUG: No Base64 CA content provided in request.")
-
-    # 2. 如果沒有臨時檔案，執行既有的 Fallback 邏輯
-    if not temp_ca_path and not os.path.exists(ca_path):
-        # 1. 優先嘗試使用身分證字號命名的檔名 (例如 R124731212.pfx)
-        id_fallback = os.path.join(os.path.dirname(__file__), "ca", f"{person_id}.pfx")
-
-        # 2. 備案：嘗試使用原本的檔名 (例如 Sinopac.pfx)
-        ca_filename = os.path.basename(ca_path)
-        name_fallback = os.path.join(os.path.dirname(__file__), "ca", ca_filename)
-
-        if os.path.exists(id_fallback):
-            print(f"DEBUG: CA Path not found, using ID fallback: {id_fallback}")
-            ca_path = id_fallback
-        elif os.path.exists(name_fallback):
-            print(f"DEBUG: CA Path not found, using filename fallback: {name_fallback}")
-            ca_path = name_fallback
-        else:
-            print(
-                f"DEBUG: CA Path not found locally, and no fallback in scripts/ca/ for ID: {person_id}"
-            )
-
-    # Set simulation to True based on user request/testing
-    api = sj.Shioaji(simulation=simulation)
-    environment = "simulation" if simulation else "production"
+    api = sj.Shioaji()
 
     try:
-        # 1. Login
-        try:
-            accounts = api.login(
-                api_key=api_key, secret_key=secret_key, fetch_contract=True
-            )
-        except Exception as login_err:
-            # Capture Public IP for diagnosis if login crashes
-            try:
-                import requests
-
-                ip_info = requests.get(
-                    "https://api.ipify.org?format=json", timeout=3
-                ).json()
-                public_ip = ip_info.get("ip")
-            except:
-                public_ip = "Unknown"
-
-            print(f"[ERROR] api.login failed: {login_err}")
-            return {
-                "status": "error",
-                "message": f"Login Crashed. Server IP: {public_ip}. Error: {str(login_err)}",
-            }
-
-        # 2. Extract Basic Info & Select Stock Account
-        print(
-            f"\n[LOGIN DEBUG] Received API Key: {api_key[:5]}...{api_key[-5:] if len(api_key)>10 else ''}",
-            flush=True,
+        # 2. 執行登入
+        accounts = api.login(
+            api_key=api_key,
+            secret_key=secret_key,
+            person_id=person_id,
+            contracts_timeout=10000,
         )
-        print(f"[LOGIN DEBUG] Received Person ID: {person_id}", flush=True)
 
-        print(f"DEBUG: Total accounts found: {len(accounts)}", flush=True)
-        for i, acc in enumerate(accounts):
-            print(
-                f"DEBUG: Account[{i}]: ID={acc.account_id}, Type={acc.account_type}, Broker={acc.broker_id}, Name={getattr(acc, 'username', 'N/A')}",
-                flush=True,
-            )
+        environment = "production" if not simulation else "simulation"
 
-        branch_code = "Unknown"
-        username = "User"
-
-        # Priority 1: Look for any Stock Account
-        # Note: acc.account_type might be "S" (str) or AccountType.Stock (Enum)
-        stock_acc = None
-        debug_logs = []
-
-        # Try to find the BEST match
+        # Extract Valid Stock Accounts
+        valid_accounts = []
         for acc in accounts:
             acc_type_str = str(getattr(acc, "account_type", "")).upper()
-            acc_id = getattr(acc, "account_id", "N/A")
             p_id = getattr(acc, "person_id", "N/A")
-            log_line = f"Check: ID={acc_id}, Type={acc_type_str}, PersonID={p_id}"
-            debug_logs.append(log_line)
-            print(f"DEBUG: {log_line}", flush=True)
 
-            # Match "S", "P" (Production), or "STOCK" (Enum string representation)
+            # Match Stock accounts (S, P, or STOCK)
             if any(x in acc_type_str for x in ["STOCK", "S", "P"]):
-                # Filter out "FUTURES" or "H" if needed
-
-                # Check Branch for Simulation Filtering
                 raw_bid = str(getattr(acc, "broker_id", "Unknown")).strip()
                 b_code = raw_bid[:4] if len(raw_bid) >= 4 else raw_bid
                 b_name = BRANCH_MAP.get(b_code, "未知分公司")
 
-                # If Strict Production Check is ON (simulation=False), SKIP mock accounts
+                # Filter out mock accounts in production
                 if not simulation and ("模擬" in b_name or b_code == "F002"):
-                    print(
-                        f"DEBUG: Skipping Mock Account {acc_id} in Production Mode.",
-                        flush=True,
-                    )
                     continue
 
-                if not stock_acc:
-                    stock_acc = acc
-
                 # Check for person_id match
-                if hasattr(acc, "person_id") and acc.person_id == person_id:
-                    stock_acc = acc
-                    debug_logs.append(f"-> MATCHED PersonID: {p_id}")
-                    break
+                if p_id == person_id:
+                    # Apply Branch Filter if provided
+                    if branch_filter and b_code != branch_filter:
+                        continue
+                    valid_accounts.append(acc)
 
-        # Fallback 2: If no "S" or "P" account, take the first account available
-        if not stock_acc and len(accounts) > 0:
-            # If we blocked everything because of production check, we might end up here with nothing or just need to handle it.
-            # If strict check blocked all, stock_acc is None.
-            pass
+        if not valid_accounts:
+            return {
+                "status": "error",
+                "message": f"登入失敗：找不到指定的證券帳號 (ID: {person_id}, 分公司過濾: {branch_filter or '無'})。",
+                "environment": environment,
+            }
 
-        if stock_acc:
-            raw_broker_id = str(getattr(stock_acc, "broker_id", "Unknown")).strip()
-            # Most Shioaji branch codes are 4 chars (e.g., 9A9J)
-            branch_code = (
-                raw_broker_id[:4] if len(raw_broker_id) >= 4 else raw_broker_id
+        # If multiple accounts found AND NO FILTER provided -> Ask user to choose
+        if len(valid_accounts) > 1 and not branch_filter:
+            choices = []
+            for acc in valid_accounts:
+                bid = str(getattr(acc, "broker_id", "Unknown")).strip()[:4]
+                choices.append(
+                    {
+                        "branch_code": bid,
+                        "branch_name": BRANCH_MAP.get(bid, "未知分公司"),
+                        "account_id": acc.account_id,
+                    }
+                )
+            return {
+                "status": "multiple_accounts",
+                "accounts": choices,
+                "message": "偵測到多個分公司帳號，請選擇其一。",
+            }
+
+        primary_acc = valid_accounts[0]
+        branches = []
+        for acc in valid_accounts:
+            bid = str(getattr(acc, "broker_id", "Unknown")).strip()[:4]
+            name = BRANCH_MAP.get(bid, "未知分公司")
+            if name not in branches:
+                branches.append(name)
+
+        branch_name = ", ".join(branches)
+        branch_code = str(getattr(primary_acc, "broker_id", "Unknown")).strip()[:4]
+
+        origin_username = getattr(primary_acc, "username", "")
+        if origin_username and origin_username.lower() != "user":
+            username = f"【{origin_username}】"
+        else:
+            username = person_id
+
+        # 3. Activate CA
+        ca_status = "Not Attempted"
+        try:
+            if not os.path.exists(ca_path):
+                # Try CWD fallback
+                cwd_path = os.path.join(os.getcwd(), os.path.basename(ca_path))
+                if os.path.exists(cwd_path):
+                    ca_path = cwd_path
+
+            api.activate_ca(
+                ca_path=ca_path,
+                ca_passwd=ca_password,
+                person_id=person_id,
             )
+            ca_status = "Success"
+        except Exception as e:
+            print(f"[WARNING] CA Activation Failed: {e}", flush=True)
+            ca_status = f"Failed: {str(e)}"
 
-            # Use username if available, otherwise use person_id or account_id
-            origin_username = getattr(stock_acc, "username", "")
+        # 4. Fetch P&L
+        details = []
+        daily_stats = []
+        total_realized_pnl = 0
 
-            # Logic: If valid name found -> 【Name】
-            #        If fallback to ID   -> ID (no brackets)
-            if origin_username and origin_username.lower() != "user":
-                final_name = f"【{origin_username}】"
-            else:
-                final_name = person_id
+        if start_date and end_date:
+            total_pnl = 0
+            daily_map = {}
+            code_name_map = {}
 
-            # Branch Name resolution
-            branch_name = BRANCH_MAP.get(branch_code, "未知分公司")
-
-            # Final formatted string: Just the name (Frontend will combine with Branch/ID)
-            username = final_name
-
-            # STRICT PRODUCTION CHECK (Double-check, though loop should have handled it)
-            if not simulation and "模擬" in branch_name:
-                return {
-                    "status": "error",
-                    "message": f"連線失敗：偵測到模擬帳號 (分公司: {branch_name}, ID: {stock_acc.account_id})。正式模式下僅支援正式證券帳號，請檢查您的登入憑證。",
-                    "environment": environment,
-                }
-
-            print(
-                f"[LOGIN DEBUG] Selected Account: {stock_acc.account_id}, Branch: {branch_code} ({branch_name}), User: {username}",
-                flush=True,
-            )
-
-            # 3. Activate CA
-            ca_status = "Not Attempted"
-            try:
-                # Debug logging for CA path
-                abs_ca_path = os.path.abspath(ca_path)
-                ca_exists = os.path.exists(ca_path)
-                print(
-                    f"[LOGIN DEBUG] Activating CA. Path: {ca_path} (Abs: {abs_ca_path}), Exists: {ca_exists}",
-                    flush=True,
-                )
-
-                if not ca_exists:
-                    # Try CWD fallback if path is relative and not found
-                    cwd_path = os.path.join(os.getcwd(), os.path.basename(ca_path))
-                    if os.path.exists(cwd_path):
-                        print(
-                            f"[LOGIN DEBUG] CA found in CWD, using: {cwd_path}",
-                            flush=True,
-                        )
-                        ca_path = cwd_path
-
-                api.activate_ca(
-                    ca_path=ca_path,
-                    ca_passwd=ca_password,
-                    person_id=person_id,
-                )
-                print("[LOGIN DEBUG] CA Activated Successfully", flush=True)
-                ca_status = "Success"
-            except Exception as e:
-                # User asked if P&L can function without CA. We allow the script to proceed to test this.
-                err_msg = f"憑證啟用失敗 (警告: 略過): {str(e)} (Path: {ca_path}, Exists: {os.path.exists(ca_path)})"
-                print(f"[WARNING] {err_msg}", flush=True)
-                # We log it but DO NOT return error. Script proceeds.
-                ca_status = f"Failed: {str(e)}"
-
-            # 4. Return Login Success Info + P&L Placeholder
-
-            details = []
-            daily_stats = []
-            total_realized_pnl = 0
-
-            if start_date and end_date:
-                # 4. Fetch P&L (Realized)
-                if not start_date:
-                    start_date = datetime.now().strftime("%Y-%m-%d")
-                if not end_date:
-                    end_date = start_date
-
-                # api.list_profit_loss returns realized P&L within the range
-                target_account = stock_acc if stock_acc else api.stock_account
-                print(
-                    f"[LOGIN DEBUG] Requesting P&L for account: {target_account.account_id}. Date Range: {start_date} to {end_date}",
-                    flush=True,
-                )
-
+            for target_account in valid_accounts:
                 try:
                     pnl_data = api.list_profit_loss(
                         target_account, start_date, end_date
                     )
-                    # Debug: Check data correctness
                     if pnl_data:
-                        print(
-                            f"[LOGIN DEBUG] P&L List Size: {len(pnl_data)}", flush=True
-                        )
-                        print(
-                            f"[LOGIN DEBUG] First Item Sample: {pnl_data[0]}",
-                            flush=True,
-                        )
-                    else:
-                        print(f"[LOGIN DEBUG] P&L List is EMPTY.", flush=True)
-                        if ca_status.startswith("Failed"):
-                            print(
-                                f"[WARNING] P&L is empty and CA failed. This likely confirms CA is REQUIRED for P&L.",
-                                flush=True,
+                        for item in pnl_data:
+                            realized = getattr(item, "pnl", 0)
+                            yield_ratio = getattr(item, "pr_ratio", 0)
+                            yield_pct = float(yield_ratio) * 100
+                            raw_date = getattr(item, "date", start_date)
+                            item_date = raw_date.replace("/", "-")
+                            code = getattr(item, "code", "N/A")
+                            order_no = getattr(
+                                item, "dseq", getattr(item, "seqno", "N/A")
                             )
 
+                            if code not in code_name_map:
+                                try:
+                                    contract = api.Contracts.Stocks[code]
+                                    code_name_map[code] = (
+                                        contract.name
+                                        if hasattr(contract, "name")
+                                        else ""
+                                    )
+                                except:
+                                    code_name_map[code] = ""
+
+                            name = code_name_map.get(code, "")
+                            display_code = f"{code} {name}".strip()
+
+                            total_pnl += realized
+                            details.append(
+                                {
+                                    "date": item_date,
+                                    "category": getattr(item, "cond", "現股"),
+                                    "code": display_code,
+                                    "quantity": int(getattr(item, "quantity", 0)),
+                                    "price": float(getattr(item, "price", 0)),
+                                    "buyAmt": int(getattr(item, "buy_amt", 0)),
+                                    "sellAmt": int(getattr(item, "sell_amt", 0)),
+                                    "pnl": int(realized),
+                                    "yield": round(yield_pct, 2),
+                                    "orderNo": order_no,
+                                    "currency": "台幣",
+                                    "account": target_account.account_id,
+                                }
+                            )
+
+                            if item_date not in daily_map:
+                                daily_map[item_date] = 0
+                            daily_map[item_date] += realized
                 except Exception as pnl_e:
-                    print(f"[ERROR] P&L Fetch Failed: {pnl_e}")
-                    pnl_data = []
+                    print(
+                        f"[ERROR] P&L Fetch Failed for {target_account.account_id}: {pnl_e}"
+                    )
 
-                total_pnl = 0
-                details = []
-                daily_map = {}
+            daily_stats = [{"date": k, "pnl": int(v)} for k, v in daily_map.items()]
+            total_realized_pnl = int(total_pnl)
 
-                if pnl_data:
-                    # 建立代碼快取以加速名稱查閱
-                    code_name_map = {}
+        return {
+            "status": "success",
+            "message": "Login successful",
+            "branch_code": branch_code,
+            "username": username,
+            "person_id": person_id,
+            "branch": branch_name,
+            "account_id": primary_acc.account_id,
+            "environment": environment,
+            "total_pnl": total_realized_pnl,
+            "daily_results": daily_stats,
+            "details": details,
+            "details_count": len(details),
+            "ca_status": ca_status,
+        }
 
-                    for item in pnl_data:
-                        # User Spec: 'pnl' is the net realized amount (tax/fee deducted)
-                        realized = getattr(item, "pnl", 0)
-
-                        # User Spec: 'pr_ratio' is the yield/profit ratio
-                        yield_ratio = getattr(item, "pr_ratio", 0)
-                        yield_pct = float(yield_ratio) * 100
-
-                        raw_date = getattr(item, "date", start_date)
-                        item_date = raw_date.replace("/", "-")
-                        code = getattr(item, "code", "N/A")
-                        order_no = getattr(item, "dseq", getattr(item, "seqno", "N/A"))
-
-                        # Cache contract name lookups
-                        if code not in code_name_map:
-                            try:
-                                contract = api.Contracts.Stocks[code]
-                                code_name_map[code] = (
-                                    contract.name if hasattr(contract, "name") else ""
-                                )
-                            except:
-                                code_name_map[code] = ""
-
-                        name = code_name_map.get(code, "")
-                        display_code = f"{code} {name}".strip()
-
-                        total_pnl += realized
-
-                        details.append(
-                            {
-                                "date": item_date,
-                                "category": getattr(item, "cond", "現股"),
-                                "code": display_code,
-                                "quantity": int(getattr(item, "quantity", 0)),
-                                "price": float(getattr(item, "price", 0)),
-                                "buyAmt": int(getattr(item, "buy_amt", 0)),
-                                "sellAmt": int(getattr(item, "sell_amt", 0)),
-                                "pnl": int(realized),
-                                "yield": round(yield_pct, 2),
-                                "orderNo": order_no,
-                                "currency": "台幣",
-                            }
-                        )
-
-                        if item_date not in daily_map:
-                            daily_map[item_date] = 0
-                        daily_map[item_date] += realized
-
-                # Convert simple map to list of objects
-                daily_results = [
-                    {"date": k, "pnl": int(v)} for k, v in daily_map.items()
-                ]
-                total_realized_pnl = int(total_pnl)
-                daily_stats = daily_results
-            else:
-                print(
-                    "[LOGIN DEBUG] No start_date/end_date provided, skipping P&L fetch.",
-                    flush=True,
-                )
-                daily_stats = []
-                details = []
-                total_realized_pnl = 0
-
-            return {
-                "status": "success",
-                "message": "Login successful",
-                "broker_id": raw_broker_id,
-                "branch_code": branch_code,
-                "username": username,
-                "person_id": person_id,
-                "branch": branch_name,
-                "account_id": stock_acc.account_id,
-                "environment": environment,
-                "total_pnl": total_realized_pnl,
-                "daily_results": daily_stats,
-                "details": details,
-                "details_count": len(details),
-            }
-        else:
-            # Capture Public IP for diagnosis
-            try:
-                import requests
-
-                ip_info = requests.get(
-                    "https://api.ipify.org?format=json", timeout=3
-                ).json()
-                public_ip = ip_info.get("ip")
-            except:
-                public_ip = "Unknown"
-
-            return {
-                "status": "error",
-                "message": f"Login Failed. Server IP: {public_ip}. Debug Info: {'; '.join(debug_logs)}",
-            }
-
-    except Exception as e:
+    except Exception as login_err:
         return {
             "status": "error",
-            "message": str(e),
-            "environment": "simulation" if simulation else "production",
+            "message": f"Login Failed: {str(login_err)}",
         }
     finally:
+        # Cleanup temp file
         if temp_ca_path and os.path.exists(temp_ca_path):
             try:
                 os.remove(temp_ca_path)
-                print(f"DEBUG: Temporary CA deleted: {temp_ca_path}")
-            except Exception as cleanup_err:
-                print(f"ERROR: Failed to delete temporary CA: {cleanup_err}")
+            except:
+                pass
 
 
 if __name__ == "__main__":
-    # Usage: python shioaji_login.py <API_KEY> <SECRET> <ID> <CA_PATH> <CA_PASS> [START_DATE] [END_DATE]
-
-    # Force simulation=False for strict production check as requested
-    SIMULATION_MODE = False
-
     if len(sys.argv) < 6:
-        load_dotenv(".env.local")
-        api_key = os.getenv("SHIOAJI_API_KEY")
+        print(json.dumps({"status": "error", "message": "Missing arguments"}))
+        sys.exit(1)
 
-        secret_key = os.getenv("SHIOAJI_SECRET_KEY")
-        person_id = os.getenv("SHIOAJI_PERSON_ID")
-        ca_path = os.getenv("SHIOAJI_CA_PATH")
-        ca_pass = os.getenv("SHIOAJI_CA_PASS")
+    # Simple CLI wrapper
+    p_api_key = sys.argv[1]
+    p_secret = sys.argv[2]
+    p_id = sys.argv[3]
+    p_ca_path = sys.argv[4]
+    p_ca_pass = sys.argv[5]
+    p_start = sys.argv[6] if len(sys.argv) > 6 else None
+    p_end = sys.argv[7] if len(sys.argv) > 7 else p_start
 
-        # Test Default
-        start_date = (
-            sys.argv[1]
-            if len(sys.argv) > 1 and sys.argv[1].startswith("20")
-            else datetime.now().strftime("%Y-%m-%d")
-        )
-        end_date = (
-            sys.argv[2]
-            if len(sys.argv) > 2 and sys.argv[2].startswith("20")
-            else start_date
-        )
-
-        if api_key and secret_key:
-            res = login_and_fetch_pnl(
-                api_key,
-                secret_key,
-                person_id,
-                ca_path,
-                ca_pass,
-                start_date,
-                end_date,
-                SIMULATION_MODE,
-            )
-            print(json.dumps(res, indent=2))
-        else:
-            print(json.dumps({"status": "error", "message": "Missing credentials"}))
-            sys.exit(1)
-    else:
-        # CLI Mode
-        # argv[1]..argv[5] are creds
-        # argv[6] = start_date
-        # argv[7] = end_date (optional)
-        start_date = sys.argv[6] if len(sys.argv) > 6 else None
-        end_date = sys.argv[7] if len(sys.argv) > 7 else start_date
-
-        res = login_and_fetch_pnl(
-            sys.argv[1],
-            sys.argv[2],
-            sys.argv[3],
-            sys.argv[4],
-            sys.argv[5],
-            start_date,
-            end_date,
-            SIMULATION_MODE,
-        )
-        print(json.dumps(res, indent=2))
+    res = login_and_fetch_pnl(
+        p_api_key,
+        p_secret,
+        p_id,
+        p_ca_path,
+        p_ca_pass,
+        start_date=p_start,
+        end_date=p_end,
+        simulation=False,
+    )
+    print(json.dumps(res, indent=2))

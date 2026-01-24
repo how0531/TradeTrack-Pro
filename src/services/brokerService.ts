@@ -242,18 +242,25 @@ const BRANCH_MAP: Record<string, string> = {
     "F002": "模擬分公司",
 };
 
-export const fetchBrokerProfile = async (config: BrokerConfig): Promise<{ branch?: string, branchCode?: string, username?: string, environment?: 'production' | 'simulation', apiKeyHint?: string }> => {
+export interface BrokerProfile {
+    status?: string;
+    branch?: string;
+    branchCode?: string;
+    username?: string;
+    environment?: 'production' | 'simulation';
+    apiKeyHint?: string;
+    accounts?: { branch_code: string, branch_name: string, account_id: string }[];
+}
+
+export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerProfile> => {
     // Simulate Login Delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     if (config.provider === 'shioaji') {
-        // ===== 實際使用 config 中的憑證 =====
-        // 驗證必要欄位是否已填寫
         if (!config.apiKey || !config.apiSecret || !config.personId || !config.caPath) {
-            throw new Error("Login failed: Missing required credentials (API Key, Secret, Person ID, or CA Path)");
+            throw new Error("Login failed: Missing required credentials");
         }
 
-        // ===== 嘗試呼叫 Python 後端 =====
         try {
             const payload = {
                 apiKey: config.apiKey,
@@ -261,14 +268,9 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<{ branch
                 personId: config.personId,
                 caPath: config.caPath,
                 caPassword: config.caPassword,
-                caContent: config.caContent // 傳送 Base64 憑證內容
+                caContent: config.caContent,
+                branchCode: config.branchCode // Send if already selected
             };
-            console.log('Sending LOGIN request to backend:', {
-                url: `${API_BASE}/api/broker/profile`,
-                personId: payload.personId,
-                caPath: payload.caPath,
-                apiKeySuffix: payload.apiKey.substring(payload.apiKey.length - 4)
-            });
 
             const response = await fetch(`${API_BASE}/api/broker/profile`, {
                 method: 'POST',
@@ -283,40 +285,40 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<{ branch
 
             const result = await response.json();
             
-            // 檢查環境
+            // If the backend says multiple accounts, return it immediately
+            if (result.status === 'multiple_accounts') {
+                return result;
+            }
+
             if (result.environment !== 'production') {
                 throw new Error(`Login failed: Expected 'production' environment but got '${result.environment}'.`);
             }
 
-            // 檢查必要資訊是否存在
             if (!result.branchCode || !result.username) {
-                throw new Error("Login failed: Missing account information (branch or username)");
+                throw new Error("Login failed: Missing account information");
             }
             
-            // 嚴格區分大小寫的映射邏輯
             const rawCode = String(result.branchCode || '').trim();
             const branchName = BRANCH_MAP[rawCode] || '永豐金 - ' + rawCode;
             
-            console.log(`[BRANCH DEBUG] Input: "${rawCode}" | Resolved: "${branchName}"`);
-
             return {
+                status: 'success',
                 branchCode: rawCode,
                 branch: branchName,
                 username: result.username,
-                environment: result.environment,
-                apiKeyHint: result.apiKeyHint // 儲存後端回傳的 Key 暗示
+                environment: result.environment as any,
+                apiKeyHint: result.apiKeyHint
             };
 
         } catch (fetchError: any) {
-            // 移除自動回退模擬模式，直接報錯
             console.error('Shioaji Profile Error:', fetchError);
             throw fetchError;
         }
     }
     
-    // Mock provider fallback
     if (config.provider === 'mock') {
         return {
+            status: 'success',
             branchCode: 'F002',
             branch: '模擬分公司',
             username: 'SimulationUser',

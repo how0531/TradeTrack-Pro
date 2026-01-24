@@ -1,28 +1,26 @@
 import React, { useState } from 'react';
-import { Shield, Check, AlertCircle, FileKey, Eye, EyeOff, FolderOpen, Plus, Trash2, Loader2, X } from 'lucide-react';
+import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit } from 'lucide-react';
 import { BrokerConfig } from '../../../types';
 import { fetchBrokerProfile } from '../../../services/brokerService';
 
 interface BrokerSettingsProps {
     configs: BrokerConfig[];
-    activeId: string;
     onAdd: (c: BrokerConfig) => void;
     onUpdate: (id: string, c: BrokerConfig) => void;
     onDelete: (id: string) => void;
-    onSwitch: (id: string) => void;
     lang: 'zh' | 'en';
 }
 
-export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, onSwitch, lang }: BrokerSettingsProps) => {
+export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: BrokerSettingsProps) => {
     const [isEditing, setIsEditing] = useState<string | 'new' | null>(null);
-    const [showSecrets, setShowSecrets] = useState(false);
     const [localConfig, setLocalConfig] = useState<BrokerConfig | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [showSecrets, setShowSecrets] = useState(false);
+    const [accountChoices, setAccountChoices] = useState<any[]>([]);
 
     const emptyConfig: BrokerConfig = {
         id: '',
-        alias: '',
         provider: 'shioaji',
         apiKey: '',
         apiSecret: '',
@@ -41,6 +39,7 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
         }
         setIsEditing(id);
         setErrorMsg(null);
+        setAccountChoices([]);
     };
 
     const handleChange = (key: keyof BrokerConfig, val: any) => {
@@ -63,28 +62,26 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
         setIsTesting(true);
         setErrorMsg(null);
         try {
-            console.log('Testing connection with config:', {
-                provider: localConfig.provider,
-                apiKey: localConfig.apiKey?.substring(0, 10) + '...',
-                personId: localConfig.personId,
-                caPath: localConfig.caPath
-            });
-
-            const profile = await fetchBrokerProfile(localConfig);
+            const result = await fetchBrokerProfile(localConfig);
             
-            if (profile.environment !== 'production') {
-                throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "Production environment required.");
+            if (result.status === 'multiple_accounts' && result.accounts) {
+                setAccountChoices(result.accounts);
+                setErrorMsg(lang === 'zh' ? "偵測到多個帳戶，請選擇一個分公司" : "Multiple accounts detected. Please select a branch.");
+                setIsTesting(false);
+                return;
             }
-            if (!profile.branchCode || !profile.username) {
-                throw new Error(lang === 'zh' ? "無法取得帳號資訊" : "Missing account info.");
+
+            if (result.environment !== 'production') {
+                throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "Production required.");
             }
 
             const updated = {
                 ...localConfig,
                 isConnected: true,
-                branch: profile.branch || localConfig.branch,
-                brokerUsername: profile.username,
-                environment: profile.environment
+                branch: result.branch || localConfig.branch,
+                branchCode: result.branchCode,
+                brokerUsername: result.username,
+                environment: result.environment
             };
             
             setLocalConfig(updated);
@@ -93,244 +90,170 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
             
             setIsEditing(null);
             setIsTesting(false);
+            setAccountChoices([]);
         } catch (error: any) {
-            console.error('Connection test error:', error);
-            const errorMessage = error?.message || String(error) || '連線測試失敗';
-            setErrorMsg(lang === 'zh' 
-                ? `連線失敗: ${errorMessage}` 
-                : `Connection failed: ${errorMessage}`
-            );
+            setErrorMsg(error?.message || 'Connection failed');
             setIsTesting(false);
         }
     };
 
     return (
         <div className="space-y-4">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2">
-                <Shield size={12}/> 券商串接設定 (SHIOAJI)
-            </h3>
-
-            <div className="grid grid-cols-1 gap-3">
-                {(Array.isArray(configs) ? configs : []).map(config => (
-                    config && config.id && (
-                        <div 
-                            key={config.id}
-                            onClick={() => onSwitch(config.id)}
-                            className={`group p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${activeId === config.id ? 'bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'bg-white/[0.02] border-white/5 hover:border-white/10'}`}
-                        >
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-2.5 h-2.5 rounded-full ${config.isConnected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-slate-600'}`}></div>
-                                    <div className="flex flex-col gap-0.5">
-                                        {/* Top Line: Broker - Branch */}
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-bold text-white text-base tracking-tight">
-                                                {config.provider === 'shioaji' ? '永豐金' : 'Broker'} - {config.branch || (lang === 'zh' ? '未知分公司' : 'Unknown Branch')}
-                                            </span>
-                                            {activeId === config.id && (
-                                                <span className="bg-[#C8B085] text-black text-[9px] font-black px-1.5 py-0.5 rounded tracking-tighter">
-                                                    現役
-                                                </span>
-                                            )}
-                                        </div>
-                                        
-                                        {/* Bottom Line: Name | PersonID */}
-                                        <div className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5 font-mono">
-                                            <span className="text-zinc-300">
-                                                {(() => {
-                                                    // Smart Cleanup: If legacy format "【Name】永豐金-Branch...", extract just Name
-                                                    const name = config.alias || config.brokerUsername || 'User';
-                                                    if (name.includes('永豐金')) {
-                                                        // Extract content up to "永豐金"
-                                                        return name.split('永豐金')[0].trim();
-                                                    }
-                                                    return name;
-                                                })()}
-                                            </span>
-                                            <span className="text-zinc-600">|</span>
-                                            <span className="tracking-wide text-zinc-500">{config.personId}</span>
-                                        </div>
+            <div className="flex flex-col gap-3">
+                {configs.map(config => (
+                    <div 
+                        key={config.id}
+                        className="group relative p-5 rounded-2xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${config.isConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                                    {config.isConnected ? <ShieldCheck size={20}/> : <AlertCircle size={20}/>}
+                                </div>
+                                <div className="flex flex-col">
+                                    <h4 className="text-sm font-bold text-slate-200">
+                                        {config.provider === 'shioaji' ? '永豐金' : 'Broker'} - {config.branch || 'Unknown'}
+                                    </h4>
+                                    <div className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5 font-mono">
+                                        <span className="text-zinc-300">
+                                            {(() => {
+                                                const name = config.alias || config.brokerUsername || 'User';
+                                                return name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
+                                            })()}
+                                        </span>
+                                        <span className="text-zinc-600">|</span>
+                                        <span className="tracking-wide text-zinc-500">{config.personId}</span>
                                     </div>
                                 </div>
+                            </div>
 
-                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); handleStartEdit(config.id); }}
-                                        className="p-2.5 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 text-slate-400"
-                                    >
-                                        <FileKey size={14}/>
-                                    </button>
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); onDelete(config.id); }}
-                                        className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/10 hover:bg-red-500/20 hover:border-red-500/20 text-red-500"
-                                    >
-                                        <Trash2 size={14}/>
-                                    </button>
-                                </div>
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => handleStartEdit(config.id)} className="p-2.5 rounded-xl bg-white/5 text-slate-400 hover:text-white"><FileKey size={14}/></button>
+                                <button onClick={() => onDelete(config.id)} className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20"><Trash2 size={14}/></button>
                             </div>
                         </div>
-                    )
+                    </div>
                 ))}
 
                 <button 
                     onClick={() => handleStartEdit('new')}
-                    className="flex items-center justify-center gap-2 p-5 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] hover:bg-white/[0.03] hover:border-[#C8B085]/30 transition-all text-slate-500 hover:text-[#C8B085] group"
+                    className="flex items-center justify-center gap-2 p-5 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] hover:bg-white/[0.03] text-slate-500 hover:text-[#C8B085] group"
                 >
-                    <Plus size={16} className="transition-transform group-hover:rotate-90"/>
-                    <span className="text-xs font-bold uppercase tracking-widest">{lang === 'zh' ? '新增帳務帳號' : 'Add Broker Account'}</span>
+                    <Plus size={16} className="group-hover:rotate-90 transition-transform"/>
+                    <span className="text-xs font-bold uppercase tracking-widest">{lang === 'zh' ? '新增帳務帳號' : 'Add Account'}</span>
                 </button>
             </div>
 
             {isEditing && localConfig && (
-                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200 p-4">
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
                     <div className="w-full max-w-lg bg-[#1C1E22] rounded-3xl border border-white/10 shadow-3xl overflow-hidden flex flex-col max-h-[90vh]">
                         <div className="p-6 border-b border-white/5 flex justify-between items-center">
-                            <div className="flex flex-col">
-                                <h4 className="text-base font-bold text-white uppercase tracking-tight">
-                                    {isEditing === 'new' ? (lang === 'zh' ? '新增券商帳號' : 'Add Broker Account') : (lang === 'zh' ? '編輯帳號資訊' : 'Edit Account')}
-                                </h4>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Shioaji API (Production Only)</p>
-                            </div>
-                            <button onClick={() => setIsEditing(null)} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-white">
-                                <X size={20}/>
-                            </button>
+                            <h4 className="text-base font-bold text-white uppercase tracking-tight">
+                                {isEditing === 'new' ? '新增券商帳號' : '編輯帳號資訊'}
+                            </h4>
+                            <button onClick={() => setIsEditing(null)} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-white"><X size={20}/></button>
                         </div>
 
                         <div className="p-6 space-y-6 overflow-y-auto">
                             {errorMsg && (
-                                <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center gap-3 text-red-400 text-xs font-bold animate-in shake duration-300">
+                                <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center gap-3 text-red-400 text-xs font-bold">
                                     <AlertCircle size={14}/> {errorMsg}
                                 </div>
                             )}
 
                             <div className="space-y-4">
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">帳戶暱稱 (ALIAS)</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="例如：主帳戶、我的投資、SimulationUser的投資..."
-                                        value={localConfig.alias} 
-                                        onChange={(e) => handleChange('alias', e.target.value)}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-[#C8B085]"
-                                    />
+                                    <label className="text-[10px] font-bold text-slate-500">帳戶暱稱</label>
+                                    <input type="text" value={localConfig.alias || ''} onChange={(e) => handleChange('alias', e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white" />
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="flex flex-col gap-2">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">身分證字號 (ID)</label>
-                                        <input 
-                                            type="text" 
-                                            value={localConfig.personId} 
-                                            onChange={(e) => handleChange('personId', e.target.value)}
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-sm font-mono text-white outline-none focus:border-[#C8B085]"
-                                        />
+                                        <label className="text-[10px] font-bold text-slate-500">身分證字號</label>
+                                        <input type="text" value={localConfig.personId} onChange={(e) => handleChange('personId', e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-sm font-mono text-white" />
                                     </div>
                                     <div className="flex flex-col gap-2">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">憑證密碼 (PFX PWD)</label>
-                                        <input 
-                                            type={showSecrets ? "text" : "password"} 
-                                            value={localConfig.caPassword} 
-                                            onChange={(e) => handleChange('caPassword', e.target.value)}
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white outline-none focus:border-[#C8B085]"
-                                        />
+                                        <label className="text-[10px] font-bold text-slate-500">憑證密碼</label>
+                                        <input type={showSecrets ? "text" : "password"} value={localConfig.caPassword} onChange={(e) => handleChange('caPassword', e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white" />
                                     </div>
                                 </div>
 
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">API 金鑰 (API KEY)</label>
-                                    <div className="relative">
-                                        <input 
-                                            type={showSecrets ? "text" : "password"} 
-                                            value={localConfig.apiKey} 
-                                            onChange={(e) => handleChange('apiKey', e.target.value)}
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-mono text-white outline-none focus:border-[#C8B085]"
-                                        />
-                                        <button 
-                                            onClick={() => setShowSecrets(!showSecrets)}
-                                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-                                        >
-                                            {showSecrets ? <EyeOff size={16}/> : <Eye size={16}/>}
-                                        </button>
+                                    <label className="text-[10px] font-bold text-slate-500">API 金鑰</label>
+                                    <input type={showSecrets ? "text" : "password"} value={localConfig.apiKey} onChange={(e) => handleChange('apiKey', e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-mono text-white" />
+                                </div>
+
+                                <div className="flex flex-col gap-2 relative">
+                                    <label className="text-[10px] font-bold text-slate-500">API 密鑰</label>
+                                    <input type={showSecrets ? "text" : "password"} value={localConfig.apiSecret} onChange={(e) => handleChange('apiSecret', e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-mono text-white" />
+                                    <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-slate-500 hover:text-white"><Shield size={14} /></button>
+                                </div>
+
+                                {accountChoices.length > 0 && (
+                                    <div className="flex flex-col gap-3 p-4 rounded-2xl bg-zinc-900 border border-[#C8B085]/20">
+                                        <div className="flex items-center gap-2 mb-1 px-1 text-[#C8B085]">
+                                            <BrainCircuit size={14}/>
+                                            <span className="text-[10px] font-bold uppercase tracking-widest">請選擇連線分公司</span>
+                                        </div>
+                                        {accountChoices.map(acc => (
+                                            <button
+                                                key={acc.account_id}
+                                                onClick={() => {
+                                                    handleChange('branchCode', acc.branch_code);
+                                                    handleChange('branch', acc.branch_name);
+                                                    setTimeout(handleTestConnection, 100);
+                                                }}
+                                                className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085]/10 border-[#C8B085]/50' : 'bg-black/40 border-white/5 hover:border-white/20'}`}
+                                            >
+                                                <div className="flex flex-col items-start font-mono">
+                                                    <span className="text-xs font-bold text-white">永豐金 - {acc.branch_name} ({acc.branch_code})</span>
+                                                    <span className="text-[9px] text-zinc-600 mt-1">{acc.account_id}</span>
+                                                </div>
+                                                <div className={`w-4 h-4 rounded-full border-2 ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085] border-[#C8B085]' : 'border-white/10'}`} />
+                                            </button>
+                                        ))}
                                     </div>
-                                </div>
+                                )}
 
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">API 密鑰 (API SECRET)</label>
-                                    <input 
-                                        type={showSecrets ? "text" : "password"} 
-                                        value={localConfig.apiSecret} 
-                                        onChange={(e) => handleChange('apiSecret', e.target.value)}
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-xs font-mono text-white outline-none focus:border-[#C8B085]"
-                                    />
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                    <label className="text-[10px] font-bold text-[#C8B085] uppercase tracking-widest px-1 flex items-center gap-2">
-                                        <FileKey size={12}/> 憑證檔案 (.PFX FILE)
+                                    <label className="text-[10px] font-bold text-[#C8B085] flex items-center gap-2 font-mono">
+                                        <FileKey size={12}/> 憑證檔案 (.PFX)
                                     </label>
-                                    <div className="group relative">
-                                        <input 
-                                            type="file" 
-                                            accept=".pfx"
-                                            onChange={async (e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (event) => {
-                                                        const base64 = event.target?.result as string;
-                                                        // 移除 data:application/x-pkcs12;base64, 前綴
-                                                        const pureBase64 = base64.split(',')[1];
-                                                        handleChange('caContent', pureBase64);
-                                                        handleChange('caPath', file.name); // 儲存檔名作為參考
-                                                    };
-                                                    reader.readAsDataURL(file);
-                                                }
-                                            }}
-                                            className="hidden"
-                                            id="pfx-upload"
-                                        />
-                                        <label 
-                                            htmlFor="pfx-upload"
-                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-4 text-xs font-mono text-slate-400 outline-none focus:border-[#C8B085] flex items-center justify-between cursor-pointer hover:bg-black/60 transition-colors"
-                                        >
-                                            <span>{localConfig.caPath || (lang === 'zh' ? '點擊選取 .pfx 憑證檔案' : 'Click to select .pfx file')}</span>
-                                            <div className="p-2 bg-white/5 rounded-lg border border-white/5 text-[#C8B085]">
-                                                <FolderOpen size={14}/>
-                                            </div>
-                                        </label>
-                                    </div>
-                                    <p className="text-[9px] text-zinc-600 font-bold italic px-1">
-                                        {lang === 'zh' 
-                                            ? '註：憑證僅供本次連線使用，不會儲存於伺服器。支援手機端選取檔案。' 
-                                            : 'Note: Certificate is used only for this connection and not stored. Supports mobile file selection.'}
-                                    </p>
+                                    <input 
+                                        type="file" 
+                                        accept=".pfx"
+                                        onChange={async (e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                const reader = new FileReader();
+                                                reader.onload = (ev) => {
+                                                    const b64 = (ev.target?.result as string).split(',')[1];
+                                                    handleChange('caContent', b64);
+                                                    handleChange('caPath', file.name);
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+                                        }}
+                                        className="hidden"
+                                        id="pfx-settings"
+                                    />
+                                    <label htmlFor="pfx-settings" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-4 text-xs font-mono text-slate-400 cursor-pointer hover:bg-black/60 flex justify-between items-center group">
+                                        <span>{localConfig.caPath || '點擊選取檔案'}</span>
+                                        <FolderOpen size={14} className="text-[#C8B085] group-hover:scale-110 transition-transform" />
+                                    </label>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="p-6 border-t border-white/5 flex items-center gap-3 bg-black/20">
-                            <button 
-                                onClick={handleSave}
-                                className="flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-all border border-white/5"
-                            >
-                                僅儲存 (SAVE ONLY)
-                            </button>
+                        <div className="p-6 border-t border-white/5 flex items-center gap-3 bg-black/20 font-bold uppercase tracking-tight text-[10px]">
+                            <button onClick={handleSave} className="flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10">僅儲存</button>
                             <button 
                                 disabled={isTesting}
                                 onClick={handleTestConnection}
-                                className="flex-2 py-4 px-8 rounded-2xl bg-[#C8B085] text-black font-bold text-xs uppercase hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-[#C8B085]/10 disabled:opacity-50"
+                                className="flex-2 py-4 px-8 rounded-2xl bg-[#C8B085] text-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                             >
-                                {isTesting ? (
-                                    <>
-                                        <Loader2 className="animate-spin" size={16}/>
-                                        <span>驗證中...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Check size={16}/>
-                                        <span>儲存並驗證連線</span>
-                                    </>
-                                )}
+                                {isTesting ? <Loader2 className="animate-spin" size={16}/> : <Check size={16}/>}
+                                <span>{isTesting ? '驗證中...' : '儲存並驗證'}</span>
                             </button>
                         </div>
                     </div>
@@ -339,3 +262,8 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
         </div>
     );
 };
+
+// Simple Shield icon fallback as it might be missing from some lucide versions
+const Shield = ({ size }: { size: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+);
