@@ -137,19 +137,27 @@ def login_and_fetch_pnl(
         branch_code = "Unknown"
         username = "User"
 
-        # Priority 1: Look for any Stock Account ("S", "s", or "P" for Production/Primary)
+        # Priority 1: Look for any Stock Account
+        # Note: acc.account_type might be "S" (str) or AccountType.Stock (Enum)
         stock_acc = None
 
         # Try to find the BEST match
         for acc in accounts:
-            acc_type = str(getattr(acc, "account_type", "")).upper()
+            acc_type_str = str(getattr(acc, "account_type", "")).upper()
             acc_id = getattr(acc, "account_id", "N/A")
-            print(f"DEBUG: Checking account {acc_id} (Type: {acc_type})", flush=True)
+            print(
+                f"DEBUG: Checking account {acc_id} (Type raw: {acc.account_type} -> {acc_type_str})",
+                flush=True,
+            )
 
-            if acc_type in ["S", "P"]:
+            # Match "S", "P" (Production), or "STOCK" (Enum string representation)
+            if any(x in acc_type_str for x in ["STOCK", "S", "P"]):
+                # Filter out "FUTURES" or "H" if needed, but usually STOCK is unique enough
+                # AccountType.Stock -> "ACCOUNTTYPE.STOCK" -> contains "STOCK"
                 if not stock_acc:
                     stock_acc = acc
-                # If we find one that matches the provided credentials ID, that's definitely it
+
+                # Check for person_id match
                 if hasattr(acc, "person_id") and acc.person_id == person_id:
                     stock_acc = acc
                     print(
