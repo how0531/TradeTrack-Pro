@@ -116,9 +116,27 @@ def login_and_fetch_pnl(
 
     try:
         # 1. Login
-        accounts = api.login(
-            api_key=api_key, secret_key=secret_key, fetch_contract=True
-        )
+        try:
+            accounts = api.login(
+                api_key=api_key, secret_key=secret_key, fetch_contract=True
+            )
+        except Exception as login_err:
+            # Capture Public IP for diagnosis if login crashes
+            try:
+                import requests
+
+                ip_info = requests.get(
+                    "https://api.ipify.org?format=json", timeout=3
+                ).json()
+                public_ip = ip_info.get("ip")
+            except:
+                public_ip = "Unknown"
+
+            print(f"[ERROR] api.login failed: {login_err}")
+            return {
+                "status": "error",
+                "message": f"Login Crashed. Server IP: {public_ip}. Error: {str(login_err)}",
+            }
 
         # 2. Extract Basic Info & Select Stock Account
         print(
