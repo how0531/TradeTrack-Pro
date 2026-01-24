@@ -132,8 +132,10 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
                                             {config.alias && config.brokerUsername && <span>{config.brokerUsername}</span>}
                                             {config.alias && config.brokerUsername && <span className="opacity-30">•</span>}
                                             <span>{config.branch || (config.provider === 'shioaji' ? '永豐金' : '模擬')}</span>
-                                            {config.environment === 'simulation' && (
-                                                <span className="text-[9px] bg-red-500/10 text-red-400 px-1 py-0.5 rounded border border-red-500/10 ml-1">模擬環境</span>
+                                            {config.apiKeyHint && (
+                                                <span className="text-[9px] bg-white/10 text-[#C8B085] px-1 py-0.5 rounded border border-white/5 ml-1">
+                                                    Key: {config.apiKeyHint}
+                                                </span>
                                             )}
                                         </div>
                                     </div>

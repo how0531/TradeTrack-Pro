@@ -241,7 +241,7 @@ const BRANCH_MAP: Record<string, string> = {
     "F002": "模擬分公司",
 };
 
-export const fetchBrokerProfile = async (config: BrokerConfig): Promise<{ branch?: string, branchCode?: string, username?: string, environment?: 'production' | 'simulation' }> => {
+export const fetchBrokerProfile = async (config: BrokerConfig): Promise<{ branch?: string, branchCode?: string, username?: string, environment?: 'production' | 'simulation', apiKeyHint?: string }> => {
     // Simulate Login Delay
     await new Promise(resolve => setTimeout(resolve, 1500));
     
@@ -301,33 +301,13 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<{ branch
                 branchCode: rawCode,
                 branch: branchName,
                 username: result.username,
-                environment: result.environment
+                environment: result.environment,
+                apiKeyHint: result.apiKeyHint // 儲存後端回傳的 Key 暗示
             };
 
         } catch (fetchError: any) {
-            // 如果後端服務未啟動，退回到模擬模式
-            if (fetchError.message?.includes('fetch') || fetchError.message?.includes('NetworkError')) {
-                console.warn('Backend service not available, using simulation mode');
-                console.log('Using credentials from config:', {
-                    apiKey: config.apiKey.substring(0, 10) + '...',
-                    personId: config.personId,
-                    caPath: config.caPath
-                });
-
-                // 模擬結果（實際應從 Python 後端取得）
-                const result = {
-                    branchCode: "9A9i",
-                    username: "SimulationUser",
-                    environment: "production" as const
-                };
-
-                return {
-                    branchCode: result.branchCode,
-                    branch: BRANCH_MAP[result.branchCode] || '未知分公司',
-                    username: result.username,
-                    environment: result.environment
-                };
-            }
+            // 移除自動回退模擬模式，直接報錯
+            console.error('Shioaji Profile Error:', fetchError);
             throw fetchError;
         }
     }

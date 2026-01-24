@@ -23,6 +23,7 @@ export interface BrokerConfig {
   caPath: string;
   caPassword: string;
   isConnected: boolean;
+  apiKeyHint?: string; // Hint derived from the actual key used by the backend
 }
 
 export interface Trade {

@@ -62,8 +62,16 @@ def get_broker_profile():
             "username": result.get("username", "Unknown"),
             "branchCode": result.get("branch_code", "Unknown"),
             "environment": result.get("environment", "unknown"),
+            "apiKeyHint": (
+                f"{data['apiKey'][:4]}...{data['apiKey'][-4:]}"
+                if data.get("apiKey")
+                else "Unknown"
+            ),
         }
-        print(f"[SUCCESS] Returning Profile for {response['username']}", flush=True)
+        print(
+            f"[SUCCESS] Returning Profile for {response['username']} (Key: {response['apiKeyHint']})",
+            flush=True,
+        )
         return jsonify(response)
 
     except Exception as e:
