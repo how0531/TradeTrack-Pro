@@ -128,26 +128,32 @@ def login_and_fetch_pnl(
         branch_code = "Unknown"
         username = "User"
 
-        # Priority 1: Look for any Stock Account ("S" or "s")
+        # Priority 1: Look for any Stock Account ("S", "s", or "P" for Production/Primary)
         stock_acc = None
 
         # Try to find the BEST match
         for acc in accounts:
             acc_type = str(getattr(acc, "account_type", "")).upper()
-            if acc_type == "S":
+            acc_id = getattr(acc, "account_id", "N/A")
+            print(f"DEBUG: Checking account {acc_id} (Type: {acc_type})", flush=True)
+
+            if acc_type in ["S", "P"]:
                 if not stock_acc:
                     stock_acc = acc
                 # If we find one that matches the provided credentials ID, that's definitely it
-                # Some accounts hide person_id, so we also check account_id
                 if hasattr(acc, "person_id") and acc.person_id == person_id:
                     stock_acc = acc
+                    print(
+                        f"DEBUG: Found matching person_id for account: {acc_id}",
+                        flush=True,
+                    )
                     break
 
-        # Fallback 2: If no "S" account, take the first account available
+        # Fallback 2: If no "S" or "P" account, take the first account available
         if not stock_acc and len(accounts) > 0:
             stock_acc = accounts[0]
             print(
-                f"DEBUG: No 'S' type account found, falling back to first account: {stock_acc.account_id}"
+                f"DEBUG: No 'S' or 'P' type account found, falling back to first account: {stock_acc.account_id}"
             )
 
         if stock_acc:
