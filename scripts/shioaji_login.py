@@ -399,7 +399,7 @@ def login_and_fetch_pnl(
 if __name__ == "__main__":
     # Usage: python shioaji_login.py <API_KEY> <SECRET> <ID> <CA_PATH> <CA_PASS> [START_DATE] [END_DATE]
 
-    # Force simulation=True for this test script as requested
+    # Force simulation=False for strict production check as requested
     SIMULATION_MODE = False
 
     if len(sys.argv) < 6:
