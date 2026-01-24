@@ -1,6 +1,6 @@
 
 // [Manage] Last Updated: 2024-05-22
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
 
@@ -15,30 +15,40 @@ const firebaseConfig = {
     measurementId: "G-DJ5M32QLKY"
 };
 
-// Initialize Firebase (Modular SDK)
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase (Modular SDK) with HMR guard
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Auth (Modular SDK)
+// Initialize Auth
 export const auth = getAuth(app);
 
 // Initialize Firestore with settings optimized for offline usage
-export const db = initializeFirestore(app, {
-    cacheSizeBytes: CACHE_SIZE_UNLIMITED
-});
+// Use initializeFirestore only if it hasn't been initialized yet to avoid HMR issues
+let dbInstance;
+try {
+    dbInstance = initializeFirestore(app, {
+        cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+        // In newer SDKs, experimentalAutoDetectLongPolling can help in environments with network issues
+        // experimentalAutoDetectLongPolling: true 
+    });
+} catch (e) {
+    dbInstance = getFirestore(app);
+}
 
+export const db = dbInstance;
 export const config = { appId: firebaseConfig.projectId };
 
-// Enable Offline Persistence
-// This drastically reduces read costs by caching data in the browser's IndexedDB.
-// Subsequent loads will read from local cache unless data has changed on the server.
-enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code == 'failed-precondition') {
-        // Multiple tabs open, persistence can only be enabled in one tab at a a time.
-        console.warn('Firestore persistence failed: Multiple tabs open.');
-    } else if (err.code == 'unimplemented') {
-        // The current browser does not support all of the features required to enable persistence
-        console.warn('Firestore persistence not supported by this browser.');
-    }
-});
+// Enable Offline Persistence with tab management and HMR guard
+if (!(window as any)._firestorePersistenceEnabled) {
+    (window as any)._firestorePersistenceEnabled = true;
+    enableIndexedDbPersistence(db).catch((err) => {
+        if (err.code === 'failed-precondition') {
+            console.warn('Firestore persistence failed: Multiple tabs open.');
+        } else if (err.code === 'unimplemented') {
+            console.warn('Firestore persistence not supported by this browser.');
+        } else {
+            console.error('Firestore persistence unexpected error:', err);
+        }
+    });
+}
 
 export default app;

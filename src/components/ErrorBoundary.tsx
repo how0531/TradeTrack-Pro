@@ -31,7 +31,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
       // Clear specific app keys to avoid wiping unrelated localhost data
       const keysToRemove = [
         'local_trades', 'local_strategies', 'local_emotions', 'local_portfolios',
-        'app_active_portfolios', 'app_loss_color', 'app_dd_threshold', 'app_max_loss_streak'
+        'app_active_portfolios', 'app_loss_color', 'app_dd_threshold', 'app_max_loss_streak', 'app_last_sync_time'
       ];
       keysToRemove.forEach(k => localStorage.removeItem(k));
       window.location.reload();
