@@ -120,15 +120,16 @@ function MainApp() {
     }, [trades, currentMonth]);
 
     const moodGradient = useMemo(() => {
-        if (isRiskAlert) return 'radial-gradient(circle at 50% -20%, rgba(208, 90, 90, 0.15), transparent 70%)'; // 紅色警戒保留
-        // 統一使用預設的金色漸層，看起來更有質感
+        if (isRiskAlert) return 'radial-gradient(circle at 50% -20%, rgba(208, 90, 90, 0.15), transparent 70%)';
+        if (metrics.winRate > 60) return 'radial-gradient(circle at 50% -20%, rgba(74, 222, 128, 0.1), transparent 70%)';
+        if (metrics.winRate < 40) return 'radial-gradient(circle at 50% -20%, rgba(148, 163, 184, 0.1), transparent 70%)';
         return 'radial-gradient(circle at 50% -20%, rgba(200, 176, 133, 0.08), transparent 70%)';
-    }, [isRiskAlert]);
+    }, [isRiskAlert, metrics.winRate]);
 
     return (
         <div className={`min-h-[100dvh] bg-[#000000] text-[#E0E0E0] font-sans flex flex-col max-w-md mx-auto relative shadow-2xl transition-all duration-700 overflow-hidden ${isRiskAlert ? 'shadow-[0_0_50px_rgba(208,90,90,0.3)] border-x border-red-500/20' : ''}`}>
             
-            <div className="fixed inset-0 pointer-events-none z-0 transition-all duration-1000 ease-in-out" style={{ background: moodGradient }} />
+            {/* <div className="fixed inset-0 pointer-events-none z-0 transition-all duration-1000 ease-in-out" style={{ background: moodGradient }} /> */}
 
             {/* ALERT BANNER */}
             {isRiskAlert && (
