@@ -18,6 +18,20 @@ app = Flask(__name__)
 CORS(app)  # 允許跨域請求 (Cloud 佈署必備)
 
 
+@app.route("/", methods=["GET"])
+def index():
+    return (
+        jsonify(
+            {
+                "status": "online",
+                "message": "TradeTrack-Pro Backend is active.",
+                "endpoints": ["/health", "/api/broker/profile", "/api/broker/pnl"],
+            }
+        ),
+        200,
+    )
+
+
 @app.route("/health", methods=["GET"])
 def health_check():
     return jsonify({"status": "ok", "message": "Backend is running"}), 200
