@@ -289,7 +289,7 @@ def login_and_fetch_pnl(
                 # api.list_profit_loss returns realized P&L within the range
                 target_account = stock_acc if stock_acc else api.stock_account
                 print(
-                    f"[LOGIN DEBUG] Requesting P&L for account: {target_account.account_id if target_account else 'NONE'}",
+                    f"[LOGIN DEBUG] Requesting P&L for account: {target_account.account_id}. Date Range: {start_date} to {end_date}",
                     flush=True,
                 )
 
@@ -297,6 +297,23 @@ def login_and_fetch_pnl(
                     pnl_data = api.list_profit_loss(
                         target_account, start_date, end_date
                     )
+                    # Debug: Check data correctness
+                    if pnl_data:
+                        print(
+                            f"[LOGIN DEBUG] P&L List Size: {len(pnl_data)}", flush=True
+                        )
+                        print(
+                            f"[LOGIN DEBUG] First Item Sample: {pnl_data[0]}",
+                            flush=True,
+                        )
+                    else:
+                        print(f"[LOGIN DEBUG] P&L List is EMPTY.", flush=True)
+                        if ca_status.startswith("Failed"):
+                            print(
+                                f"[WARNING] P&L is empty and CA failed. This likely confirms CA is REQUIRED for P&L.",
+                                flush=True,
+                            )
+
                 except Exception as pnl_e:
                     print(f"[ERROR] P&L Fetch Failed: {pnl_e}")
                     pnl_data = []

@@ -136,7 +136,17 @@ export const BrokerSettings = ({ configs, activeId, onAdd, onUpdate, onDelete, o
                                         
                                         {/* Bottom Line: Name | PersonID */}
                                         <div className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5 font-mono">
-                                            <span className="text-zinc-300">{config.alias || config.brokerUsername || 'User'}</span>
+                                            <span className="text-zinc-300">
+                                                {(() => {
+                                                    // Smart Cleanup: If legacy format "【Name】永豐金-Branch...", extract just Name
+                                                    const name = config.alias || config.brokerUsername || 'User';
+                                                    if (name.includes('永豐金')) {
+                                                        // Extract content up to "永豐金"
+                                                        return name.split('永豐金')[0].trim();
+                                                    }
+                                                    return name;
+                                                })()}
+                                            </span>
                                             <span className="text-zinc-600">|</span>
                                             <span className="tracking-wide text-zinc-500">{config.personId}</span>
                                         </div>
