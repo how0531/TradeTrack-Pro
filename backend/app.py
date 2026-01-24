@@ -27,7 +27,7 @@ def index():
             {
                 "status": "online",
                 "message": "TradeTrack-Pro Backend is active.",
-                "version": "v1.2.1-prod",
+                "version": "v1.3.0-stable",
                 "shioaji_version": getattr(shioaji, "__version__", "unknown"),
                 "endpoints": ["/health", "/api/broker/profile", "/api/broker/pnl"],
             }
@@ -97,7 +97,8 @@ def get_broker_profile():
     except Exception as e:
         print(f"\n[EXCEPTION] Profile Error: {str(e)}", flush=True)
         traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
+        error_response = jsonify({"status": "error", "message": str(e)})
+        return error_response, 500
 
 
 @app.route("/api/broker/pnl", methods=["POST"])

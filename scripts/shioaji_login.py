@@ -83,19 +83,18 @@ def login_and_fetch_pnl(
             print(f"ERROR: Failed to create temporary CA file: {e}")
 
     try:
-        # Prevent log permission issues on cloud platforms like Render
-        log_path = os.path.join(tempfile.gettempdir(), "shioaji.log")
-        print(f"DEBUG: Initializing Shioaji. Logs at: {log_path}", flush=True)
+        # 根據 SKILL.md 標準範例：明確指定 simulation 模式
+        print(f"DEBUG: Initializing Shioaji (simulation={simulation})", flush=True)
+        api = sj.Shioaji(simulation=simulation)
 
-        # NOTE: simulation mode is handled during API calls, but we set it here if supported by newer SDKs
-        api = sj.Shioaji()
-
-        # 2. 執行登入
+        # 2. 執行登入（Profile 驗證時不需載入全部合約，避免超時）
+        print(f"DEBUG: Logging in with API Key...", flush=True)
         accounts = api.login(
             api_key=api_key,
             secret_key=secret_key,
-            contracts_timeout=10000,
+            fetch_contract=False,  # Profile 驗證階段不需要合約資料
         )
+        print(f"DEBUG: Login successful. Found {len(accounts)} account(s).", flush=True)
 
         environment = "production" if not simulation else "simulation"
 
