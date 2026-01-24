@@ -14,6 +14,19 @@
 
 **TradeTrack Pro** 是一款專為專業交易者打造的績效追蹤與心理分析儀表板。不僅能記錄損益，更能透過精準的數據可視化與風險監控，協助您建立穩健的交易系統。
 
+## 📸 介面展示
+
+<table style="width: 100%;">
+  <tr>
+    <td width="50%" align="center"><b>核心儀表板 (Equity Curve)</b><br/><img src="./public/screenshots/dashboard.png" width="100%"/></td>
+    <td width="50%" align="center"><b>智能圖表提示 (Smart Tooltip)</b><br/><img src="./public/screenshots/chart_tooltip.png" width="100%"/></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><b>專業隱私模糊 (Privacy Blur)</b><br/><img src="./public/screenshots/privacy_blur.png" width="100%"/></td>
+    <td width="50%" align="center"><b>自定義分享介面 (Share Modal)</b><br/><img src="./public/screenshots/share_modal.png" width="100%"/></td>
+  </tr>
+</table>
+
 ## 🌟 核心亮點
 
 ### 1. 進階數據可視化
@@ -24,30 +37,31 @@
 
 ### 2. 隱私與安全性
 
-- **專業隱私模式 (Privacy Blur)**：一鍵開啟全域模糊效果，隱藏所有金額顯示。適用於公開分享績效卡片，同時保留數據結構的可讀性。
-- **Firebase 實時同步**：數據加密同步至雲端，支援多裝置存取與登入。
+- **全域隱私模式 (Privacy Blur)**：一鍵開啟全域模糊效果，隱藏所有金額顯示。適用於公開分享績效卡片，同時保留數據結構的可讀性。
+- **Firebase 實時同步**：數據加密同步至雲端，支援 Google 帳號登入與多裝置無縫切換。
 
 ### 3. 風險控管預警
 
 - **Drawdown 警報**：當帳戶回撤達到預設比例時，自動觸發紅色風險視覺警示。
 - **連敗暫停建議**：自動偵測連敗次數，提醒交易者適時休息。
 
-### 4. 社交分享
+### 4. 社交分享系統
 
-- **績效卡片生成**：內建美觀的分享卡片模組，可自定義日期範圍、顯示項目並一鍵下載。
+- **多樣化視圖**：可切換「純數據」、「圖表」或「完整報告」分享。
+- **年份日期統一**：內建美觀的分享卡片模組，全日期格式統一為 `YYYY/MM/DD`。
 
 ## 🛠 技術棧
 
 - **Frontend**: React (Hooks, Context API)
-- **Styling**: Tailwind CSS, Vanilla CSS
-- **Charts**: Recharts
+- **Styling**: Tailwind CSS, Vanilla CSS (Glassmorphism design)
+- **Charts**: Recharts (Custom active dots & animations)
 - **Icons**: Lucide React
-- **Backend**: Firebase (Firestore, Authentication)
+- **Backend**: Firebase Store & Auth
 - **Build Tool**: Vite
 
 ## 🚀 快速開始
 
-### 環境要求
+### 環境需求
 
 - Node.js v18.0.0 或更高版本
 
@@ -73,9 +87,6 @@
    VITE_FIREBASE_API_KEY=your_api_key
    VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
    VITE_FIREBASE_PROJECT_ID=your_project_id
-   VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-   VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   VITE_FIREBASE_APP_ID=your_app_id
    ```
 
 4. **啟動開發環境**
@@ -89,4 +100,4 @@
 
 ---
 
-_如有任何問題或功能建議，歡迎提交 Issue 或 Pull Request。_
+_Developed with ❤️ for traders who seek discipline and edge._
