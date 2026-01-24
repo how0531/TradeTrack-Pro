@@ -195,13 +195,29 @@ def login_and_fetch_pnl(
             )
 
             # Use username if available, otherwise use person_id or account_id
-            username = getattr(stock_acc, "username", person_id) or str(stock_acc.account_id)
-            
-            # Override "User" if it mistakenly appears (common Shioaji default)
-            if username == "User" and person_id:
-                username = person_id
+            origin_username = getattr(stock_acc, "username", "")
+            if not origin_username or origin_username.lower() == "user":
+                origin_username = person_id
 
-            print(f"[LOGIN DEBUG] Selected Account: {stock_acc.account_id}, Branch: {branch_code}, User: {username}", flush=True)
+            # Format as requested: 【Name】
+            username = f"【{origin_username}】"
+
+            # Branch Name resolution
+            branch_name = BRANCH_MAP.get(branch_code, "未知分公司")
+
+            # STRICT PRODUCTION CHECK
+            # If we are in Production Mode (simulation=False), reject Mock branches.
+            if not simulation and "模擬" in branch_name:
+                return {
+                    "status": "error",
+                    "message": "Production mode required but Simulation account detected. Please check your credentials.",
+                    "environment": environment,
+                }
+
+            print(
+                f"[LOGIN DEBUG] Selected Account: {stock_acc.account_id}, Branch: {branch_code} ({branch_name}), User: {username}",
+                flush=True,
+            )
 
             # 3. Activate CA
             print(f"[LOGIN DEBUG] Activating CA: {ca_path}", flush=True)
@@ -215,19 +231,12 @@ def login_and_fetch_pnl(
             except Exception as e:
                 print(f"[ERROR] CA Activation Failed: {e}", flush=True)
                 import traceback
+
                 traceback.print_exc()
-                return {
-                    "status": "error", 
-                    "message": f"CA Activation Failed: {str(e)}"
-                }
+                return {"status": "error", "message": f"CA Activation Failed: {str(e)}"}
 
             # 4. Return Login Success Info + P&L Placeholder
-            # (If the original script logic was to fetch P&L here, we should let it proceed or call it.)
-            # Based on app.py usage, it expects P&L data if getting P&L, but app.py has /profile and /pnl endpoints.
-            # API /profile expects just login info. API /pnl expects P&L.
-            # shioaji_login.py usually handles both?
-            # Let's look at the function signature... arguments 'start_date', 'end_date'.
-            
+
             details = []
             daily_stats = []
             total_realized_pnl = 0
@@ -246,7 +255,13 @@ def login_and_fetch_pnl(
                     flush=True,
                 )
 
-                pnl_data = api.list_profit_loss(target_account, start_date, end_date)
+                try:
+                    pnl_data = api.list_profit_loss(
+                        target_account, start_date, end_date
+                    )
+                except Exception as pnl_e:
+                    print(f"[ERROR] P&L Fetch Failed: {pnl_e}")
+                    pnl_data = []
 
                 total_pnl = 0
                 details = []
@@ -301,11 +316,16 @@ def login_and_fetch_pnl(
                         daily_map[item_date] += realized
 
                 # Convert simple map to list of objects
-                daily_results = [{"date": k, "pnl": int(v)} for k, v in daily_map.items()]
+                daily_results = [
+                    {"date": k, "pnl": int(v)} for k, v in daily_map.items()
+                ]
                 total_realized_pnl = int(total_pnl)
                 daily_stats = daily_results
             else:
-                print("[LOGIN DEBUG] No start_date/end_date provided, skipping P&L fetch.", flush=True)
+                print(
+                    "[LOGIN DEBUG] No start_date/end_date provided, skipping P&L fetch.",
+                    flush=True,
+                )
                 daily_stats = []
                 details = []
                 total_realized_pnl = 0
@@ -317,7 +337,7 @@ def login_and_fetch_pnl(
                 "branch_code": branch_code,
                 "username": username,
                 "person_id": person_id,
-                "branch": BRANCH_MAP.get(branch_code, "未知分公司"),
+                "branch": branch_name,
                 "account_id": stock_acc.account_id,
                 "environment": environment,
                 "total_pnl": total_realized_pnl,
