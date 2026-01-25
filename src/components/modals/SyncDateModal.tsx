@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, RefreshCw, Calendar as CalendarIcon, CheckCircle2, AlertTriangle, ShieldCheck, MessageSquare, Check } from 'lucide-react';
+import { X, RefreshCw, Calendar as CalendarIcon, CheckCircle2, AlertTriangle, ShieldCheck, MessageSquare, Check, CalendarDays } from 'lucide-react';
 import { Trade, BrokerConfig, Portfolio } from '../../types';
-import { fetchBrokerPnl, fetchBrokerProfile } from '../../services/brokerService';
+import { fetchBrokerPnl, fetchBrokerProfile, pingBackend } from '../../services/brokerService';
 import { getLocalDateStr } from '../../utils/format';
+import { CustomDateRangeModal } from './CustomDateRangeModal';
 
 interface WizardProps {
     isOpen: boolean;
@@ -62,6 +63,10 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
     const [endDate, setEndDate] = useState(getLocalDateStr());
     const [targetPortfolioId, setTargetPortfolioId] = useState(activePortfolioIds[0] || portfolios[0]?.id || 'main');
     const [selectedConfigIds, setSelectedConfigIds] = useState<string[]>(activeId ? [activeId] : (configs[0] ? [configs[0].id] : []));
+    const [showCalendar, setShowCalendar] = useState(false);
+    
+    // Backend Status
+    const [backendStatus, setBackendStatus] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle');
     
     // Step 2: Data
     const [transactions, setTransactions] = useState<ImportTransaction[]>([]);
@@ -76,7 +81,7 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
         );
     };
 
-    // Reset on Open
+    // Reset on Open & Auto Ping
     useEffect(() => {
         if (isOpen) {
             setStep(1);
@@ -84,6 +89,16 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
             setResultMsg('');
             setTransactions([]);
             setSelectedConfigIds(activeId ? [activeId] : (configs[0] ? [configs[0].id] : []));
+            
+            // Auto Ping Backend
+            const ping = async () => {
+                setBackendStatus('checking');
+                const isOnline = await pingBackend();
+                setBackendStatus(isOnline ? 'online' : 'offline');
+            };
+            ping();
+        } else {
+            setBackendStatus('idle');
         }
     }, [isOpen, activeId, configs]);
 
@@ -260,20 +275,25 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                                     <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
                                     日期範圍 (DATE RANGE)
                                 </label>
-                                <div className="grid grid-cols-2 gap-4">
-                                     <input 
-                                         type="date" 
-                                         value={startDate}
-                                         onChange={(e) => setStartDate(e.target.value)}
-                                         className="w-full bg-black/20 border border-white/10 rounded-2xl px-5 py-4 text-white font-mono text-sm outline-none focus:border-[#C8B085] transition-all"
-                                     />
-                                     <input 
-                                         type="date" 
-                                         value={endDate}
-                                         onChange={(e) => setEndDate(e.target.value)}
-                                         className="w-full bg-black/20 border border-white/10 rounded-2xl px-5 py-4 text-white font-mono text-sm outline-none focus:border-[#C8B085] transition-all"
-                                     />
-                                </div>
+                                <button 
+                                    onClick={() => setShowCalendar(true)}
+                                    className="w-full bg-black/20 border border-white/10 rounded-2xl px-5 py-4 flex items-center justify-between group hover:bg-white/[0.02] transition-all"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-xl bg-[#C8B085]/10 flex items-center justify-center text-[#C8B085]">
+                                            <CalendarDays size={20}/>
+                                        </div>
+                                        <div className="flex flex-col items-start gap-1">
+                                            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">SELECTED PERIOD</span>
+                                            <div className="text-sm font-bold text-white font-barlow-numeric tracking-wide">
+                                                {startDate} <span className="text-slate-600 mx-2">➔</span> {endDate}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="px-3 py-1 rounded-lg bg-white/5 border border-white/5 text-[10px] text-slate-400 font-bold group-hover:bg-white/10 transition-colors">
+                                        CHANGE
+                                    </div>
+                                </button>
                             </div>
 
                             {/* Accounts Selection */}
@@ -431,7 +451,18 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                 </div>
 
                 {/* Footer */}
-                <div className="p-5 border-t border-white/5 flex justify-end gap-3 bg-black/30">
+                <div className="p-5 border-t border-white/5 flex justify-between items-center bg-black/30">
+                    <div className="flex items-center gap-2">
+                        {step === 1 && (
+                            <>
+                                {backendStatus === 'checking' && <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-mono animate-pulse"><div className="w-1.5 h-1.5 rounded-full bg-zinc-500"/>CONNECTING...</div>}
+                                {backendStatus === 'online' && <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-mono"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]"/>ONLINE</div>}
+                                {backendStatus === 'offline' && <div className="flex items-center gap-1.5 text-[10px] text-red-500 font-mono"><div className="w-1.5 h-1.5 rounded-full bg-red-500"/>OFFLINE</div>}
+                            </>
+                        )}
+                    </div>
+
+                    <div className="flex gap-3">
                     {step === 2 && (
                         <button 
                             onClick={() => setStep(1)}
@@ -449,8 +480,22 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                         {status === 'loading' ? 'FETCHING...' : step === 1 ? 'LOGIN & SYNC' : 'CONFIRM IMPORT'}
                         {!status.includes('loading') && <CheckCircle2 size={14}/>}
                     </button>
+                    </div>
                 </div>
             </div>
+
+            {/* Date Range Modal */}
+            <CustomDateRangeModal 
+                isOpen={showCalendar}
+                onClose={() => setShowCalendar(false)}
+                onApply={(start, end) => {
+                    if (start) setStartDate(start);
+                    if (end) setEndDate(end);
+                    setShowCalendar(false);
+                }}
+                initialRange={{ start: startDate, end: endDate }}
+                lang={lang}
+            />
         </div>
     );
 
