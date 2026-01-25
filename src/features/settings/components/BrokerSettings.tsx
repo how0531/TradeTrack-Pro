@@ -19,6 +19,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [showSecrets, setShowSecrets] = useState(false);
     const [accountChoices, setAccountChoices] = useState<any[]>([]);
+    
+    // New state for backend health check
+    const [backendStatus, setBackendStatus] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle');
 
     const emptyConfig: BrokerConfig = {
         id: '',
@@ -35,7 +38,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     // 自動喚醒 Render 後端 (由於免費版會休眠)
     useEffect(() => {
         if (isEditing) {
-            pingBackend();
+            const checkStatus = async () => {
+                setBackendStatus('checking');
+                const isOnline = await pingBackend();
+                setBackendStatus(isOnline ? 'online' : 'offline');
+            };
+            checkStatus();
+        } else {
+            setBackendStatus('idle');
         }
     }, [isEditing]);
 
@@ -329,6 +339,30 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     </label>
                                 </div>
                             </div>
+                        </div>
+
+                        <div className="px-6 pb-2 flex items-center justify-between text-[10px] font-mono">
+                             <div className="flex items-center gap-2">
+                                <span className="text-zinc-500">後端狀態:</span>
+                                {backendStatus === 'checking' && (
+                                    <div className="flex items-center gap-1.5 text-zinc-400">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse"/>
+                                        <span>喚醒中...</span>
+                                    </div>
+                                )}
+                                {backendStatus === 'online' && (
+                                    <div className="flex items-center gap-1.5 text-emerald-500">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"/>
+                                        <span>已就緒</span>
+                                    </div>
+                                )}
+                                {backendStatus === 'offline' && (
+                                    <div className="flex items-center gap-1.5 text-red-500">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500"/>
+                                        <span>離線 (請稍候)</span>
+                                    </div>
+                                )}
+                             </div>
                         </div>
 
                         <div className="p-6 border-t border-white/5 flex items-center gap-3 bg-black/20 font-bold uppercase tracking-tight text-[10px]">
