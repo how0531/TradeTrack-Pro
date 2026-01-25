@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit } from 'lucide-react';
+import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw } from 'lucide-react';
 import { BrokerConfig } from '../../../types';
 import { fetchBrokerProfile, pingBackend } from '../../../services/brokerService';
 import { useEffect } from 'react';
@@ -48,6 +48,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             setBackendStatus('idle');
         }
     }, [isEditing]);
+
+    const handleManualPing = async () => {
+        setBackendStatus('checking');
+        const isOnline = await pingBackend();
+        setBackendStatus(isOnline ? 'online' : 'offline');
+    };
 
     const handleStartEdit = (id: string | 'new') => {
         if (id === 'new') {
@@ -362,6 +368,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         <span>離線 (請稍候)</span>
                                     </div>
                                 )}
+                                <button 
+                                    onClick={handleManualPing} 
+                                    disabled={backendStatus === 'checking'}
+                                    className="p-1 rounded-full hover:bg-white/10 text-slate-500 hover:text-white transition-colors disabled:opacity-50"
+                                    title="手動喚醒"
+                                >
+                                    <RefreshCw size={10} className={backendStatus === 'checking' ? 'animate-spin' : ''}/>
+                                </button>
                              </div>
                         </div>
 

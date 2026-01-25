@@ -91,16 +91,17 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
             setSelectedConfigIds(activeId ? [activeId] : (configs[0] ? [configs[0].id] : []));
             
             // Auto Ping Backend
-            const ping = async () => {
-                setBackendStatus('checking');
-                const isOnline = await pingBackend();
-                setBackendStatus(isOnline ? 'online' : 'offline');
-            };
-            ping();
+            handleManualPing();
         } else {
             setBackendStatus('idle');
         }
     }, [isOpen, activeId, configs]);
+
+    const handleManualPing = async () => {
+        setBackendStatus('checking');
+        const isOnline = await pingBackend();
+        setBackendStatus(isOnline ? 'online' : 'offline');
+    };
 
     const handleFetch = async () => {
         if (selectedConfigIds.length === 0) return;
@@ -458,6 +459,13 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                                 {backendStatus === 'checking' && <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-mono animate-pulse"><div className="w-1.5 h-1.5 rounded-full bg-zinc-500"/>CONNECTING...</div>}
                                 {backendStatus === 'online' && <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-mono"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]"/>ONLINE</div>}
                                 {backendStatus === 'offline' && <div className="flex items-center gap-1.5 text-[10px] text-red-500 font-mono"><div className="w-1.5 h-1.5 rounded-full bg-red-500"/>OFFLINE</div>}
+                                <button 
+                                    onClick={handleManualPing}
+                                    disabled={backendStatus === 'checking'}
+                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-500 hover:text-white transition-all disabled:opacity-50"
+                                >
+                                    <RefreshCw size={10} className={backendStatus === 'checking' ? 'animate-spin' : ''}/>
+                                </button>
                             </>
                         )}
                     </div>
