@@ -196,7 +196,7 @@ export const validateBrokerConnection = async (config: BrokerConfig): Promise<bo
     return true;
 };
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://tradetrack-backend-8h4x.onrender.com';
 
 const BRANCH_MAP: Record<string, string> = {
     "9A95": "經紀部",
@@ -254,6 +254,22 @@ export interface BrokerProfile {
     apiKeyHint?: string;
     accounts?: { branch_code: string, branch_name: string, account_id: string }[];
 }
+
+/**
+ * Pings the backend health endpoint to wake it up (for Render free tier).
+ */
+export const pingBackend = async (): Promise<boolean> => {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+        const response = await fetch(`${API_BASE}/health`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        return response.ok;
+    } catch (e) {
+        console.warn('Backend ping failed, might still be waking up...');
+        return false;
+    }
+};
 
 export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerProfile> => {
     // Simulate Login Delay

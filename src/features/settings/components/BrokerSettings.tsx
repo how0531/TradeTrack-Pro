@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit } from 'lucide-react';
 import { BrokerConfig } from '../../../types';
-import { fetchBrokerProfile } from '../../../services/brokerService';
+import { fetchBrokerProfile, pingBackend } from '../../../services/brokerService';
+import { useEffect } from 'react';
 
 interface BrokerSettingsProps {
     configs: BrokerConfig[];
@@ -27,8 +28,16 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         personId: '',
         caPath: '',
         caPassword: '',
-        isConnected: false
+        isConnected: false,
+        environment: 'production'
     };
+
+    // 自動喚醒 Render 後端 (由於免費版會休眠)
+    useEffect(() => {
+        if (isEditing) {
+            pingBackend();
+        }
+    }, [isEditing]);
 
     const handleStartEdit = (id: string | 'new') => {
         if (id === 'new') {
@@ -97,7 +106,15 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             setIsTesting(false);
             setAccountChoices([]);
         } catch (error: any) {
-            setErrorMsg(error?.message || 'Connection failed');
+            let msg = error?.message || 'Connection failed';
+            if (msg.includes('Failed to fetch')) {
+                msg = lang === 'zh' 
+                    ? "連線失敗：後端服務可能正在啟動中，請稍候 30 秒再試一次。" 
+                    : "Connection failed: Backend service might be starting up. Please wait 30s and try again.";
+                // 再次嘗試 ping 以確保喚醒
+                pingBackend();
+            }
+            setErrorMsg(msg);
             setIsTesting(false);
         }
     };
