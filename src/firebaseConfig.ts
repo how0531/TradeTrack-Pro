@@ -7,7 +7,10 @@ import {
     CACHE_SIZE_UNLIMITED,
     persistentLocalCache,
     persistentMultipleTabManager,
-    memoryLocalCache
+    memoryLocalCache,
+    Firestore,
+    terminate,
+    clearIndexedDbPersistence
 } from 'firebase/firestore';
 
 // --- FIREBASE CONFIGURATION ---
@@ -28,37 +31,78 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 /**
- * Robust Firestore Initialization
- * Guards against "Unexpected state" errors common in HMR/Multi-tab environments
+ * GLOBAL SINGLETON GUARD for Firestore
+ * This prevents "Unexpected state" errors during Vite HMR or fast refreshes.
  */
-const getDb = () => {
-    // 1. Try to get existing instance (HMR guard)
+declare global {
+  interface Window {
+    __firestore_instance?: Firestore;
+  }
+}
+
+const getStoredDb = () => {
+    if (typeof window !== 'undefined' && window.__firestore_instance) {
+        return window.__firestore_instance;
+    }
+    return null;
+};
+
+const setStoredDb = (instance: Firestore) => {
+    if (typeof window !== 'undefined') {
+        window.__firestore_instance = instance;
+    }
+};
+
+const initializeDb = () => {
+    const existing = getStoredDb();
+    if (existing) return existing;
+
     try {
-        const existingDb = getFirestore(app);
-        if (existingDb) return existingDb;
+        // Attempt to get from Firebase App internal state if already initialized
+        const fbDb = getFirestore(app);
+        if (fbDb) {
+            setStoredDb(fbDb);
+            return fbDb;
+        }
     } catch (e) {
-        // Continue to initialization
+        // Not initialized yet
     }
 
-    // 2. Attempt Persistence Initialization
     try {
-        return initializeFirestore(app, {
+        const dbInstance = initializeFirestore(app, {
             localCache: persistentLocalCache({
                 tabManager: persistentMultipleTabManager(),
                 cacheSizeBytes: CACHE_SIZE_UNLIMITED
             })
         });
+        setStoredDb(dbInstance);
+        return dbInstance;
     } catch (e: any) {
-        console.warn("Firestore Persistence failed, falling back to memory cache:", e.message);
-        
-        // 3. Fallback to Memory Cache (prevents "Unexpected state" crashes)
-        return initializeFirestore(app, {
+        console.warn("Firestore Persistence setup failed, falling back to basic:", e.message);
+        const fallbackDb = initializeFirestore(app, {
             localCache: memoryLocalCache()
         });
+        setStoredDb(fallbackDb);
+        return fallbackDb;
     }
 };
 
-export const db = getDb();
+export const db = initializeDb();
 export const config = { appId: firebaseConfig.projectId };
+
+/**
+ * Utility to forcefully reset local cache if things get corrupted
+ */
+export const resetFirestoreCache = async () => {
+    try {
+        await terminate(db);
+        await clearIndexedDbPersistence(db);
+        window.location.reload();
+    } catch (e) {
+        console.error("Cache reset failed", e);
+        // Fallback: just reload
+        window.location.reload();
+    }
+};
 
 export default app;

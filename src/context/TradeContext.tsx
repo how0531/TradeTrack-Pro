@@ -5,7 +5,7 @@ import { useSync } from '../hooks/useSync';
 import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig } from '../types';
-import { doc, getDoc } from 'firebase/firestore'; 
+import { db, resetFirestoreCache } from '../firebaseConfig'; 
 import { I18N } from '../constants'; 
 
 interface TradeContextType {
@@ -74,6 +74,8 @@ interface TradeContextType {
     lastBackupTime: Date | null;
     triggerCloudBackup: () => Promise<{success: boolean, error?: string}>;
     manualPull: () => Promise<{success: boolean, error?: string}>;
+    syncError: string | null;
+    repairDatabase: () => Promise<void>;
     isSyncModalOpen: boolean;
     onResolveSyncConflict: (choice: 'merge' | 'discard') => void;
 
@@ -187,7 +189,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // 5. Sync Logic
     const { 
-        isSyncing, syncStatus, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen, 
+        isSyncing, syncStatus, syncError, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen, 
         triggerCloudBackup, manualPull, setLastSyncTimeStr, setSyncStatus 
     } = useSync({
         user,
@@ -392,6 +394,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap,
         availableStrategies, availableEmotions,
         isSyncing, syncStatus, lastBackupTime, triggerCloudBackup, manualPull, isSyncModalOpen, onResolveSyncConflict,
+        syncError, repairDatabase: resetFirestoreCache,
         actions: combinedActions,
         authStatus, user, login, logout,
         t: I18N[lang] || I18N['zh']

@@ -35,6 +35,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     const [lastBackupTime, setLastBackupTime] = useState<Date | null>(null);
     const [lastSyncTimeStr, setLastSyncTimeStr] = useLocalStorage<string>('app_last_sync_time', '');
     const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+    const [syncError, setSyncError] = useState<string | null>(null);
 
     // Refs to prevent stale closures in onSnapshot
     const dataRef = useRef(data);
@@ -66,26 +67,23 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                 lastUpdated: now
             };
             
-            // CRITICAL: Strip any undefined fields that break Firestore
             const dataToSave = sanitizeForFirestore(rawData);
-            
             await setDoc(doc(db, 'users', user.uid), dataToSave);
             
-            // Success: Reset cool-down to prevent immediate conflict re-trigger
-            const currentTime = Date.now();
-            lastPullTimeRef.current = currentTime;
+            lastPullTimeRef.current = Date.now();
             const timeStr = now.toDate().toISOString();
-            lastSyncTimeStrRef.current = timeStr; // Update ref immediately
+            lastSyncTimeStrRef.current = timeStr; 
 
             setSyncStatus('synced');
+            setSyncError(null);
             setLastBackupTime(new Date());
             setLastSyncTimeStr(timeStr);
             return { success: true };
         } catch (e: any) {
             console.error("Backup failed", e);
             setSyncStatus('error');
-            // If we hit an error, we should STILL update cool-down in some cases to stop the loop,
-            // but for major errors we let it be. For now, let's stop the loop if we at least TRIED.
+            setSyncError(e.message || 'Unknown error');
+            // Stop the loop: Update cooldown even on failure
             lastPullTimeRef.current = Date.now(); 
             return { success: false, error: e.message || 'Unknown error' };
         }
@@ -98,18 +96,21 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
             if (docSnap.exists()) {
                 const cloudData = docSnap.data();
+                if (docSnap.metadata.hasPendingWrites) return; 
                 
-                if (docSnap.metadata.hasPendingWrites) return; // Ignore local writes (latency compensation)
-                
-                // CRITICAL: Avoid race conditions if we are currently saving or just finished pulling/saving
                 const now = Date.now();
                 if (syncStatusRef.current === 'saving' || (now - lastPullTimeRef.current < 5000)) {
                     return; 
                 }
 
+                // SECURITY GUARD: If the last action failed due to permissions, 
+                // don't keep nagging for conflict unless explicitly resolved.
+                if (syncStatusRef.current === 'error') {
+                    return;
+                }
+
                 const localData = dataRef.current;
                 
-                // CASE 1: Auto-Restore (Local is empty, Cloud has data)
                 if (localData.trades.length === 0 && cloudData.trades && cloudData.trades.length > 0) {
                      lastPullTimeRef.current = Date.now();
                      onPull(cloudData);
@@ -118,15 +119,13 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                      if (cloudData.lastUpdated) {
                          const timeStr = cloudData.lastUpdated.toDate().toISOString();
                          setLastSyncTimeStr(timeStr);
-                         lastSyncTimeStrRef.current = timeStr; // Keep Ref updated
+                         lastSyncTimeStrRef.current = timeStr; 
                      }
                 } 
-                // CASE 2: Conflict Detection logic
                 else if (localData.trades.length > 0 && cloudData.trades && !isSyncModalOpen) {
                     const cloudTimeStr = cloudData.lastUpdated?.toDate().toISOString();
                     const localTimeStr = lastSyncTimeStrRef.current;
 
-                    // Perfect Match: Exact timestamp
                     if (cloudTimeStr && localTimeStr && cloudTimeStr === localTimeStr) {
                          setSyncStatus('synced');
                          setLastBackupTime(cloudData.lastUpdated?.toDate());
@@ -139,17 +138,16 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                     if (localStr !== cloudStr) {
                         const hasEverSynced = !!lastBackupTimeRef.current || !!lastSyncTimeStrRef.current;
                         
+                        // IF we haven't synced ever or cloud is much newer (>10s)
                         if (!hasEverSynced) {
                              setIsSyncModalOpen(true);
                         } else {
                              const cloudTime = cloudData.lastUpdated?.toDate().getTime();
                              const localTime = lastBackupTimeRef.current?.getTime() || (lastSyncTimeStrRef.current ? new Date(lastSyncTimeStrRef.current).getTime() : 0);
                              
-                             // Significant conflict: Cloud is much newer (>10s)
                              if (cloudTime && cloudTime > localTime + 10000) {
                                   setIsSyncModalOpen(true);
                              } else {
-                                  // Minimal drift or old cloud: auto-resolve by marking synced
                                   setSyncStatus('synced');
                                   setLastBackupTime(cloudData.lastUpdated?.toDate());
                                   if (cloudData.lastUpdated) {
@@ -159,9 +157,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                                   }
                              }
                         }
-
                     } else {
-                        // Data matches but timestamp drifted? Sync timestamp Ref
                         setSyncStatus('synced');
                         setLastBackupTime(cloudData.lastUpdated?.toDate());
                         if (cloudData.lastUpdated) {
@@ -172,29 +168,30 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                     }
                 }
             }
+        }, (err) => {
+            console.error("onSnapshot error:", err);
+            setSyncStatus('error');
+            setSyncError(err.message || 'Permission denied or network issue');
         });
 
         return () => unsubscribe();
     }, [user, authStatus, db, onPull, setLastSyncTimeStr, isSyncModalOpen]);
 
-    // Manual Pull: Force fetch and overwrite local
     const manualPull = useCallback(async (): Promise<{success: boolean, error?: string}> => {
         if (!user || authStatus !== 'online') return { success: false, error: 'User is offline' };
-        setSyncStatus('saving'); // UI feedback
+        setSyncStatus('saving');
         try {
             const docSnap = await getDoc(doc(db, 'users', user.uid));
             if (docSnap.exists()) {
                 const cloudData = docSnap.data();
                 onPull(cloudData);
-                
-                // Success: Reset cool-down
                 lastPullTimeRef.current = Date.now();
-
                 setSyncStatus('synced');
+                setSyncError(null);
                 if (cloudData.lastUpdated) {
                     const timeStr = cloudData.lastUpdated.toDate().toISOString();
                     setLastSyncTimeStr(timeStr);
-                    lastSyncTimeStrRef.current = timeStr; // Urgent update to ref
+                    lastSyncTimeStrRef.current = timeStr; 
                     setLastBackupTime(cloudData.lastUpdated.toDate());
                 }
                 return { success: true };
@@ -204,6 +201,8 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         } catch (e: any) {
             console.error("Manual pull failed", e);
             setSyncStatus('error');
+            setSyncError(e.message || 'Unknown error');
+            lastPullTimeRef.current = Date.now();
             return { success: false, error: e.message || 'Unknown error' };
         }
     }, [user, authStatus, db, onPull, setLastSyncTimeStr]);
@@ -211,6 +210,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     return {
         isSyncing,
         syncStatus,
+        syncError,
         lastBackupTime,
         isSyncModalOpen,
         setIsSyncModalOpen,
