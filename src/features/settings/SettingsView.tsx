@@ -558,42 +558,42 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
             <div className="space-y-2">
                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2"><HardDrive size={12}/> {t.dataManagement}</h3>
                  
-                 <div className="grid grid-cols-3 gap-2">
-                    <button onClick={() => actions.downloadBackup()} className="group flex flex-col items-center justify-center p-3 rounded-xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-[#1A1C20]/50 active:scale-[0.98]">
-                        <div className="p-2 rounded-full bg-[#C8B085]/10 text-[#C8B085] group-hover:scale-110 transition-transform"><Upload size={18}/></div>
-                        <span className="text-[10px] font-bold text-slate-300 tracking-wide text-center uppercase">{t.backupDownload}</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* LOCAL ACTIONS */}
+                    <button onClick={() => actions.downloadBackup()} className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-white/5 active:scale-[0.98]">
+                        <div className="p-3 rounded-full bg-white/5 text-slate-400 group-hover:scale-110 transition-transform"><Upload size={20}/></div>
+                        <span className="text-[10px] font-bold text-slate-300 tracking-wider text-center uppercase">{t.backupDownload}</span>
                     </button>
                     
-                    <button onClick={() => jsonInputRef.current?.click()} className="group flex flex-col items-center justify-center p-3 rounded-xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-[#1A1C20]/50 active:scale-[0.98]">
-                        <div className="p-2 rounded-full bg-[#5B9A8B]/10 text-[#5B9A8B] group-hover:scale-110 transition-transform"><Download size={18}/></div>
-                        <span className="text-[10px] font-bold text-slate-300 tracking-wide text-center uppercase">{t.backupImport}</span>
+                    <button onClick={() => jsonInputRef.current?.click()} className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-white/5 active:scale-[0.98]">
+                        <div className="p-3 rounded-full bg-white/5 text-slate-400 group-hover:scale-110 transition-transform"><Download size={20}/></div>
+                        <span className="text-[10px] font-bold text-slate-300 tracking-wider text-center uppercase">{t.backupImport}</span>
                         <input type="file" ref={jsonInputRef} onChange={(e) => actions.handleImportJSON(e, t)} className="hidden" accept=".json" />
                     </button>
 
-                  <div className="grid grid-cols-2 gap-2 mt-4">
-                     <button 
+                    {/* CLOUD ACTIONS */}
+                    <button 
                         onClick={handleForcePull} 
                         disabled={isForcePulling}
-                        className="group flex flex-col items-center justify-center p-4 rounded-xl border border-[#C8B085]/20 hover:border-[#C8B085]/50 transition-all gap-2 bg-[#C8B085]/5 active:scale-[0.98]"
-                     >
-                        <div className="p-2 rounded-full bg-[#C8B085]/10 text-[#C8B085] group-hover:scale-110 transition-transform">
-                            {isForcePulling ? <Loader2 size={18} className="animate-spin" /> : <CloudLightning size={18}/>}
+                        className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-[#C8B085]/20 hover:border-[#C8B085]/40 transition-all gap-2 bg-[#C8B085]/5 active:scale-[0.98]"
+                    >
+                        <div className="p-3 rounded-full bg-[#C8B085]/10 text-[#C8B085] group-hover:scale-110 transition-transform">
+                            {isForcePulling ? <Loader2 size={20} className="animate-spin" /> : <CloudLightning size={20}/>}
                         </div>
-                        <span className="text-[10px] font-bold text-[#C8B085] tracking-wide text-center uppercase">從雲端還原 (Pull)</span>
-                     </button>
+                        <span className="text-[10px] font-bold text-[#C8B085] tracking-wider text-center uppercase">雲端還原 (Pull)</span>
+                    </button>
 
-                     <button 
+                    <button 
                         onClick={handleForceBackup} 
                         disabled={isForceBackingUp}
-                        className="group flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-white/5 active:scale-[0.98]"
-                     >
-                        <div className="p-2 rounded-full bg-blue-500/10 text-blue-400 group-hover:scale-110 transition-transform">
-                            {isForceBackingUp ? <Loader2 size={18} className="animate-spin" /> : <Cloud size={18}/>}
+                        className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-[#5B9A8B]/20 hover:border-[#5B9A8B]/40 transition-all gap-2 bg-[#5B9A8B]/5 active:scale-[0.98]"
+                    >
+                        <div className="p-3 rounded-full bg-[#5B9A8B]/10 text-[#5B9A8B] group-hover:scale-110 transition-transform">
+                            {isForceBackingUp ? <Loader2 size={20} className="animate-spin" /> : <Cloud size={20}/>}
                         </div>
-                        <span className="text-[10px] font-bold text-slate-300 tracking-wide text-center uppercase">備份至雲端 (Push)</span>
-                     </button>
+                        <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">雲端備份 (Push)</span>
+                    </button>
                   </div>
-                 </div>
             </div>
 
             {/* SYSTEM DIAGNOSIS & REPAIR */}
@@ -651,7 +651,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                  </div>
             </div>
             
-            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2">TradeTrack Pro v1.4.0</div>
+            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2">TradeTrack Pro v1.4.1</div>
             
             {showLogoutConfirm && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">

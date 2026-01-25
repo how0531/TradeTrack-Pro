@@ -29,6 +29,31 @@ const sanitizeForFirestore = (obj: any): any => {
     }));
 };
 
+/**
+ * Robust date conversion utility for Firestore objects
+ */
+const parseFirestoreDate = (val: any): Date | null => {
+    if (!val) return null;
+    // 1. If it's already a Firestore Timestamp object
+    if (typeof val.toDate === 'function') return val.toDate();
+    // 2. If it's a plain Date object
+    if (val instanceof Date) return val;
+    // 3. If it looks like a raw Timestamp object {seconds, nanoseconds}
+    if (val && typeof val === 'object' && typeof val.seconds === 'number') {
+        try {
+            return new Timestamp(val.seconds, val.nanoseconds || 0).toDate();
+        } catch (e) {
+            return new Date(val.seconds * 1000);
+        }
+    }
+    // 4. ISO String or numeric timestamp
+    if (typeof val === 'string' || typeof val === 'number') {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+};
+
 export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
@@ -71,19 +96,19 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
             await setDoc(doc(db, 'users', user.uid), dataToSave);
             
             lastPullTimeRef.current = Date.now();
-            const timeStr = now.toDate().toISOString();
+            const timeDate = now.toDate();
+            const timeStr = timeDate.toISOString();
             lastSyncTimeStrRef.current = timeStr; 
 
             setSyncStatus('synced');
             setSyncError(null);
-            setLastBackupTime(new Date());
+            setLastBackupTime(timeDate);
             setLastSyncTimeStr(timeStr);
             return { success: true };
         } catch (e: any) {
             console.error("Backup failed", e);
             setSyncStatus('error');
             setSyncError(e.message || 'Unknown error');
-            // Stop the loop: Update cooldown even on failure
             lastPullTimeRef.current = Date.now(); 
             return { success: false, error: e.message || 'Unknown error' };
         }
@@ -103,32 +128,31 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                     return; 
                 }
 
-                // SECURITY GUARD: If the last action failed due to permissions, 
-                // don't keep nagging for conflict unless explicitly resolved.
                 if (syncStatusRef.current === 'error') {
                     return;
                 }
 
                 const localData = dataRef.current;
+                const cloudLastUpdated = parseFirestoreDate(cloudData.lastUpdated);
                 
                 if (localData.trades.length === 0 && cloudData.trades && cloudData.trades.length > 0) {
                      lastPullTimeRef.current = Date.now();
                      onPull(cloudData);
                      setSyncStatus('synced');
-                     setLastBackupTime(cloudData.lastUpdated?.toDate());
-                     if (cloudData.lastUpdated) {
-                         const timeStr = cloudData.lastUpdated.toDate().toISOString();
+                     setLastBackupTime(cloudLastUpdated);
+                     if (cloudLastUpdated) {
+                         const timeStr = cloudLastUpdated.toISOString();
                          setLastSyncTimeStr(timeStr);
                          lastSyncTimeStrRef.current = timeStr; 
                      }
                 } 
                 else if (localData.trades.length > 0 && cloudData.trades && !isSyncModalOpen) {
-                    const cloudTimeStr = cloudData.lastUpdated?.toDate().toISOString();
+                    const cloudTimeStr = cloudLastUpdated?.toISOString();
                     const localTimeStr = lastSyncTimeStrRef.current;
 
                     if (cloudTimeStr && localTimeStr && cloudTimeStr === localTimeStr) {
                          setSyncStatus('synced');
-                         setLastBackupTime(cloudData.lastUpdated?.toDate());
+                         setLastBackupTime(cloudLastUpdated);
                          return;
                     }
 
@@ -138,20 +162,19 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                     if (localStr !== cloudStr) {
                         const hasEverSynced = !!lastBackupTimeRef.current || !!lastSyncTimeStrRef.current;
                         
-                        // IF we haven't synced ever or cloud is much newer (>10s)
                         if (!hasEverSynced) {
                              setIsSyncModalOpen(true);
                         } else {
-                             const cloudTime = cloudData.lastUpdated?.toDate().getTime();
+                             const cloudTime = cloudLastUpdated?.getTime();
                              const localTime = lastBackupTimeRef.current?.getTime() || (lastSyncTimeStrRef.current ? new Date(lastSyncTimeStrRef.current).getTime() : 0);
                              
                              if (cloudTime && cloudTime > localTime + 10000) {
                                   setIsSyncModalOpen(true);
                              } else {
                                   setSyncStatus('synced');
-                                  setLastBackupTime(cloudData.lastUpdated?.toDate());
-                                  if (cloudData.lastUpdated) {
-                                      const timeStr = cloudData.lastUpdated.toDate().toISOString();
+                                  setLastBackupTime(cloudLastUpdated);
+                                  if (cloudLastUpdated) {
+                                      const timeStr = cloudLastUpdated.toISOString();
                                       setLastSyncTimeStr(timeStr);
                                       lastSyncTimeStrRef.current = timeStr; 
                                   }
@@ -159,9 +182,9 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                         }
                     } else {
                         setSyncStatus('synced');
-                        setLastBackupTime(cloudData.lastUpdated?.toDate());
-                        if (cloudData.lastUpdated) {
-                            const timeStr = cloudData.lastUpdated.toDate().toISOString();
+                        setLastBackupTime(cloudLastUpdated);
+                        if (cloudLastUpdated) {
+                            const timeStr = cloudLastUpdated.toISOString();
                             setLastSyncTimeStr(timeStr);
                             lastSyncTimeStrRef.current = timeStr; 
                         }
@@ -188,11 +211,13 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                 lastPullTimeRef.current = Date.now();
                 setSyncStatus('synced');
                 setSyncError(null);
-                if (cloudData.lastUpdated) {
-                    const timeStr = cloudData.lastUpdated.toDate().toISOString();
+                
+                const cloudLastUpdated = parseFirestoreDate(cloudData.lastUpdated);
+                if (cloudLastUpdated) {
+                    const timeStr = cloudLastUpdated.toISOString();
                     setLastSyncTimeStr(timeStr);
                     lastSyncTimeStrRef.current = timeStr; 
-                    setLastBackupTime(cloudData.lastUpdated.toDate());
+                    setLastBackupTime(cloudLastUpdated);
                 }
                 return { success: true };
             }
