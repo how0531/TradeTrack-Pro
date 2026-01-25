@@ -1,7 +1,7 @@
 {
   "name": "tradetrack-pro",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.5.0-STABLE",
   "type": "module",
   "scripts": {
     "dev": "vite",

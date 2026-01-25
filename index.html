@@ -35,6 +35,21 @@
         }
       }
     </script>
+    <script>
+      // NUCLEAR CACHE PURGE V1.5.0
+      (function() {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for(let reg of regs) reg.unregister();
+          });
+        }
+        if (window.caches) {
+          caches.keys().then(function(names) {
+            for (let name of names) caches.delete(name);
+          });
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

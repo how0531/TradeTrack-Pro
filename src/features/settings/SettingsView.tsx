@@ -656,7 +656,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                  </div>
             </div>
             
-            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2">TradeTrack Pro v1.4.9</div>
+            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2 underline decoration-red-500/50">TradeTrack Pro v1.5.0-STABLE</div>
             
             {showLogoutConfirm && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
