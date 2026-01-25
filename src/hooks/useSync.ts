@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, setDoc, onSnapshot, Timestamp, Firestore } from 'firebase/firestore';
+import { doc, setDoc, getDoc, onSnapshot, Timestamp, Firestore } from 'firebase/firestore';
 import { useLocalStorage } from './useLocalStorage';
 import { SyncStatus, User, Trade, Portfolio } from '../types';
 import { stableStringify } from '../utils/storage';
@@ -148,6 +148,31 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         return () => unsubscribe();
     }, [user, authStatus, db, onPull, setLastSyncTimeStr]);
 
+    // Manual Pull: Force fetch and overwrite local
+    const manualPull = useCallback(async (): Promise<boolean> => {
+        if (!user || authStatus !== 'online') return false;
+        setSyncStatus('saving'); // UI feedback
+        try {
+            const docSnap = await getDoc(doc(db, 'users', user.uid));
+            if (docSnap.exists()) {
+                const cloudData = docSnap.data();
+                onPull(cloudData);
+                setSyncStatus('synced');
+                if (cloudData.lastUpdated) {
+                    setLastSyncTimeStr(cloudData.lastUpdated.toDate().toISOString());
+                    setLastBackupTime(cloudData.lastUpdated.toDate());
+                }
+                return true;
+            }
+            setSyncStatus('synced');
+            return false;
+        } catch (e) {
+            console.error("Manual pull failed", e);
+            setSyncStatus('error');
+            return false;
+        }
+    }, [user, authStatus, db, onPull, setLastSyncTimeStr]);
+
     return {
         isSyncing,
         syncStatus,
@@ -155,6 +180,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         isSyncModalOpen,
         setIsSyncModalOpen,
         triggerCloudBackup,
+        manualPull, // Export manual pull
         setSyncStatus,
         setLastSyncTimeStr // Exposed for manual conflict resolution overrides
     };

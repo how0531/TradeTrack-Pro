@@ -73,6 +73,7 @@ interface TradeContextType {
     syncStatus: SyncStatus;
     lastBackupTime: Date | null;
     triggerCloudBackup: () => Promise<boolean>;
+    manualPull: () => Promise<boolean>;
     isSyncModalOpen: boolean;
     onResolveSyncConflict: (choice: 'merge' | 'discard') => void;
 
@@ -187,7 +188,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 5. Sync Logic
     const { 
         isSyncing, syncStatus, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen, 
-        triggerCloudBackup, setLastSyncTimeStr, setSyncStatus 
+        triggerCloudBackup, manualPull, setLastSyncTimeStr, setSyncStatus 
     } = useSync({
         user,
         authStatus,
@@ -402,7 +403,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         activeBrokerConfig,
         filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap,
         availableStrategies, availableEmotions,
-        isSyncing, syncStatus, lastBackupTime, triggerCloudBackup, isSyncModalOpen, onResolveSyncConflict,
+        isSyncing, syncStatus, lastBackupTime, triggerCloudBackup, manualPull, isSyncModalOpen, onResolveSyncConflict,
         actions: combinedActions,
         authStatus, user, login, logout,
         t: I18N[lang] || I18N['zh']

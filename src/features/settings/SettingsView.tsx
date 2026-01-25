@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { 
     Cloud, UserCircle, Check, LogOut, Shield, Settings as SettingsIcon, Languages, Palette, 
     HardDrive, Download, Upload, AlertOctagon, Target, Info, Layers, Plus as PlusIcon, 
-    X, Briefcase, Trash2, Pencil, Loader2, FileKey, ChevronRight, Eye, EyeOff, FolderOpen, Save, AlertCircle, User 
+    X, Briefcase, Trash2, Pencil, Loader2, FileKey, ChevronRight, Eye, EyeOff, FolderOpen, Save, AlertCircle, User, CloudLightning 
 } from 'lucide-react';
 import { SettingsViewProps, Portfolio, Lang } from '../../types';
 import { THEME, I18N, DEFAULT_PALETTE } from '../../constants';
@@ -281,7 +281,7 @@ export const AccountManager = ({
 export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const { 
         trades, portfolios, actions, lang, setLang, 
-        authStatus, user: currentUser, login: onLogin, logout: onLogout, triggerCloudBackup, lastBackupTime,
+        authStatus, user: currentUser, login: onLogin, logout: onLogout, triggerCloudBackup, manualPull, lastBackupTime,
         availableStrategies: strategies, availableEmotions: emotions,
         brokerConfigs, activeBrokerId, setActiveBrokerId, updateBrokerConfig, addBrokerConfig, deleteBrokerConfig,
         lossColor, setLossColor, ddThreshold, setDdThreshold, maxLossStreak, setMaxLossStreak,
@@ -297,6 +297,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const [showStrategyTip, setShowStrategyTip] = useState(false); 
     const [showMindsetTip, setShowMindsetTip] = useState(false);
     const [isForceBackingUp, setIsForceBackingUp] = useState(false); // State for button loading
+    const [isForcePulling, setIsForcePulling] = useState(false); // State for pull loading
     const jsonInputRef = useRef<HTMLInputElement>(null);
     
     const handleAddStrategy = (e: React.FormEvent) => {
@@ -320,6 +321,21 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
             alert(lang === 'zh' ? '強制備份成功！雲端資料已覆蓋為目前裝置版本。' : 'Force backup successful! Cloud data overwritten with local version.');
         } else {
             alert(lang === 'zh' ? '備份失敗，請檢查網路連線。' : 'Backup failed. Please check your connection.');
+        }
+    };
+
+    const handleForcePull = async () => {
+        if (!currentUser) return onLogin();
+        if (!window.confirm(lang === 'zh' ? '確定要從雲端還原嗎？這將會覆蓋您目前裝置上的所有本地資料。' : 'Restore from Cloud? This will overwrite ALL local data on this device.')) return;
+
+        setIsForcePulling(true);
+        const success = await manualPull();
+        setIsForcePulling(false);
+
+        if (success) {
+            alert(lang === 'zh' ? '還原成功！資料已更新。' : 'Restore successful! Data has been updated.');
+        } else {
+            alert(lang === 'zh' ? '還原失敗，雲端可能尚未有備份資料。' : 'Restore failed. No cloud backup found.');
         }
     };
 
@@ -555,16 +571,29 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                         <input type="file" ref={jsonInputRef} onChange={(e) => actions.handleImportJSON(e, t)} className="hidden" accept=".json" />
                     </button>
 
-                    <button 
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                     <button 
+                        onClick={handleForcePull} 
+                        disabled={isForcePulling}
+                        className="group flex flex-col items-center justify-center p-4 rounded-xl border border-[#C8B085]/20 hover:border-[#C8B085]/50 transition-all gap-2 bg-[#C8B085]/5 active:scale-[0.98]"
+                     >
+                        <div className="p-2 rounded-full bg-[#C8B085]/10 text-[#C8B085] group-hover:scale-110 transition-transform">
+                            {isForcePulling ? <Loader2 size={18} className="animate-spin" /> : <CloudLightning size={18}/>}
+                        </div>
+                        <span className="text-[10px] font-bold text-[#C8B085] tracking-wide text-center uppercase">從雲端還原 (Pull)</span>
+                     </button>
+
+                     <button 
                         onClick={handleForceBackup} 
                         disabled={isForceBackingUp}
-                        className="group flex flex-col items-center justify-center p-3 rounded-xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-[#1A1C20]/50 active:scale-[0.98]"
-                    >
+                        className="group flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-white/5 active:scale-[0.98]"
+                     >
                         <div className="p-2 rounded-full bg-blue-500/10 text-blue-400 group-hover:scale-110 transition-transform">
                             {isForceBackingUp ? <Loader2 size={18} className="animate-spin" /> : <Cloud size={18}/>}
                         </div>
-                        <span className="text-[10px] font-bold text-slate-300 tracking-wide text-center uppercase">{t.backupCloud}</span>
-                    </button>
+                        <span className="text-[10px] font-bold text-slate-300 tracking-wide text-center uppercase">備份至雲端 (Push)</span>
+                     </button>
+                  </div>
                  </div>
             </div>
 
@@ -580,7 +609,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                  </div>
             </div>
             
-            <div className="text-center text-[10px] text-slate-700 font-mono pb-4 pt-2">TradeTrack Pro v1.3.1</div>
+            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2">TradeTrack Pro v1.3.2</div>
             
             {showLogoutConfirm && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
