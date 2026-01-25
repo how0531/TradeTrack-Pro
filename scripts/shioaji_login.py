@@ -104,8 +104,15 @@ def login_and_fetch_pnl(
             acc_type_str = str(getattr(acc, "account_type", "")).upper()
             p_id = getattr(acc, "person_id", "N/A")
 
-            # Match Stock accounts (S, P, or STOCK)
-            if any(x in acc_type_str for x in ["STOCK", "S", "P"]):
+            print(
+                f"DEBUG: Found account Type={acc_type_str} Branch={getattr(acc, 'broker_id', 'N/A')} ID={p_id}",
+                flush=True,
+            )
+
+            # Match Stock (S), Futures (F), or other types
+            # 放寬條件：包含證券(S), 期貨(F/H), 複委託(SUB/H)
+            target_types = ["STOCK", "S", "P", "FUTURES", "F", "H", "SUB"]
+            if any(x in acc_type_str for x in target_types):
                 raw_bid = str(getattr(acc, "broker_id", "Unknown")).strip()
                 b_code = raw_bid[:4] if len(raw_bid) >= 4 else raw_bid
                 b_name = BRANCH_MAP.get(b_code, "未知分公司")
@@ -133,6 +140,10 @@ def login_and_fetch_pnl(
             choices = []
             for acc in valid_accounts:
                 bid = str(getattr(acc, "broker_id", "Unknown")).strip()[:4]
+                print(
+                    f"DEBUG: Choice Option -> Branch:{bid} ID:{acc.account_id}",
+                    flush=True,
+                )
                 choices.append(
                     {
                         "branch_code": bid,
@@ -234,15 +245,59 @@ def login_and_fetch_pnl(
                             display_code = f"{code} {name}".strip()
 
                             total_pnl += realized
+                            # Get Raw Data
+                            raw_qty = int(getattr(item, "quantity", 0))
+                            price = float(getattr(item, "price", 0))
+                            buy_amt = int(getattr(item, "buy_amt", 0))
+                            sell_amt = int(getattr(item, "sell_amt", 0))
+                            amt = max(buy_amt, sell_amt)
+
+                            # Smart Correction Logic
+                            # 1. Check Trade Type (Margin Trading usually returns Lots)
+                            raw_cond = getattr(item, "cond", "現股")
+                            cond_str = str(raw_cond).upper()
+
+                            # Debug: Print info for logic investigation
+                            if raw_qty < 10:
+                                print(
+                                    f"DEBUG: Trade Info -> Code:{code} Qty:{raw_qty} Price:{price} Amt:{amt} Cond:{cond_str}",
+                                    flush=True,
+                                )
+
+                            # Broaden detection to handle both Chinese and Shioaji's English Enums
+                            is_margin = any(
+                                x in cond_str
+                                for x in ["融資", "融券", "MARGIN", "SHORT"]
+                            )
+
+                            if is_margin and 0 < raw_qty < 500:
+                                print(
+                                    f"DEBUG: Margin/Short Detected. Correcting Qty {raw_qty} -> {raw_qty*1000}",
+                                    flush=True,
+                                )
+                                raw_qty *= 1000
+
+                            # 2. Fallback: Check Amount vs Price (if type check failed)
+                            elif (
+                                price > 0 and raw_qty > 0 and amt >= 500
+                            ):  # Ensure amount is significant
+                                implied_shares = amt / price
+                                if implied_shares > (raw_qty * 800):
+                                    print(
+                                        f"DEBUG: Amount Mismatch Fallback. Correcting Qty {raw_qty} -> {raw_qty*1000}",
+                                        flush=True,
+                                    )
+                                    raw_qty *= 1000
+
                             details.append(
                                 {
                                     "date": item_date,
                                     "category": getattr(item, "cond", "現股"),
                                     "code": display_code,
-                                    "quantity": int(getattr(item, "quantity", 0)),
-                                    "price": float(getattr(item, "price", 0)),
-                                    "buyAmt": int(getattr(item, "buy_amt", 0)),
-                                    "sellAmt": int(getattr(item, "sell_amt", 0)),
+                                    "quantity": raw_qty,
+                                    "price": price,
+                                    "buyAmt": buy_amt,
+                                    "sellAmt": sell_amt,
                                     "pnl": int(realized),
                                     "yield": round(yield_pct, 2),
                                     "orderNo": order_no,

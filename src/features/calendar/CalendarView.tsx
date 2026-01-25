@@ -211,13 +211,13 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
                             )}
                         </div>
 
-                        {/* SYNC BUTTON */}
+                        {/* SYNC BUTTON: Capsule Style with Text */}
                         <button 
                             onClick={() => setIsSyncModalOpen(true)}
-                            className="w-10 h-10 rounded-xl bg-white/5 hover:bg-[#C8B085]/20 hover:text-[#C8B085] flex items-center justify-center text-zinc-500 transition-all border border-transparent hover:border-[#C8B085]/30 group"
-                            title="Import P&L"
+                            className="h-10 px-4 rounded-full bg-[#C8B085]/10 hover:bg-[#C8B085] text-[#C8B085] hover:text-black flex items-center justify-center gap-2 transition-all border border-[#C8B085]/30 hover:border-[#C8B085] group shadow-lg shadow-[#C8B085]/5"
                         >
-                            <DownloadCloud size={18} className="group-hover:scale-110 transition-transform"/>
+                            <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-500"/>
+                            <span className="text-[11px] font-bold tracking-wider whitespace-nowrap">同步券商</span>
                         </button>
                     </div>
 
