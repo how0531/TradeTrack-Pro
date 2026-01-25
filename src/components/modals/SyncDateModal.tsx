@@ -61,8 +61,12 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
     // Step 1: Config
     const [startDate, setStartDate] = useState(getLocalDateStr());
     const [endDate, setEndDate] = useState(getLocalDateStr());
-    const [targetPortfolioId, setTargetPortfolioId] = useState(activePortfolioIds[0] || portfolios[0]?.id || 'main');
-    const [selectedConfigIds, setSelectedConfigIds] = useState<string[]>(activeId ? [activeId] : (configs[0] ? [configs[0].id] : []));
+    // Use ID-Index composite key for tracking selection
+    const [selectedConfigIds, setSelectedConfigIds] = useState<string[]>(
+        activeId 
+            ? configs.map((c, i) => c.id === activeId ? `${c.id}-${i}` : null).filter(Boolean) as string[]
+            : (configs[0] ? [`${configs[0].id}-0`] : [])
+    );
     const [showCalendar, setShowCalendar] = useState(false);
     
     // Backend Status
@@ -73,11 +77,13 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [resultMsg, setResultMsg] = useState('');
 
-    const toggleConfigSelection = (id: string) => {
+    const toggleConfigSelection = (targetId: string, index: number) => {
+        // Create a unique key using ID + Index to support duplicate accounts
+        const uniqueKey = `${targetId}-${index}`;
         setSelectedConfigIds(prev => 
-            prev.includes(id) 
-                ? prev.filter(item => item !== id)
-                : [...prev, id]
+            prev.includes(uniqueKey) 
+                ? prev.filter(item => item !== uniqueKey)
+                : [...prev, uniqueKey]
         );
     };
 
@@ -88,7 +94,13 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
             setStatus('idle');
             setResultMsg('');
             setTransactions([]);
-            setSelectedConfigIds(activeId ? [activeId] : (configs[0] ? [configs[0].id] : []));
+            setResultMsg('');
+            setTransactions([]);
+            setSelectedConfigIds(
+                activeId 
+                    ? configs.map((c, i) => c.id === activeId ? `${c.id}-${i}` : null).filter(Boolean) as string[]
+                    : (configs[0] ? [`${configs[0].id}-0`] : [])
+            );
             
             // Auto Ping Backend
             handleManualPing();
@@ -108,7 +120,15 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
         setStatus('loading');
         setResultMsg('');
         
-        const selectedConfigs = configs.filter(c => selectedConfigIds.includes(c.id));
+        setStatus('loading');
+        setResultMsg('');
+        
+        // Extract original IDs from composite keys
+        const selectedRealIds = selectedConfigIds.map(k => k.split('-')[0]);
+        // Filter configs properly (handling duplicates by index is better but API needs Real ID)
+        // Here we just grab the configs that match the indices or IDs. Better:
+        const selectedConfigs = configs.filter((c, i) => selectedConfigIds.includes(`${c.id}-${i}`));
+
         let allMapped: ImportTransaction[] = [];
         let loginErrors: string[] = [];
 
@@ -303,21 +323,23 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                                     <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
                                     選擇券商帳號 (SELECT ACCOUNT)
                                 </label>
-                                <div className="space-y-2">
-                                    {configs.map(config => (
+                                    {configs.map((config, idx) => {
+                                        const uniqueKey = `${config.id}-${idx}`;
+                                        const isSelected = selectedConfigIds.includes(uniqueKey);
+                                        return (
                                         <div 
-                                            key={config.id}
-                                            onClick={() => toggleConfigSelection(config.id)}
-                                            className={`p-4 rounded-2xl border flex items-center justify-between transition-all cursor-pointer ${selectedConfigIds.includes(config.id) ? 'bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'bg-white/[0.02] border-white/5 hover:border-white/10'}`}
+                                            key={uniqueKey}
+                                            onClick={() => toggleConfigSelection(config.id, idx)}
+                                            className={`p-4 rounded-2xl border flex items-center justify-between transition-all cursor-pointer ${isSelected ? 'bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'bg-white/[0.02] border-white/5 hover:border-white/10'}`}
                                         >
                                             <div className="flex items-center gap-4">
-                                                <div className={`w-3.5 h-3.5 rounded-full border-2 transition-all flex items-center justify-center ${selectedConfigIds.includes(config.id) ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.4)]' : 'bg-transparent border-white/10'}`}>
-                                                    {selectedConfigIds.includes(config.id) && <Check size={10} className="text-black stroke-[4]"/>}
+                                                <div className={`w-3.5 h-3.5 rounded-full border-2 transition-all flex items-center justify-center ${isSelected ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.4)]' : 'bg-transparent border-white/10'}`}>
+                                                    {isSelected && <Check size={10} className="text-black stroke-[4]"/>}
                                                 </div>
                                                 <div className="flex flex-col gap-0.5">
                                                     {/* Top Line: Broker - Branch */}
                                                     <div className="flex items-center gap-2">
-                                                        <span className={`text-sm font-bold tracking-wide ${selectedConfigIds.includes(config.id) ? 'text-white' : 'text-slate-400'}`}>
+                                                        <span className={`text-sm font-bold tracking-wide ${isSelected ? 'text-white' : 'text-slate-400'}`}>
                                                             {config.provider === 'shioaji' ? '永豐金' : 'Broker'} - {config.branch || (lang === 'zh' ? '未知分公司' : 'Unknown Branch')}
                                                         </span>
                                                         {config.isConnected && (
@@ -341,9 +363,10 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                                                     </div>
                                                 </div>
                                             </div>
-                                            {selectedConfigIds.includes(config.id) && <ShieldCheck className="text-[#C8B085]" size={18}/>}
+                                            {isSelected && <ShieldCheck className="text-[#C8B085]" size={18}/>}
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                              
