@@ -1,8 +1,14 @@
 
-// [Manage] Last Updated: 2024-05-22
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
+import { 
+    getFirestore, 
+    initializeFirestore, 
+    CACHE_SIZE_UNLIMITED,
+    persistentLocalCache,
+    persistentMultipleTabManager,
+    memoryLocalCache
+} from 'firebase/firestore';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
@@ -21,34 +27,38 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 // Initialize Auth
 export const auth = getAuth(app);
 
-// Initialize Firestore with settings optimized for offline usage
-// Use initializeFirestore only if it hasn't been initialized yet to avoid HMR issues
-let dbInstance;
-try {
-    dbInstance = initializeFirestore(app, {
-        cacheSizeBytes: CACHE_SIZE_UNLIMITED,
-        // In newer SDKs, experimentalAutoDetectLongPolling can help in environments with network issues
-        // experimentalAutoDetectLongPolling: true 
-    });
-} catch (e) {
-    dbInstance = getFirestore(app);
-}
+/**
+ * Robust Firestore Initialization
+ * Guards against "Unexpected state" errors common in HMR/Multi-tab environments
+ */
+const getDb = () => {
+    // 1. Try to get existing instance (HMR guard)
+    try {
+        const existingDb = getFirestore(app);
+        if (existingDb) return existingDb;
+    } catch (e) {
+        // Continue to initialization
+    }
 
-export const db = dbInstance;
+    // 2. Attempt Persistence Initialization
+    try {
+        return initializeFirestore(app, {
+            localCache: persistentLocalCache({
+                tabManager: persistentMultipleTabManager(),
+                cacheSizeBytes: CACHE_SIZE_UNLIMITED
+            })
+        });
+    } catch (e: any) {
+        console.warn("Firestore Persistence failed, falling back to memory cache:", e.message);
+        
+        // 3. Fallback to Memory Cache (prevents "Unexpected state" crashes)
+        return initializeFirestore(app, {
+            localCache: memoryLocalCache()
+        });
+    }
+};
+
+export const db = getDb();
 export const config = { appId: firebaseConfig.projectId };
-
-// Enable Offline Persistence with tab management and HMR guard
-if (!(window as any)._firestorePersistenceEnabled) {
-    (window as any)._firestorePersistenceEnabled = true;
-    enableIndexedDbPersistence(db).catch((err) => {
-        if (err.code === 'failed-precondition') {
-            console.warn('Firestore persistence failed: Multiple tabs open.');
-        } else if (err.code === 'unimplemented') {
-            console.warn('Firestore persistence not supported by this browser.');
-        } else {
-            console.error('Firestore persistence unexpected error:', err);
-        }
-    });
-}
 
 export default app;
