@@ -329,19 +329,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const onResolveSyncConflict = (choice: 'merge' | 'discard') => {
         if (choice === 'discard') {
-            getDoc(doc(db, 'users', user!.uid)).then(snap => {
-                if(snap.exists()) {
-                    const data = snap.data();
-                    setTrades(data.trades || []);
-                    setStrategies(data.strategies || []);
-                    setEmotions(data.emotions || []);
-                    setPortfolios(data.portfolios || []);
-                    setSyncStatus('synced');
-                    if (data.lastUpdated) {
-                        setLastSyncTimeStr(data.lastUpdated.toDate().toISOString());
-                    }
-                }
-            });
+            manualPull(); // Use standardized manual pull to update sync refs/cooldown
         } else {
             triggerCloudBackup();
         }

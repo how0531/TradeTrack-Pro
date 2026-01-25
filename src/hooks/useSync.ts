@@ -61,9 +61,15 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
             
             await setDoc(doc(db, 'users', user.uid), dataToSave);
             
+            // Success: Reset cool-down to prevent immediate conflict re-trigger
+            const currentTime = Date.now();
+            lastPullTimeRef.current = currentTime;
+            const timeStr = now.toDate().toISOString();
+            lastSyncTimeStrRef.current = timeStr; // Update ref immediately
+
             setSyncStatus('synced');
             setLastBackupTime(new Date());
-            setLastSyncTimeStr(now.toDate().toISOString());
+            setLastSyncTimeStr(timeStr);
             return true;
         } catch (e) {
             console.error("Backup failed", e);
@@ -84,7 +90,8 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                 
                 // CRITICAL: Avoid race conditions if we are currently saving or just finished pulling/saving
                 const now = Date.now();
-                if (syncStatusRef.current === 'saving' || (now - lastPullTimeRef.current < 3000)) {
+                if (syncStatusRef.current === 'saving' || (now - lastPullTimeRef.current < 5000)) {
+                    // console.log("DEBUG: Sync Cooldown Active. Skipping checks.");
                     return; 
                 }
 
@@ -97,14 +104,17 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                      setSyncStatus('synced');
                      setLastBackupTime(cloudData.lastUpdated?.toDate());
                      if (cloudData.lastUpdated) {
-                         setLastSyncTimeStr(cloudData.lastUpdated.toDate().toISOString());
+                         const timeStr = cloudData.lastUpdated.toDate().toISOString();
+                         setLastSyncTimeStr(timeStr);
+                         lastSyncTimeStrRef.current = timeStr; // Keep Ref updated
                      }
                 } 
-                // CASE 2: Conflict Detection
+                // CASE 2: Conflict Detection logic
                 else if (localData.trades.length > 0 && cloudData.trades && !isSyncModalOpen) {
                     const cloudTimeStr = cloudData.lastUpdated?.toDate().toISOString();
                     const localTimeStr = lastSyncTimeStrRef.current;
 
+                    // Perfect Match: Exact timestamp
                     if (cloudTimeStr && localTimeStr && cloudTimeStr === localTimeStr) {
                          setSyncStatus('synced');
                          setLastBackupTime(cloudData.lastUpdated?.toDate());
@@ -115,44 +125,45 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                     const cloudStr = stableStringify(cloudData.trades);
                     
                     if (localStr !== cloudStr) {
-                        // Relaxed Check: Only flag conflict if we have NO record of ever syncing, 
-                        // AND we have local data.
                         const hasEverSynced = !!lastBackupTimeRef.current || !!lastSyncTimeStrRef.current;
                         
                         if (!hasEverSynced) {
                              setIsSyncModalOpen(true);
                         } else {
                              const cloudTime = cloudData.lastUpdated?.toDate().getTime();
-                             // Use backup time OR parse the string from LS
                              const localTime = lastBackupTimeRef.current?.getTime() || (lastSyncTimeStrRef.current ? new Date(lastSyncTimeStrRef.current).getTime() : 0);
                              
-                             // If cloud is significantly newer (>5s), and data differs -> Conflict
-                             if (cloudTime && cloudTime > localTime + 5000) {
-                                 setIsSyncModalOpen(true);
+                             // Significant conflict: Cloud is much newer (>10s)
+                             if (cloudTime && cloudTime > localTime + 10000) {
+                                  setIsSyncModalOpen(true);
                              } else {
-                                 // Otherwise, assume local is newer or equal (latency), or harmless drift.
-                                 // Auto-resolve to 'synced' if we just saved or close enough.
-                                 // Actually, if data differs and cloud is OLDER, efficient overwrite (we just saved).
-                                 // If data differs and cloud is NEWER, we truly have a conflict?
-                                 // But we just filtered cloudTime > localTime + 5000.
-                                 // So here cloud is NOT significantly newer.
-                                 setSyncStatus('synced');
-                                 setLastBackupTime(cloudData.lastUpdated?.toDate());
-                                 if (cloudData.lastUpdated) setLastSyncTimeStr(cloudData.lastUpdated.toDate().toISOString());
+                                  // Minimal drift or old cloud: auto-resolve by marking synced
+                                  setSyncStatus('synced');
+                                  setLastBackupTime(cloudData.lastUpdated?.toDate());
+                                  if (cloudData.lastUpdated) {
+                                      const timeStr = cloudData.lastUpdated.toDate().toISOString();
+                                      setLastSyncTimeStr(timeStr);
+                                      lastSyncTimeStrRef.current = timeStr; 
+                                  }
                              }
                         }
 
                     } else {
+                        // Data matches but timestamp drifted? Sync timestamp Ref
                         setSyncStatus('synced');
                         setLastBackupTime(cloudData.lastUpdated?.toDate());
-                        if (cloudData.lastUpdated) setLastSyncTimeStr(cloudData.lastUpdated.toDate().toISOString());
+                        if (cloudData.lastUpdated) {
+                            const timeStr = cloudData.lastUpdated.toDate().toISOString();
+                            setLastSyncTimeStr(timeStr);
+                            lastSyncTimeStrRef.current = timeStr; 
+                        }
                     }
                 }
             }
         });
 
         return () => unsubscribe();
-    }, [user, authStatus, db, onPull, setLastSyncTimeStr]);
+    }, [user, authStatus, db, onPull, setLastSyncTimeStr, isSyncModalOpen]);
 
     // Manual Pull: Force fetch and overwrite local
     const manualPull = useCallback(async (): Promise<boolean> => {
@@ -163,9 +174,15 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
             if (docSnap.exists()) {
                 const cloudData = docSnap.data();
                 onPull(cloudData);
+                
+                // Success: Reset cool-down
+                lastPullTimeRef.current = Date.now();
+
                 setSyncStatus('synced');
                 if (cloudData.lastUpdated) {
-                    setLastSyncTimeStr(cloudData.lastUpdated.toDate().toISOString());
+                    const timeStr = cloudData.lastUpdated.toDate().toISOString();
+                    setLastSyncTimeStr(timeStr);
+                    lastSyncTimeStrRef.current = timeStr; // Urgent update to ref
                     setLastBackupTime(cloudData.lastUpdated.toDate());
                 }
                 return true;
@@ -186,8 +203,8 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         isSyncModalOpen,
         setIsSyncModalOpen,
         triggerCloudBackup,
-        manualPull, // Export manual pull
+        manualPull, 
         setSyncStatus,
-        setLastSyncTimeStr // Exposed for manual conflict resolution overrides
+        setLastSyncTimeStr 
     };
 };
