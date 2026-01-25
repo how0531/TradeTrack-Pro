@@ -22,6 +22,13 @@ interface UseSyncProps {
     onPull: (data: Partial<SyncData> & { lastUpdated?: any }) => void; // Callback when data is pulled from cloud
 }
 
+// Utility to strip undefined values which causes Firestore setDoc to fail
+const sanitizeForFirestore = (obj: any): any => {
+    return JSON.parse(JSON.stringify(obj, (key, value) => {
+        return value === undefined ? null : value;
+    }));
+};
+
 export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
@@ -41,16 +48,16 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     useEffect(() => { lastBackupTimeRef.current = lastBackupTime; }, [lastBackupTime]);
     useEffect(() => { lastSyncTimeStrRef.current = lastSyncTimeStr; }, [lastSyncTimeStr]);
 
-    const triggerCloudBackup = useCallback(async (): Promise<boolean> => {
+    const triggerCloudBackup = useCallback(async (): Promise<{success: boolean, error?: string}> => {
         if (!user || authStatus !== 'online') {
             setSyncStatus('offline');
-            return false;
+            return { success: false, error: 'User is offline' };
         }
         
         setSyncStatus('saving');
         try {
             const now = Timestamp.now();
-            const dataToSave = {
+            const rawData = {
                 trades: data.trades,
                 strategies: data.strategies,
                 emotions: data.emotions,
@@ -58,6 +65,9 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                 settings: { lossColor: data.lossColor },
                 lastUpdated: now
             };
+            
+            // CRITICAL: Strip any undefined fields that break Firestore
+            const dataToSave = sanitizeForFirestore(rawData);
             
             await setDoc(doc(db, 'users', user.uid), dataToSave);
             
@@ -70,11 +80,14 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
             setSyncStatus('synced');
             setLastBackupTime(new Date());
             setLastSyncTimeStr(timeStr);
-            return true;
-        } catch (e) {
+            return { success: true };
+        } catch (e: any) {
             console.error("Backup failed", e);
             setSyncStatus('error');
-            return false;
+            // If we hit an error, we should STILL update cool-down in some cases to stop the loop,
+            // but for major errors we let it be. For now, let's stop the loop if we at least TRIED.
+            lastPullTimeRef.current = Date.now(); 
+            return { success: false, error: e.message || 'Unknown error' };
         }
     }, [user, authStatus, db, data, setLastSyncTimeStr]);
 
@@ -91,7 +104,6 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                 // CRITICAL: Avoid race conditions if we are currently saving or just finished pulling/saving
                 const now = Date.now();
                 if (syncStatusRef.current === 'saving' || (now - lastPullTimeRef.current < 5000)) {
-                    // console.log("DEBUG: Sync Cooldown Active. Skipping checks.");
                     return; 
                 }
 
@@ -166,8 +178,8 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     }, [user, authStatus, db, onPull, setLastSyncTimeStr, isSyncModalOpen]);
 
     // Manual Pull: Force fetch and overwrite local
-    const manualPull = useCallback(async (): Promise<boolean> => {
-        if (!user || authStatus !== 'online') return false;
+    const manualPull = useCallback(async (): Promise<{success: boolean, error?: string}> => {
+        if (!user || authStatus !== 'online') return { success: false, error: 'User is offline' };
         setSyncStatus('saving'); // UI feedback
         try {
             const docSnap = await getDoc(doc(db, 'users', user.uid));
@@ -185,14 +197,14 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                     lastSyncTimeStrRef.current = timeStr; // Urgent update to ref
                     setLastBackupTime(cloudData.lastUpdated.toDate());
                 }
-                return true;
+                return { success: true };
             }
             setSyncStatus('synced');
-            return false;
-        } catch (e) {
+            return { success: false, error: 'No cloud data found' };
+        } catch (e: any) {
             console.error("Manual pull failed", e);
             setSyncStatus('error');
-            return false;
+            return { success: false, error: e.message || 'Unknown error' };
         }
     }, [user, authStatus, db, onPull, setLastSyncTimeStr]);
 

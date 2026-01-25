@@ -72,8 +72,8 @@ interface TradeContextType {
     isSyncing: boolean;
     syncStatus: SyncStatus;
     lastBackupTime: Date | null;
-    triggerCloudBackup: () => Promise<boolean>;
-    manualPull: () => Promise<boolean>;
+    triggerCloudBackup: () => Promise<{success: boolean, error?: string}>;
+    manualPull: () => Promise<{success: boolean, error?: string}>;
     isSyncModalOpen: boolean;
     onResolveSyncConflict: (choice: 'merge' | 'discard') => void;
 

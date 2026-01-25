@@ -314,13 +314,13 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
         if (!currentUser) return onLogin();
         
         setIsForceBackingUp(true);
-        const success = await triggerCloudBackup();
+        const result = await triggerCloudBackup();
         setIsForceBackingUp(false);
 
-        if (success) {
+        if (result.success) {
             alert(lang === 'zh' ? '強制備份成功！雲端資料已覆蓋為目前裝置版本。' : 'Force backup successful! Cloud data overwritten with local version.');
         } else {
-            alert(lang === 'zh' ? '備份失敗，請檢查網路連線。' : 'Backup failed. Please check your connection.');
+            alert(lang === 'zh' ? `備份失敗：${result.error}` : `Backup failed: ${result.error}`);
         }
     };
 
@@ -329,13 +329,13 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
         if (!window.confirm(lang === 'zh' ? '確定要從雲端還原嗎？這將會覆蓋您目前裝置上的所有本地資料。' : 'Restore from Cloud? This will overwrite ALL local data on this device.')) return;
 
         setIsForcePulling(true);
-        const success = await manualPull();
+        const result = await manualPull();
         setIsForcePulling(false);
 
-        if (success) {
+        if (result.success) {
             alert(lang === 'zh' ? '還原成功！資料已更新。' : 'Restore successful! Data has been updated.');
         } else {
-            alert(lang === 'zh' ? '還原失敗，雲端可能尚未有備份資料。' : 'Restore failed. No cloud backup found.');
+            alert(lang === 'zh' ? `還原失敗：${result.error}` : `Restore failed: ${result.error}`);
         }
     };
 
@@ -607,7 +607,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                  </div>
             </div>
             
-            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2">TradeTrack Pro v1.3.4</div>
+            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2">TradeTrack Pro v1.3.5</div>
             
             {showLogoutConfirm && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
