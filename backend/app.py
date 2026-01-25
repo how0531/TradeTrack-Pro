@@ -58,6 +58,10 @@ def get_broker_profile():
             print(f"[ERROR] {error_msg}", flush=True)
             return jsonify({"status": "error", "message": error_msg}), 400
 
+        # 從請求中獲取環境設定，預設為正式環境
+        env_pref = data.get("environment", "production")
+        is_simulation = env_pref == "simulation"
+
         result = login_and_fetch_pnl(
             api_key=data["apiKey"],
             secret_key=data["apiSecret"],
@@ -67,7 +71,7 @@ def get_broker_profile():
             ca_content=data.get("caContent"),
             start_date=None,
             end_date=None,
-            simulation=False,
+            simulation=is_simulation,
             branch_filter=data.get("branchCode"),  # Pass the branch filter
         )
 
@@ -129,6 +133,10 @@ def get_broker_pnl():
             print(f"[ERROR] {error_msg}", flush=True)
             return jsonify({"status": "error", "message": error_msg}), 400
 
+        # 從請求中獲取環境設定
+        env_pref = data.get("environment", "production")
+        is_simulation = env_pref == "simulation"
+
         result = login_and_fetch_pnl(
             api_key=data["apiKey"],
             secret_key=data["apiSecret"],
@@ -138,7 +146,7 @@ def get_broker_pnl():
             ca_content=data.get("caContent"),
             start_date=data["startDate"],
             end_date=data["endDate"],
-            simulation=False,
+            simulation=is_simulation,
             branch_filter=data.get("branchCode"),  # Pass the branch filter
         )
 
@@ -178,4 +186,5 @@ if __name__ == "__main__":
     print(f"Server starting on http://0.0.0.0:{port}", flush=True)
 
     # Run locally (for cloud we use gunicorn)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    # 啟用 debug=True 以支援熱重載 (Hot Reload)
+    app.run(host="0.0.0.0", port=port, debug=True)

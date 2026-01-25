@@ -90,6 +90,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 caPassword: config.caPassword,
                 caContent: config.caContent, // 傳送 Base64 憑證內容
                 branchCode: config.branchCode, // ✅ 傳遞分公司代碼
+                environment: config.environment || 'production', // ✅ 傳遞環境設定
                 startDate: startDate.toISOString().split('T')[0],
                 endDate: endDate.toISOString().split('T')[0]
             };
@@ -271,7 +272,8 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
                 caPath: config.caPath,
                 caPassword: config.caPassword,
                 caContent: config.caContent,
-                branchCode: config.branchCode // Send if already selected
+                branchCode: config.branchCode, // Send if already selected
+                environment: config.environment || 'production' // ✅ 傳遞環境設定
             };
 
             const response = await fetch(`${API_BASE}/api/broker/profile`, {

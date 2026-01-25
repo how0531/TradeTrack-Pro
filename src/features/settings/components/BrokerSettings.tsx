@@ -43,7 +43,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     };
 
     const handleChange = (key: keyof BrokerConfig, val: any) => {
-        if (localConfig) setLocalConfig({ ...localConfig, [key]: val });
+        let finalVal = val;
+        // 自動去除 API 相關欄位的前後空白
+        if (['apiKey', 'apiSecret', 'personId', 'caPassword'].includes(key) && typeof val === 'string') {
+            finalVal = val.trim();
+        }
+        if (localConfig) setLocalConfig({ ...localConfig, [key]: finalVal });
     };
 
     const handleSave = () => {
@@ -189,7 +194,28 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-slate-500 hover:text-white"><Shield size={14} /></button>
                                 </div>
 
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[10px] font-bold text-slate-500">連線環境</label>
+                                    <div className="flex gap-2 p-1 bg-black/40 border border-white/10 rounded-xl">
+                                        <button 
+                                            type="button"
+                                            onClick={() => handleChange('environment', 'production')}
+                                            className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${localConfig.environment !== 'simulation' ? 'bg-[#C8B085] text-black shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                        >
+                                            正式環境 (PRODUCTION)
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            onClick={() => handleChange('environment', 'simulation')}
+                                            className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${localConfig.environment === 'simulation' ? 'bg-[#C8B085] text-black shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                        >
+                                            測試環境 (SIMULATION)
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {accountChoices.length > 0 && (
+
                                     <div className="flex flex-col gap-3 p-4 rounded-2xl bg-zinc-900 border border-[#C8B085]/20">
                                         <div className="flex items-center gap-2 mb-1 px-1 text-[#C8B085]">
                                             <BrainCircuit size={14}/>

@@ -68,6 +68,12 @@ def login_and_fetch_pnl(
     simulation=True,
     branch_filter=None,
 ):
+    # 0. 關鍵欄位去除前後空白，防止複製貼上產生的空格導致簽章錯誤
+    api_key = api_key.strip() if api_key else api_key
+    secret_key = secret_key.strip() if secret_key else secret_key
+    person_id = person_id.strip() if person_id else person_id
+    ca_password = ca_password.strip() if ca_password else ca_password
+
     temp_ca_path = None
 
     # 1. 如果有傳入 Base64 內容，優先建立臨時檔案
