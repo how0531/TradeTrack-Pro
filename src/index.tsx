@@ -2,6 +2,7 @@
 // [Manage] Last Updated: 2024-05-22
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import './index.css'; // Global Styles
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider } from './context/AuthContext';

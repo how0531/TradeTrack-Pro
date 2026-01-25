@@ -388,14 +388,14 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                             </button>
                         </div>
                     ) : (
-                        <div className="relative z-10 text-center py-4 space-y-5">
-                            <div className="w-16 h-16 mx-auto rounded-full bg-[#C8B085]/10 flex items-center justify-center border border-[#C8B085]/20 shadow-[0_0_20px_rgba(200,176,133,0.1)]"><Cloud size={32} className="text-[#C8B085]"/></div>
+                        <div className="relative z-10 text-center py-3 space-y-3">
+                            <div className="w-10 h-10 mx-auto rounded-full bg-[#C8B085]/10 flex items-center justify-center border border-[#C8B085]/20 shadow-[0_0_20px_rgba(200,176,133,0.1)]"><Cloud size={20} className="text-[#C8B085]"/></div>
                             <div>
-                                <h3 className="text-sm font-bold text-white mb-2">{t.syncTitle}</h3>
-                                <p className="text-xs text-slate-400 leading-relaxed px-4">{t.syncDesc}</p>
+                                <h3 className="text-sm font-bold text-white mb-1">{t.syncTitle}</h3>
+                                <p className="text-[10px] text-slate-400 leading-relaxed px-4 opacity-80">{t.syncDesc}</p>
                             </div>
-                            <button onClick={onLogin} className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#C8B085] to-[#A08C65] text-black font-bold uppercase tracking-widest text-xs shadow-lg shadow-[#C8B085]/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
-                                <UserCircle size={16} /> {t.loginWithGoogle}
+                            <button onClick={onLogin} className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#C8B085] to-[#A08C65] text-black font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-[#C8B085]/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
+                                <UserCircle size={14} /> {t.loginWithGoogle}
                             </button>
                         </div>
                     )}
@@ -403,13 +403,18 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
             </div>
 
             {/* BROKERAGE INTEGRATION */}
-            <BrokerSettings
-                configs={brokerConfigs}
-                onUpdate={updateBrokerConfig}
-                onAdd={addBrokerConfig}
-                onDelete={deleteBrokerConfig}
-                lang={lang}
-            />
+            <div className="space-y-2">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2">
+                    <CloudLightning size={12}/> {lang === 'zh' ? '同步券商 (BROKER SYNC)' : 'BROKER SYNC'}
+                </h3>
+                <BrokerSettings
+                    configs={brokerConfigs}
+                    onUpdate={updateBrokerConfig}
+                    onAdd={addBrokerConfig}
+                    onDelete={deleteBrokerConfig}
+                    lang={lang}
+                />
+            </div>
 
             {/* RISK MANAGEMENT */}
 

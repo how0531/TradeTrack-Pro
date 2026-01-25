@@ -9,6 +9,7 @@ import { THEME, I18N } from './constants';
 import { Trade, ViewMode, TimeRange, Frequency } from './types';
 import { getLocalDateStr, formatDecimal, formatCompactNumber } from './utils/format';
 import { calculateMetrics } from './utils/calculations';
+import { pingBackend } from './services/brokerService';
 
 // Components & Pages
 import { Layout } from './components/Layout';
@@ -26,6 +27,11 @@ import { ShareModal } from './components/modals/ShareCardModal';
 import { useTradeContext, TradeProvider } from './context/TradeContext';
 
 function MainApp() {
+    // 0. Wake up backend on start (Fire and forget)
+    useEffect(() => {
+        pingBackend().catch(err => console.debug('Background warmup failed', err));
+    }, []);
+
     // 1. Consume Context
     const {
         metrics, 

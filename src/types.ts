@@ -37,6 +37,7 @@ export interface Trade {
   note?: string;
   image?: string;
   portfolioId?: string;
+  orderNo?: string;
   timestamp?: string;
   amount?: string;
   type?: 'profit' | 'loss';

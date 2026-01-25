@@ -1,4 +1,4 @@
-// [Manage] Last Updated: 2024-05-22
+﻿// [Manage] Last Updated: 2024-05-22
 import { Lang, Frequency } from '../types';
 import { THEME } from '../constants';
 
@@ -12,7 +12,6 @@ export const formatCurrency = (val: number | undefined | null, hideAmounts = fal
     if (hideAmounts) return '****';
     if (val === undefined || val === null || isNaN(val)) return '0';
     try {
-        // Changed style from 'currency' to 'decimal' to remove the $ symbol
         return new Intl.NumberFormat('en-US', { 
             style: 'decimal', 
             minimumFractionDigits: 0, 
@@ -30,7 +29,6 @@ export const formatPnlK = (val: number, hideAmounts = false) => {
     return `${val >= 0 ? '+' : ''}${(val / 1000).toFixed(1)}K`;
 };
 
-// NEW: Global Compact Number Formatter (Taiwanese Logic: 萬/億)
 export const formatCompactNumber = (val: number | undefined | null, forceSign = false) => {
     if (val === undefined || val === null || isNaN(val)) return '0';
     if (val === 0) return '0';
@@ -38,7 +36,6 @@ export const formatCompactNumber = (val: number | undefined | null, forceSign = 
     const abs = Math.abs(val);
     const prefix = forceSign ? (val > 0 ? '+' : '-') : (val < 0 ? '-' : '');
 
-    // Rule 1: < 10,000 -> Original number (with commas for readability)
     if (abs < 10000) {
         const formatted = new Intl.NumberFormat('en-US', {
             maximumFractionDigits: 2
@@ -46,12 +43,10 @@ export const formatCompactNumber = (val: number | undefined | null, forceSign = 
         return `${prefix}${formatted}`;
     }
     
-    // Rule 2: 10,000 - 99,999,999 -> Wan (萬)
     if (abs < 100000000) {
         return `${prefix}${parseFloat((abs / 10000).toFixed(2))}萬`;
     }
 
-    // Rule 3: >= 100,000,000 -> Yi (億)
     return `${prefix}${parseFloat((abs / 100000000).toFixed(2))}億`;
 };
 
@@ -73,7 +68,6 @@ export const formatDate = (d: string | Date, lang: Lang = 'zh') => {
     }
 };
 
-// NEW: Chart Axis Formatter
 export const formatChartAxisDate = (timestamp: number, freq: Frequency) => {
     const date = new Date(timestamp);
     if (isNaN(date.getTime())) return '';
@@ -107,4 +101,17 @@ export const getLocalDateStr = (dateObj = new Date()) => {
     }
     const offset = dateObj.getTimezoneOffset() * 60000;
     return new Date(dateObj.getTime() - offset).toISOString().split('T')[0];
+};
+
+export const formatDateWithWeekday = (d: string | Date | number) => {
+    const date = (typeof d === 'string' || typeof d === 'number') ? new Date(d) : d;
+    if (isNaN(date.getTime())) return String(d);
+    
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+    const weekDay = weekDays[date.getDay()];
+    
+    return `${y}.${m}.${day}(${weekDay})`;
 };

@@ -175,10 +175,15 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                 <button 
                     onClick={() => handleStartEdit('new')}
-                    className="flex items-center justify-center gap-2 p-5 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] hover:bg-white/[0.03] text-slate-500 hover:text-[#C8B085] group"
+                    className="flex flex-col items-center justify-center gap-2 p-5 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] hover:bg-white/[0.03] text-slate-500 hover:text-[#C8B085] group transition-all"
                 >
-                    <Plus size={16} className="group-hover:rotate-90 transition-transform"/>
-                    <span className="text-xs font-bold uppercase tracking-widest">{lang === 'zh' ? '新增帳務帳號' : 'Add Account'}</span>
+                    <div className="flex items-center gap-2">
+                        <Plus size={16} className="group-hover:rotate-90 transition-transform"/>
+                        <span className="text-xs font-bold uppercase tracking-widest">{lang === 'zh' ? '新增帳務帳號' : 'Add Account'}</span>
+                    </div>
+                    <span className="text-[9px] text-zinc-600 font-bold group-hover:text-zinc-500 transition-colors">
+                        {lang === 'zh' ? '(目前僅支援永豐金)' : '(Supports SinoPac only)'}
+                    </span>
                 </button>
             </div>
 
@@ -303,9 +308,37 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 }}
                                                 className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085]/10 border-[#C8B085]/50' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}`}
                                             >
-                                                <div className="flex flex-col items-start font-mono">
-                                                    <span className="text-xs font-bold text-white">永豐金 - {acc.branch_name} ({acc.branch_code})</span>
-                                                    <span className="text-[9px] text-zinc-600 mt-1">{acc.account_id}</span>
+                                                <div className="flex flex-col items-start font-mono gap-0.5">
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                                                        永豐金 - {acc.branch_name} ({acc.branch_code})
+                                                    </span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {(() => {
+                                                            let typeLabel = '帳戶';
+                                                            let typeStyle = 'text-zinc-400 bg-white/5 border-white/10';
+                                                            
+                                                            // Logic: Backend Type -> Length Heuristic (7=Stock, Others=Sub-brokerage)
+                                                            if (acc.account_type === 'S' || (!acc.account_type && acc.account_id.length === 7)) {
+                                                                typeLabel = '台股';
+                                                                typeStyle = 'text-red-400 bg-red-500/10 border-red-500/20';
+                                                            } else if (acc.account_type === 'H' || (!acc.account_type && acc.account_id.length !== 7)) {
+                                                                typeLabel = '複委託';
+                                                                typeStyle = 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+                                                            } else if (acc.account_type === 'F') {
+                                                                typeLabel = '期貨';
+                                                                typeStyle = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
+                                                            }
+
+                                                            return (
+                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${typeStyle}`}>
+                                                                    {typeLabel}
+                                                                </span>
+                                                            );
+                                                        })()}
+                                                        <span className="text-sm font-bold text-slate-200">
+                                                            - {acc.account_id}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                                 <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085] border-[#C8B085]' : 'border-white/10'}`}>
                                                     {isTesting && localConfig.branchCode === acc.branch_code && (

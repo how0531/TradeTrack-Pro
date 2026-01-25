@@ -252,7 +252,7 @@ export interface BrokerProfile {
     username?: string;
     environment?: 'production' | 'simulation';
     apiKeyHint?: string;
-    accounts?: { branch_code: string, branch_name: string, account_id: string }[];
+    accounts?: { branch_code: string, branch_name: string, account_id: string, account_type?: string }[];
 }
 
 /**

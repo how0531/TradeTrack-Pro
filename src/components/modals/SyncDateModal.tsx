@@ -1,266 +1,246 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, RefreshCw, Calendar as CalendarIcon, CheckCircle2, AlertTriangle, ShieldCheck, MessageSquare, Check, CalendarDays } from 'lucide-react';
+import { X, RefreshCw, Calendar as CalendarIcon, CheckCircle2, AlertTriangle, ShieldCheck, MessageSquare, Check, CalendarDays, ChevronDown, ChevronRight, Copy, Wifi, Power } from 'lucide-react';
 import { Trade, BrokerConfig, Portfolio } from '../../types';
 import { fetchBrokerPnl, fetchBrokerProfile, pingBackend } from '../../services/brokerService';
-import { getLocalDateStr } from '../../utils/format';
+import { getLocalDateStr, formatDateWithWeekday } from '../../utils/format';
 import { CustomDateRangeModal } from './CustomDateRangeModal';
+import { useClickOutside } from '../../hooks/useClickOutside';
+import { GlassSelect } from '../common/GlassSelect';
 
-interface WizardProps {
+// --- Interfaces ---
+interface SyncDateModalProps {
     isOpen: boolean;
     onClose: () => void;
-    currentDate: Date;
-    configs: BrokerConfig[];
-    activeId: string;
-    onUpdateBroker: (id: string, c: BrokerConfig) => void;
-    portfolios: Portfolio[];
-    activePortfolioIds: string[];
-    strategies: string[];
-    emotions: string[];
-    existingTrades: Trade[];
-    onSuccess: (transactions: ImportTransaction[]) => void;
-    lang: 'zh' | 'en';
+    onSuccess?: (trades: Trade[]) => void;
+    lang?: 'zh' | 'en';
+    existingTrades?: Trade[];
 }
 
-export interface ImportTransaction {
-    id: string; // temp id
-    date: string;
-    code: string;
-    pnl: number;
-    portfolioId: string;
-    strategy: string;
-    emotion: string;
-    note: string;
-    selected: boolean;
-    isDuplicate?: boolean; // New flag
-    showNoteInput?: boolean; 
-    // New fields from Broker detail
-    category?: string;
-    quantity?: number;
-    price?: number;
-    buyAmt?: number;
-    sellAmt?: number;
-    yield?: number;
-    orderNo?: string;
-    currency?: string;
-}
+// --- Internal Component: GlassSelect Moved to common/GlassSelect.tsx ---
 
-export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId, onUpdateBroker, portfolios, activePortfolioIds, strategies, emotions, existingTrades, onSuccess, lang }: WizardProps) => {
-    // Portals can be tricky during hydration or rapid unmounting.
-    const [shouldRender, setShouldRender] = useState(isOpen);
-
-    useEffect(() => {
-        if (isOpen) setShouldRender(true);
-        else setShouldRender(false);
-    }, [isOpen]);
-
-    // Wizard State
+export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, onSuccess, lang = 'zh', existingTrades = [] }) => {
+    // --- State ---
     const [step, setStep] = useState<1 | 2>(1);
-    
-    // Step 1: Config
-    const [startDate, setStartDate] = useState(getLocalDateStr());
-    const [endDate, setEndDate] = useState(getLocalDateStr());
-    // Use ID-Index composite key for tracking selection
-    const [selectedConfigIds, setSelectedConfigIds] = useState<string[]>(
-        activeId 
-            ? configs.map((c, i) => c.id === activeId ? `${c.id}-${i}` : null).filter(Boolean) as string[]
-            : (configs[0] ? [`${configs[0].id}-0`] : [])
-    );
-    const [showCalendar, setShowCalendar] = useState(false);
-    
-    // Backend Status
-    const [backendStatus, setBackendStatus] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle');
-    
-    // Step 2: Data
-    const [transactions, setTransactions] = useState<ImportTransaction[]>([]);
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+    const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
     const [resultMsg, setResultMsg] = useState('');
+    
+    // Dates
+    const today = getLocalDateStr(new Date());
+    const [startDate, setStartDate] = useState(today);
+    const [endDate, setEndDate] = useState(today);
+    const [showCalendar, setShowCalendar] = useState(false);
 
-    const toggleConfigSelection = (targetId: string, index: number) => {
-        // Create a unique key using ID + Index to support duplicate accounts
-        const uniqueKey = `${targetId}-${index}`;
-        setSelectedConfigIds(prev => 
-            prev.includes(uniqueKey) 
-                ? prev.filter(item => item !== uniqueKey)
-                : [...prev, uniqueKey]
-        );
-    };
+    // Data
+    const [configs, setConfigs] = useState<BrokerConfig[]>([]);
+    const [selectedConfigIds, setSelectedConfigIds] = useState<string[]>([]);
+    const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+    const [targetPortfolioId, setTargetPortfolioId] = useState<string>('');
+    const [transactions, setTransactions] = useState<any[]>([]); // Need Trade type + selected
 
-    // Reset on Open & Auto Ping
+    // Consts (Mock)
+    const strategies = ['動能突破', '急殺抄底', '波段趨勢', '當沖'];
+    const emotions = ['FOMO', '冷靜', '猶豫', '貪婪'];
+
+    // --- Effects ---
     useEffect(() => {
         if (isOpen) {
+            // Load Configs
+            try {
+                const savedConfigs = localStorage.getItem('broker_configs');
+                if (savedConfigs) {
+                    const parsed = JSON.parse(savedConfigs);
+                    setConfigs(parsed);
+                    if (parsed.length > 0) setSelectedConfigIds([`${parsed[0].id}-0`]);
+                }
+                
+                // Load Portfolios
+                const savedPortfolios = localStorage.getItem('portfolios'); // Assuming this key
+                if (savedPortfolios) {
+                    const parsedP = JSON.parse(savedPortfolios);
+                    setPortfolios(parsedP);
+                    if (parsedP.length > 0) setTargetPortfolioId(parsedP[0].id);
+                } else {
+                    // Fallback Mock
+                     setPortfolios([{ id: 'main', name: 'Main Account', initialCapital: 100000, profitColor: '#D05A5A', lossColor: '#5B9A8B' }]);
+                     setTargetPortfolioId('main');
+                }
+
+                // Check Backend
+                handleManualPing();
+            } catch (e) {
+                console.error("Error loading initial data", e);
+            }
+        } else {
+            // Reset
             setStep(1);
             setStatus('idle');
-            setResultMsg('');
             setTransactions([]);
-            setResultMsg('');
-            setTransactions([]);
-            setSelectedConfigIds(
-                activeId 
-                    ? configs.map((c, i) => c.id === activeId ? `${c.id}-${i}` : null).filter(Boolean) as string[]
-                    : (configs[0] ? [`${configs[0].id}-0`] : [])
-            );
-            
-            // Auto Ping Backend
-            handleManualPing();
-        } else {
-            setBackendStatus('idle');
         }
-    }, [isOpen, activeId, configs]);
+    }, [isOpen]);
 
+    // --- Handlers ---
     const handleManualPing = async () => {
         setBackendStatus('checking');
         const isOnline = await pingBackend();
         setBackendStatus(isOnline ? 'online' : 'offline');
     };
 
-    const handleFetch = async () => {
-        if (selectedConfigIds.length === 0) return;
-        setStatus('loading');
-        setResultMsg('');
-        
-        setStatus('loading');
-        setResultMsg('');
-        
-        // Extract original IDs from composite keys
-        const selectedRealIds = selectedConfigIds.map(k => k.split('-')[0]);
-        // Filter configs properly (handling duplicates by index is better but API needs Real ID)
-        // Here we just grab the configs that match the indices or IDs. Better:
-        const selectedConfigs = configs.filter((c, i) => selectedConfigIds.includes(`${c.id}-${i}`));
-
-        let allMapped: ImportTransaction[] = [];
-        let loginErrors: string[] = [];
-
-        try {
-            for (let config of selectedConfigs) {
-                let currentConfig = { ...config };
-                
-                // 1. 若未連線，嘗試先執行登入 (Auto-Login attempt)
-                if (!currentConfig.isConnected) {
-                    try {
-                        const profile = await fetchBrokerProfile(currentConfig);
-                        if (currentConfig.provider === 'shioaji' && profile.environment !== 'production') {
-                            loginErrors.push(`${config.alias || config.brokerUsername || '帳號'}: 環境錯誤（需要 production）`);
-                            continue;
-                        }
-                        if (!profile.username || !profile.branchCode) {
-                            loginErrors.push(`${config.alias || config.brokerUsername || '帳號'}: 帳戶資訊不完整`);
-                            continue;
-                        }
-                        currentConfig = {
-                            ...currentConfig,
-                            isConnected: true,
-                            brokerUsername: profile.username,
-                            branch: profile.branch,
-                            environment: profile.environment
-                        };
-                        onUpdateBroker(currentConfig.id, currentConfig);
-                    } catch (e: any) {
-                        const errorMsg = e?.message || String(e) || '未知錯誤';
-                        loginErrors.push(`${config.alias || config.brokerUsername || '帳號'}: ${errorMsg}`);
-                        console.error(`Login failed for ${currentConfig.id}:`, e);
-                        continue;
-                    }
-                }
-
-                // 2. 執行 P&L 抓取
-                try {
-                    const startObj = new Date(startDate);
-                    const endObj = new Date(endDate);
-                    const result = await fetchBrokerPnl(startObj, endObj, currentConfig);
-                    
-                    const mapped: ImportTransaction[] = result.details.map((d, idx) => {
-                        const yieldStr = (d.yield >= 0 ? '+' : '') + d.yield + '%';
-                        const lots = (d.quantity || 0) / 1000;
-                        const leanCode = d.code.replace(/\s+/g, '');
-                        const isDuplicate = existingTrades.some(t => t.date === d.date && t.pnl === d.pnl);
-
-                        return {
-                            id: `import-${d.date}-${d.orderNo || d.code}-${d.pnl}-${idx}-${currentConfig.id}`, 
-                            date: d.date,
-                            code: d.code,
-                            pnl: d.pnl,
-                            portfolioId: targetPortfolioId,
-                            strategy: '',
-                            emotion: '',
-                            note: `${leanCode} | ${yieldStr} | ${lots}張`,
-                            selected: !isDuplicate,
-                            isDuplicate,
-                            showNoteInput: false,
-                            category: d.category,
-                            quantity: d.quantity,
-                            price: d.price,
-                            buyAmt: d.buyAmt,
-                            sellAmt: d.sellAmt,
-                            yield: d.yield,
-                            orderNo: d.orderNo,
-                            currency: d.currency
-                        };
-                    });
-                    allMapped = [...allMapped, ...mapped];
-                } catch (e: any) {
-                    const errorMsg = e?.message || String(e) || '未知錯誤';
-                    loginErrors.push(`${config.alias || config.brokerUsername || '帳號'} 資料抓取失敗: ${errorMsg}`);
-                    console.error(`P&L fetch failed for ${currentConfig.id}:`, e);
-                }
-            }
-
-            // 如果有登入錯誤，顯示給用戶
-            if (loginErrors.length > 0) {
-                setStatus('error');
-                setResultMsg(loginErrors.join('\n'));
-                // 如果有成功的資料，繼續顯示
-                if (allMapped.length > 0) {
-                    setTransactions(allMapped);
-                    setStep(2);
-                    setStatus('idle');
-                }
-                return;
-            }
-
-            if (allMapped.length === 0 && selectedConfigs.some(c => !c.isConnected)) {
-                throw new Error(lang === 'zh' ? '尚未完成券商連線驗證' : 'Broker connection not verified.');
-            }
-
-            setTransactions(allMapped);
-            setStep(2);
-            setStatus('idle');
-
-        } catch (err: any) {
-            setStatus('error');
-            const errorMessage = err?.message || String(err) || 'Unknown Error';
-            setResultMsg(errorMessage);
-            console.error('Sync error:', err);
-        }
+    const toggleConfigSelection = (id: string, idx: number) => {
+        const key = `${id}-${idx}`;
+        setSelectedConfigIds(prev => {
+            if (prev.includes(key)) return prev.filter(k => k !== key);
+            return [...prev, key]; // Allow multiple? For now yes.
+        });
     };
 
-    const handleConfirmImport = () => {
-        const selected = transactions.filter(t => t.selected);
-        onSuccess(selected);
-        onClose();
-    };
+    const formatMoney = (val: number) => val.toLocaleString();
 
+    const updateTxField = (id: string, field: string, val: any) => {
+        setTransactions(prev => prev.map(t => t.id === id ? { ...t, [field]: val } : t));
+    };
+    
     const toggleSelection = (id: string) => {
         setTransactions(prev => prev.map(t => t.id === id ? { ...t, selected: !t.selected } : t));
     };
 
-    const updateTxField = (id: string, field: 'strategy' | 'emotion' | 'note' | 'showNoteInput', value: any) => {
-        setTransactions(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+    const handleFetch = async () => {
+        if (selectedConfigIds.length === 0) {
+            setResultMsg("請至少選擇一個券商帳號");
+            return;
+        }
+
+        setStatus('loading');
+        setResultMsg('');
+
+        try {
+            // 找出選中的 config
+            // Note: uniqueKey is id-idx, we map back to config
+            const selectedKeys = selectedConfigIds.map(k => k.split('-')[0]);
+            const targetConfig = configs.find(c => selectedKeys.includes(c.id));
+            
+            if (!targetConfig) throw new Error("無效的帳號設定");
+
+            // 呼叫後端
+            const startD = new Date(startDate);
+            const endD = new Date(endDate);
+            const result = await fetchBrokerPnl(startD, endD, targetConfig);
+
+            // 處理結果
+            // 處理結果 & 重複判斷
+            // 處理結果 & 重複判斷
+            const mappedTrades = result.details.map((d, i) => {
+                // User Request: 個股名稱 | 損益%數 | 買賣張數
+                // format: 2890 永豐金 | 1.51% | 5張
+                // d.code has format "2890 Name". We use it as is or split it? User screenshot implies full name.
+                const sheets = d.quantity ? (d.quantity / 1000).toFixed(0) : '0';
+                const yieldStr = d.yield ? `${d.yield > 0 ? '+' : ''}${d.yield}%` : '0%';
+                
+                // Auto Note Format: [Code] Name | Yield% | Sheets 
+                // e.g. [2890 永豐金] | +1.51% | 5張
+                // Wait, user said: "個股名稱 | 損益%數 | 買賣張數"
+                // Let's use `${d.code} | ${yieldStr} | ${sheets}張`
+                const autoNote = `${d.code} | ${yieldStr} | ${sheets}張`.trim();
+
+                // Advanced Deduplication Logic
+                let isDup = false;
+                let dupReason = '';
+                
+                if (existingTrades && existingTrades.length > 0) {
+                     // Try to find the BEST match
+                     // Priority 1: Exact Order ID Match (High Confidence)
+                     const orderMatch = existingTrades.find(e => 
+                        d.orderNo && (e.orderNo === d.orderNo || e.note?.includes(d.orderNo))
+                     );
+                     
+                     if (orderMatch) {
+                         isDup = true;
+                         dupReason = `單號重複`;
+                     } else {
+                         // Priority 2: Date + PnL + Code Match (Medium Confidence)
+                         const codeMatch = existingTrades.find(e => 
+                            e.date === d.date && 
+                            Math.abs(e.pnl - d.pnl) < 0.1 && 
+                            (e.note?.includes(d.code) || e.note?.includes(`[${d.code}]`))
+                         );
+                         
+                         if (codeMatch) {
+                             isDup = true;
+                             dupReason = `金額與代碼重複`;
+                         } else {
+                             // Priority 3: Date + PnL Match (Low Confidence)
+                             const pnlMatch = existingTrades.find(e => 
+                                e.date === d.date && 
+                                Math.abs(e.pnl - d.pnl) < 0.1
+                             );
+                             
+                             if (pnlMatch) {
+                                 isDup = true;
+                                 dupReason = `日期與金額相同`;
+                             }
+                         }
+                     }
+                }
+                
+                return {
+                    id: `tx-${Date.now()}-${i}`,
+                    date: d.date,
+                    orderNo: d.orderNo, // ✅ Stored but not in note
+                    code: d.code,
+                    pnl: d.pnl,
+                    price: d.price,
+                    quantity: d.quantity,
+                    side: d.quantity > 0 ? 'Buy' : 'Sell',
+                    selected: !isDup, // Default key to UNCHECKED if duplicate
+                    isDuplicate: isDup,
+                    duplicateReason: dupReason,
+                    portfolioId: targetPortfolioId,
+                    strategy: '',
+                    emotion: '',
+                    note: autoNote, // Clean note: Name | % | Vol
+                    showNoteInput: false
+                };
+            });
+
+            setTransactions(mappedTrades);
+            setStatus('idle');
+            if (mappedTrades.length === 0) {
+                setResultMsg("此區間無交易紀錄");
+            } else {
+                setStep(2);
+            }
+
+        } catch (e: any) {
+            console.error("Fetch Error:", e);
+            setStatus('error');
+            setResultMsg(e.message || "同步失敗，請確認後端連線或憑證");
+        }
     };
 
-    const formatMoney = (n: number) => n.toLocaleString();
+    const handleConfirmImport = () => {
+        const finalTrades = transactions.filter(t => t.selected);
+        if (onSuccess) onSuccess(finalTrades);
+        onClose();
+    };
 
-    if (!shouldRender) return null;
+
+    if (!isOpen) return null;
+    if (typeof document === 'undefined') return null;
 
     const modalContent = (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0A0B0F]/85 backdrop-blur-2xl animate-in fade-in duration-300 p-4 overflow-hidden">
+            {/* Ambient Background Flares (Design Premium Touch) */}
+            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#C8B085]/5 rounded-full blur-[120px] pointer-events-none" />
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#D05A5A]/5 rounded-full blur-[100px] pointer-events-none" />
+
             <div 
-                className={`w-full ${step === 2 ? 'max-w-2xl' : 'max-w-md'} bg-[#1C1E22] rounded-3xl border border-white/10 shadow-3xl overflow-hidden relative transition-all duration-300 mx-4`}
+                className={`relative w-full ${step === 2 ? 'max-w-4xl' : 'max-w-md'} bg-[#14161B]/90 rounded-[40px] border border-white/10 shadow-[0_32px_80px_rgba(0,0,0,0.6)] backdrop-blur-3xl transition-all duration-500 flex flex-col my-auto overflow-hidden animate-in zoom-in-95`}
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="p-5 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+                <div className="p-5 border-b border-white/5 flex justify-between items-center bg-white/[0.02] rounded-t-3xl">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
                         <RefreshCw size={14} className={status === 'loading' ? 'animate-spin' : ''}/>
                         {step === 1 ? '匯入設定 (IMPORT SETUP)' : '交易檢核 (REVIEW)'}
@@ -272,57 +252,93 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                     {/* STEP 1: CONFIG */}
                     {step === 1 && (
                         <div className="space-y-8 animate-in slide-in-from-bottom-3 duration-300">
-                            
-                            {/* Portfolio Setup */}
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                    <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
-                                    匯入帳戶 (TARGET PORTFOLIO)
-                                </label>
-                                <select 
-                                    value={targetPortfolioId}
-                                    onChange={(e) => setTargetPortfolioId(e.target.value)}
-                                    className="w-full bg-black/20 border border-white/10 rounded-2xl px-5 py-4 text-white font-bold outline-none focus:border-[#C8B085] transition-all appearance-none cursor-pointer"
-                                >
-                                    {portfolios.map(p => (
-                                        <option key={p.id} value={p.id} className="bg-[#1C1E22] text-white">{p.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
                             {/* Date Selection */}
                             <div className="space-y-3">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                    <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
-                                    日期範圍 (DATE RANGE)
-                                </label>
+                                <div className="flex justify-between items-end">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                        <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
+                                        日期範圍 (DATE RANGE)
+                                    </label>
+                                    <div className="flex gap-1">
+                                        {[5, 10, 20, 30].map(days => {
+                                            const today = new Date();
+                                            const past = new Date();
+                                            past.setDate(today.getDate() - days + 1);
+                                            const rangeStart = getLocalDateStr(past);
+                                            const rangeEnd = getLocalDateStr(today);
+                                            const isActive = startDate === rangeStart && endDate === rangeEnd;
+
+                                            return (
+                                                <button
+                                                    key={days}
+                                                    onClick={() => {
+                                                        setEndDate(rangeEnd);
+                                                        setStartDate(rangeStart);
+                                                    }}
+                                                    className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all font-barlow-numeric border ${
+                                                        isActive 
+                                                            ? 'bg-[#C8B085] text-black border-[#C8B085]' 
+                                                            : 'bg-white/5 border-white/5 hover:bg-[#C8B085] hover:text-black hover:border-[#C8B085] text-slate-500'
+                                                    }`}
+                                                >
+                                                    {days}D
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                                 <button 
                                     onClick={() => setShowCalendar(true)}
-                                    className="w-full bg-black/20 border border-white/10 rounded-2xl px-5 py-4 flex items-center justify-between group hover:bg-white/[0.02] transition-all"
+                                    className="w-full bg-[#1C1E22]/35 backdrop-blur-xl backdrop-saturate-150 border border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] rounded-2xl px-5 py-4 flex items-center justify-between group hover:bg-white/[0.05] transition-all"
                                 >
                                     <div className="flex items-center gap-4">
                                         <div className="w-10 h-10 rounded-xl bg-[#C8B085]/10 flex items-center justify-center text-[#C8B085]">
                                             <CalendarDays size={20}/>
                                         </div>
                                         <div className="flex flex-col items-start gap-1">
-                                            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">SELECTED PERIOD</span>
                                             <div className="text-sm font-bold text-white font-barlow-numeric tracking-wide">
                                                 {startDate} <span className="text-slate-600 mx-2">➔</span> {endDate}
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="px-3 py-1 rounded-lg bg-white/5 border border-white/5 text-[10px] text-slate-400 font-bold group-hover:bg-white/10 transition-colors">
-                                        CHANGE
+                                    <div className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors group-hover:scale-110 duration-300">
+                                        <ChevronRight size={16} className="text-slate-600 group-hover:text-white transition-colors" />
                                     </div>
                                 </button>
                             </div>
 
                             {/* Accounts Selection */}
                             <div className="space-y-3">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                    <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
-                                    選擇券商帳號 (SELECT ACCOUNT)
-                                </label>
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                        <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
+                                        選擇券商帳號 (SELECT ACCOUNT)
+                                    </label>
+                                    
+                                    <button
+                                        onClick={handleManualPing}
+                                        disabled={backendStatus === 'checking'}
+                                        className={`
+                                            flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-bold transition-all
+                                            ${backendStatus === 'online' 
+                                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500 cursor-default' 
+                                                : backendStatus === 'checking'
+                                                    ? 'bg-slate-500/10 border-slate-500/20 text-slate-400 cursor-wait'
+                                                    : 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20 cursor-pointer active:scale-95'
+                                            }
+                                        `}
+                                    >
+                                        {backendStatus === 'checking' && <RefreshCw size={8} className="animate-spin"/>}
+                                        {backendStatus === 'online' && <Wifi size={8}/>}
+                                        {backendStatus === 'offline' && <Power size={8}/>}
+                                        
+                                        <span>
+                                            {backendStatus === 'online' ? '已連線 (ONLINE)' : 
+                                             backendStatus === 'checking' ? '連線中...' : 
+                                             '喚醒後端 (WEAK UP)'}
+                                        </span>
+                                    </button>
+                                </div>
                                     {configs.map((config, idx) => {
                                         const uniqueKey = `${config.id}-${idx}`;
                                         const isSelected = selectedConfigIds.includes(uniqueKey);
@@ -330,14 +346,19 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                                         <div 
                                             key={uniqueKey}
                                             onClick={() => toggleConfigSelection(config.id, idx)}
-                                            className={`p-4 rounded-2xl border flex items-center justify-between transition-all cursor-pointer ${isSelected ? 'bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'bg-white/[0.02] border-white/5 hover:border-white/10'}`}
+                                            className={`
+                                                p-4 rounded-2xl border flex items-center justify-between transition-all cursor-pointer backdrop-blur-xl backdrop-saturate-150
+                                                ${isSelected 
+                                                    ? 'bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05),inset_0_1px_1px_rgba(255,255,255,0.1)]' 
+                                                    : 'bg-[#1C1E22]/35 border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] hover:bg-white/[0.05] hover:border-white/20'
+                                                }
+                                            `}
                                         >
                                             <div className="flex items-center gap-4">
                                                 <div className={`w-3.5 h-3.5 rounded-full border-2 transition-all flex items-center justify-center ${isSelected ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.4)]' : 'bg-transparent border-white/10'}`}>
                                                     {isSelected && <Check size={10} className="text-black stroke-[4]"/>}
                                                 </div>
                                                 <div className="flex flex-col gap-0.5">
-                                                    {/* Top Line: Broker - Branch */}
                                                     <div className="flex items-center gap-2">
                                                         <span className={`text-sm font-bold tracking-wide ${isSelected ? 'text-white' : 'text-slate-400'}`}>
                                                             {config.provider === 'shioaji' ? '永豐金' : 'Broker'} - {config.branch || (lang === 'zh' ? '未知分公司' : 'Unknown Branch')}
@@ -347,15 +368,13 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                                                         )}
                                                     </div>
                                                     
-                                                    {/* Bottom Line: Name | Person ID */}
                                                     <div className="text-[10px] text-zinc-500 font-bold flex items-center gap-1.5 mt-0.5 font-mono">
                                                         <span className="text-zinc-400">
                                                             {(() => {
-                                                                const name = config.alias || config.brokerUsername || 'User';
-                                                                if (name.includes('永豐金')) {
-                                                                    return name.split('永豐金')[0].trim();
-                                                                }
-                                                                return name;
+                                                                // Clean up name by removing 【】 or [] and specific branding if needed
+                                                                const rawName = config.alias || config.brokerUsername || 'User';
+                                                                // Use formatting similar to "Tan Meijuan" without brackets
+                                                                return rawName.replace(/[【】\[\]]/g, '').replace('永豐金', '').trim();
                                                             })()}
                                                         </span>
                                                         <span className="opacity-30">|</span>
@@ -368,7 +387,6 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                                         );
                                     })}
                                 </div>
-                            </div>
                              
                             {/* Error or Login Prompt */}
                             {(selectedConfigIds.length > 0 && resultMsg) && (
@@ -382,73 +400,140 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
 
                     {/* STEP 2: REVIEW */}
                     {step === 2 && (
-                        <div className="space-y-4">
+                        <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
+                            {/* Target Portfolio Selector */}
+                            <div className="bg-black/20 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-[#C8B085]/10 flex items-center justify-center text-[#C8B085]">
+                                        <ShieldCheck size={16}/>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">匯入至帳戶 (TARGET PORTFOLIO)</span>
+                                        <span className="text-xs font-bold text-white">Default: {portfolios.find(p => p.id === targetPortfolioId)?.name}</span>
+                                    </div>
+                                </div>
+                                <div className="w-[150px]">
+                                    <GlassSelect
+                                        value={targetPortfolioId}
+                                        onChange={(val) => {
+                                            setTargetPortfolioId(val);
+                                            setTransactions(prev => prev.map(t => ({ ...t, portfolioId: val })));
+                                        }}
+                                        options={portfolios.map(p => ({ value: p.id, label: p.name }))}
+                                        variant="standard"
+                                    />
+                                </div>
+                            </div>
+
                             <div className="max-h-[350px] overflow-y-auto pr-3 space-y-3 custom-scrollbar">
                                 {transactions.length === 0 ? (
-                                    <div className="text-center py-12 text-slate-500 text-sm font-bold opacity-50">此區間無交易紀錄 (NO TRADES FOUND)</div>
+                                    <div className="py-20 flex flex-col items-center justify-center gap-4 text-slate-500/40">
+                                        <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/[0.05] flex items-center justify-center">
+                                            <CalendarDays size={24} className="opacity-20" />
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-[11px] font-black tracking-widest uppercase">No Data Found</p>
+                                            <p className="text-[10px] font-medium mt-1">此區間無同步交易紀錄</p>
+                                        </div>
+                                    </div>
                                 ) : (
                                     transactions.map(tx => (
-                                        <div key={tx.id} className="space-y-2">
-                                            <div className={`p-4 rounded-2xl border transition-all flex items-center gap-4 ${
-                                                !tx.selected ? 'bg-transparent border-white/5 opacity-60 grayscale-[40%] scale-[0.98]' : 
-                                                tx.isDuplicate ? 'bg-amber-500/10 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.05)]' : 
-                                                'bg-white/[0.03] border-white/10'
+                                        <div key={tx.id} className="space-y-1">
+                                            <div className={`px-2.5 py-2.5 rounded-2xl border transition-all flex items-center gap-2 relative overflow-hidden ${
+                                                !tx.selected 
+                                                    ? 'bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-60 transition-opacity' // Unselected
+                                                    : tx.isDuplicate 
+                                                        ? 'bg-amber-500/5 border-amber-500/20 shadow-[inset_0_0_20px_rgba(245,158,11,0.02)]' 
+                                                        : 'bg-[#1C1E22]/50 border-white/10 shadow-lg shadow-black/25'
                                             }`}>
                                                 <input 
                                                     type="checkbox" 
                                                     checked={tx.selected} 
                                                     onChange={() => toggleSelection(tx.id)}
-                                                    className={`w-5 h-5 rounded-lg border-white/20 bg-black/40 focus:ring-0 cursor-pointer ${tx.isDuplicate ? 'text-amber-500' : 'text-[#C8B085]'}`}
+                                                    className={`w-4 h-4 rounded-md border-white/20 bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${tx.selected && tx.isDuplicate ? 'text-amber-500 border-amber-500/50' : 'text-[#C8B085] border-[#C8B085]/30'}`}
                                                 />
                                                 
-                                                <div className="flex flex-col min-w-[140px] shrink-0">
-                                                    <div className="flex items-center gap-2 mb-0.5">
-                                                        <span className="text-[9px] text-slate-500 font-black tracking-tighter whitespace-nowrap">{tx.date}</span>
-                                                        {tx.isDuplicate && (
-                                                            <span className="bg-amber-500/20 text-amber-500 text-[8px] font-black px-1.5 py-0.5 rounded border border-amber-500/20 animate-pulse whitespace-nowrap">可能重複</span>
+                                                {/* Meta Info: Identity Group */}
+                                                <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+                                                    {/* Column 1: Priority Status & Date */}
+                                                    <div className="flex flex-col items-start gap-1 min-w-[62px] shrink-0">
+                                                        {tx.isDuplicate ? (
+                                                            <span className="bg-amber-500 text-black text-[7px] px-1.2 rounded-[3px] font-black whitespace-nowrap tracking-tighter leading-none py-0.5 shadow-sm">
+                                                                可能重複
+                                                            </span>
+                                                        ) : (
+                                                            <div className="h-[10px]" />
                                                         )}
+                                                        <span className="text-[9px] text-zinc-400 font-bold tracking-tighter shrink-0 leading-none">
+                                                            {formatDateWithWeekday(tx.date).split('(')[0].slice(5)} ({formatDateWithWeekday(tx.date).split('(')[1]}
+                                                        </span>
                                                     </div>
-                                                    <span className="text-sm font-bold text-white truncate drop-shadow-sm leading-tight">{tx.code}</span>
+                                                    
+                                                    {/* Column 2: Data Pill (Stock & PnL) */}
+                                                    <div className="flex items-center gap-2 min-w-0 bg-white/5 px-2.5 py-1 rounded-xl border border-white/10 h-[28px]">
+                                                        <span className="text-[11px] font-black text-white truncate max-w-[55px] tracking-tight">{tx.code.split(' ')[1] || tx.code}</span>
+                                                        <div className="w-[1.5px] h-3 bg-white/10 shrink-0" />
+                                                        <span className={`text-[11px] font-black font-barlow-numeric tracking-tight ${tx.pnl >= 0 ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'}`}>
+                                                            {tx.pnl >= 0 ? '+' : ''}{formatMoney(tx.pnl)}
+                                                        </span>
+                                                    </div>
                                                 </div>
 
-                                                <div className={`w-28 font-barlow-numeric font-black text-right text-lg ${tx.pnl >= 0 ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'}`}>
-                                                    {formatMoney(tx.pnl)}
-                                                </div>
+                                                {/* Configuration Area (Flexible Action Group) */}
+                                                <div className="flex-1 flex items-center gap-1 min-w-0 justify-end overflow-hidden">
+                                                    {/* Account - Stable but can shrink */}
+                                                    <div className="min-w-[70px] flex-shrink-0">
+                                                        <GlassSelect 
+                                                            value={tx.portfolioId || targetPortfolioId}
+                                                            onChange={(val) => updateTxField(tx.id, 'portfolioId', val)}
+                                                            options={portfolios.map(p => ({ value: p.id, label: p.name }))}
+                                                            placeholder="帳號"
+                                                            variant="capsule"
+                                                            className="w-full"
+                                                        />
+                                                    </div>
 
-                                                <div className="flex-1 flex gap-2 items-center">
-                                                    <select 
-                                                        value={tx.strategy} 
-                                                        onChange={(e) => updateTxField(tx.id, 'strategy', e.target.value)}
-                                                        className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-[10px] font-bold text-white outline-none focus:border-[#C8B085]"
-                                                    >
-                                                        <option value="">策略...</option>
-                                                        {strategies.map(s => <option key={s} value={s}>{s}</option>)}
-                                                    </select>
-                                                    <select 
-                                                        value={tx.emotion} 
-                                                        onChange={(e) => updateTxField(tx.id, 'emotion', e.target.value)}
-                                                        className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-[10px] font-bold text-white outline-none focus:border-[#C8B085]"
-                                                    >
-                                                        <option value="">標籤...</option>
-                                                        {emotions.map(e => <option key={e} value={e}>{e}</option>)}
-                                                    </select>
+                                                    {/* Strategy - Flexible Growth Priority */}
+                                                    <div className="min-w-[50px] flex-1 flex-shrink min-w-0 max-w-[100px]">
+                                                        <GlassSelect 
+                                                            value={tx.strategy}
+                                                            onChange={(val) => updateTxField(tx.id, 'strategy', val)}
+                                                            options={[{value: '', label: '策略'}, ...strategies.map(s => ({ value: s, label: s }))]}
+                                                            placeholder="策略"
+                                                            variant="capsule"
+                                                            className="w-full"
+                                                        />
+                                                    </div>
+
+                                                    {/* Tag - Compact */}
+                                                    <div className="min-w-[50px] flex-shrink-0">
+                                                        <GlassSelect 
+                                                            value={tx.tag}
+                                                            onChange={(val) => updateTxField(tx.id, 'tag', val)}
+                                                            options={[{value: '', label: '標籤'}, ...emotions.map(e => ({ value: e, label: e }))]}
+                                                            placeholder="標籤"
+                                                            variant="capsule"
+                                                            className="w-full"
+                                                        />
+                                                    </div>
+
                                                     <button 
                                                         onClick={() => updateTxField(tx.id, 'showNoteInput', !tx.showNoteInput)}
-                                                        className={`p-2 rounded-xl transition-all border ${tx.showNoteInput ? 'bg-[#C8B085] text-black border-[#C8B085]' : 'bg-white/5 text-slate-500 border-white/5 hover:bg-white/10'}`}
+                                                        className={`h-6 w-6 flex items-center justify-center rounded-lg transition-all border shrink-0 ${tx.showNoteInput ? 'bg-[#C8B085] text-black border-[#C8B085]' : 'bg-white/5 text-slate-400 border-white/10 hover:border-white/20 active:scale-95'}`}
                                                     >
-                                                        <MessageSquare size={14}/>
+                                                        <MessageSquare size={11}/>
                                                     </button>
                                                 </div>
                                             </div>
 
                                             {tx.showNoteInput && (
-                                                <div className="px-5 pb-3 animate-in slide-in-from-top-2 duration-200">
+                                                <div className="px-5 pb-2 animate-in slide-in-from-top-2 duration-200">
                                                     <input 
                                                         type="text"
                                                         value={tx.note}
                                                         onChange={(e) => updateTxField(tx.id, 'note', e.target.value)}
                                                         placeholder="輸入自定義備註..."
-                                                        className="w-full bg-white/5 border border-[#C8B085]/30 rounded-xl px-4 py-3 text-xs text-slate-300 outline-none focus:border-[#C8B085] transition-all"
+                                                        className="w-full bg-white/5 border border-[#C8B085]/30 rounded-xl px-4 py-2 text-[10px] text-slate-300 outline-none focus:border-[#C8B085] transition-all"
                                                         autoFocus
                                                     />
                                                 </div>
@@ -508,7 +593,11 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
                         disabled={status === 'loading'}
                         className="px-8 py-3 rounded-2xl bg-[#C8B085] hover:bg-[#B09870] text-black font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 shadow-lg shadow-[#C8B085]/10 active:scale-95"
                     >
-                        {status === 'loading' ? 'FETCHING...' : step === 1 ? 'LOGIN & SYNC' : 'CONFIRM IMPORT'}
+                        {status === 'loading' 
+                            ? (lang === 'zh' ? '讀取中...' : 'FETCHING...') 
+                            : step === 1 
+                                ? (lang === 'zh' ? '登入並同步' : 'LOGIN & SYNC') 
+                                : (lang === 'zh' ? '確認匯入' : 'CONFIRM IMPORT')}
                         {!status.includes('loading') && <CheckCircle2 size={14}/>}
                     </button>
                     </div>
@@ -529,9 +618,6 @@ export const SyncDateModal = ({ isOpen, onClose, currentDate, configs, activeId,
             />
         </div>
     );
-
-    // Using a more stable check for document body
-    if (typeof document === 'undefined') return null;
 
     return createPortal(modalContent, document.body);
 };
