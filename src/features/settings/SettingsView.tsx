@@ -404,8 +404,6 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
             {/* BROKERAGE INTEGRATION */}
             <BrokerSettings
                 configs={brokerConfigs}
-                activeId={activeBrokerId}
-                onSwitch={setActiveBrokerId}
                 onUpdate={updateBrokerConfig}
                 onAdd={addBrokerConfig}
                 onDelete={deleteBrokerConfig}

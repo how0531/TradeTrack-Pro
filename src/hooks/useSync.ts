@@ -34,6 +34,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     const syncStatusRef = useRef(syncStatus);
     const lastBackupTimeRef = useRef(lastBackupTime);
     const lastSyncTimeStrRef = useRef(lastSyncTimeStr);
+    const lastPullTimeRef = useRef<number>(0);
 
     useEffect(() => { dataRef.current = data; }, [data]);
     useEffect(() => { syncStatusRef.current = syncStatus; }, [syncStatus]);
@@ -81,12 +82,17 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                 
                 if (docSnap.metadata.hasPendingWrites) return; // Ignore local writes (latency compensation)
                 
-                if (syncStatusRef.current === 'saving') return; 
+                // CRITICAL: Avoid race conditions if we are currently saving or just finished pulling/saving
+                const now = Date.now();
+                if (syncStatusRef.current === 'saving' || (now - lastPullTimeRef.current < 3000)) {
+                    return; 
+                }
 
                 const localData = dataRef.current;
                 
                 // CASE 1: Auto-Restore (Local is empty, Cloud has data)
                 if (localData.trades.length === 0 && cloudData.trades && cloudData.trades.length > 0) {
+                     lastPullTimeRef.current = Date.now();
                      onPull(cloudData);
                      setSyncStatus('synced');
                      setLastBackupTime(cloudData.lastUpdated?.toDate());
@@ -95,7 +101,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                      }
                 } 
                 // CASE 2: Conflict Detection
-                else if (localData.trades.length > 0 && cloudData.trades) {
+                else if (localData.trades.length > 0 && cloudData.trades && !isSyncModalOpen) {
                     const cloudTimeStr = cloudData.lastUpdated?.toDate().toISOString();
                     const localTimeStr = lastSyncTimeStrRef.current;
 
