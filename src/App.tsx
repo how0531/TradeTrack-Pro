@@ -1,6 +1,12 @@
-
-// [Manage] Last Updated: 2024-05-22
+// [Manage] Last Updated: 2026-01-26 (Force V1.5.0 Stable)
 import React, { useState, useMemo, useEffect } from 'react';
+
+// FORCE PURGE CACHE - Kill V1.6.0 SW
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => {
+        for(let reg of regs) reg.unregister();
+    });
+}
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { TrendingUp, Activity, Eye, EyeOff, Filter, Cloud, CloudOff, RefreshCw, AlertOctagon, Check, AlertCircle, BrainCircuit, Share2 } from 'lucide-react';
 
