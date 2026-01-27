@@ -4,6 +4,7 @@ import { useLocalData } from '../hooks/useLocalData';
 import { useSync } from '../hooks/useSync';
 import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { detectDuplicates, mergeDuplicates, DuplicateGroup, DetectionOptions } from '../utils/duplicateDetection';
 import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig } from '../types';
 import { db, resetFirestoreCache } from '../firebaseConfig'; 
 import { I18N } from '../constants'; 
@@ -96,6 +97,8 @@ interface TradeContextType {
         handleImportJSON: (e: React.ChangeEvent<HTMLInputElement>, t: Translation) => void;
         resolveImportConflict: (choice: 'merge' | 'overwrite') => void;
         isImportModalOpen: boolean;
+        detectDuplicates: (options?: DetectionOptions) => DuplicateGroup[];
+        removeDuplicates: () => void;
     };
     
     // Auth (exposed for settings)
@@ -252,8 +255,42 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     if (data.settings && data.settings.lossColor) {
                         setLossColor(data.settings.lossColor);
                     }
-                    alert(t.importSuccess);
-                    setTimeout(triggerCloudBackup, 0);
+                    
+                    // 檢查是否啟用「匯入後自動合併」
+                    const autoMerge = localStorage.getItem('auto_merge_on_import') === 'true';
+                    
+                    // 自動檢測重複並提示合併
+                    setTimeout(() => {
+                        const duplicates = detectDuplicates(data.trades || []);
+                        if (duplicates.length > 0) {
+                            const total = duplicates.reduce((sum, group) => sum + group.duplicates.length, 0);
+                            
+                            // 若啟用自動合併，直接合併不詢問
+                            if (autoMerge) {
+                                const cleaned = mergeDuplicates(data.trades, duplicates);
+                                setTrades(cleaned);
+                                alert(
+                                    lang === 'zh' 
+                                        ? `匯入完成！已自動合併 ${total} 筆重複交易。`
+                                        : `Import complete! Auto-merged ${total} duplicates.`
+                                );
+                            } else {
+                                // 未啟用則詢問使用者
+                                if (window.confirm(
+                                    lang === 'zh' 
+                                        ? `匯入完成！檢測到 ${total} 筆重複交易，是否要合併？`
+                                        : `Import complete! Found ${total} duplicates. Merge them?`
+                                )) {
+                                    const cleaned = mergeDuplicates(data.trades, duplicates);
+                                    setTrades(cleaned);
+                                }
+                            }
+                        } else {
+                            alert(t.importSuccess);
+                        }
+                    }, 100);
+                    
+                    setTimeout(triggerCloudBackup, 200);
                 }
             } catch (err) {
                 console.error(err);
@@ -364,6 +401,15 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addEmotion: (e: string) => { localActions.addEmotion(e); setTimeout(triggerCloudBackup, 0); },
         deleteStrategy: (s: string) => { localActions.deleteStrategy(s); setTimeout(triggerCloudBackup, 0); },
         deleteEmotion: (e: string) => { localActions.deleteEmotion(e); setTimeout(triggerCloudBackup, 0); },
+        // 重複交易檢測與合併
+        detectDuplicates: (options?: DetectionOptions) => detectDuplicates(trades, options),
+        removeDuplicates: () => {
+            const duplicateGroups = detectDuplicates(trades);
+            if (duplicateGroups.length === 0) return;
+            const cleaned = mergeDuplicates(trades, duplicateGroups);
+            setTrades(cleaned);
+            setTimeout(triggerCloudBackup, 0);
+        },
     };
 
 

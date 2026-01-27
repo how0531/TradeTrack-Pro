@@ -39,7 +39,7 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
         noteBg: 'bg-[#1D332E]/5', noteBorder: 'border-[#1D332E]/20', noteLabel: 'text-[#5B9A8B]', noteHover: 'hover:bg-[#1D332E]/10'
     };
 
-    const priceDisplay = hideAmounts ? '****' : Math.abs(trade.pnl).toLocaleString('en-US');
+    const priceDisplay = Math.abs(trade.pnl).toLocaleString('en-US');
 
     return (
         <div className="relative w-full mb-5 group animate-in slide-in-from-bottom-2 duration-500">
@@ -63,7 +63,7 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                     ) : (
                         <div className="flex flex-col items-end w-full">
                             <div className={`relative h-[30px] px-3.5 flex items-center justify-center rounded-full border backdrop-blur-md group/capsule overflow-hidden cursor-default transition-transform duration-300 hover:scale-105 min-w-[72px] z-20 ${theme.capsuleBorder} ${theme.capsuleBg} ${theme.capsuleText} ${theme.glow}`}>
-                                <span className="text-[14px] font-bold font-barlow-numeric tracking-tight leading-none drop-shadow-sm mt-[1px]">{priceDisplay}</span>
+                                <span className={`text-[14px] font-bold font-barlow-numeric tracking-tight leading-none drop-shadow-sm mt-[1px] ${hideAmounts ? 'blur-[6px] select-none opacity-60' : ''}`}>{priceDisplay}</span>
                                 <div className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-[#080808]/95 backdrop-blur-md opacity-0 group-hover/capsule:opacity-100 transition-opacity duration-200">
                                     <button onClick={(e) => { e.stopPropagation(); onEdit(trade); }} className="p-1 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"><Edit2 size={10} /></button>
                                     <button onClick={handleDeleteClick} className={`p-1 rounded-full transition-colors ${deleteStatus === 'confirm' ? 'text-red-500 bg-red-500/10' : 'text-zinc-500 hover:text-red-500 hover:bg-red-500/10'}`}><Trash2 size={10} /></button>
@@ -77,7 +77,7 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                     {isProfit ? (
                          <div className="flex flex-col items-start w-full">
                             <div className={`relative h-[30px] px-3.5 flex items-center justify-center rounded-full border backdrop-blur-md group/capsule overflow-hidden cursor-default transition-transform duration-300 hover:scale-105 min-w-[72px] z-20 ${theme.capsuleBorder} ${theme.capsuleBg} ${theme.capsuleText} ${theme.glow}`}>
-                                <span className="text-[14px] font-bold font-barlow-numeric tracking-tight leading-none drop-shadow-sm mt-[1px]">{priceDisplay}</span>
+                                <span className={`text-[14px] font-bold font-barlow-numeric tracking-tight leading-none drop-shadow-sm mt-[1px] ${hideAmounts ? 'blur-[6px] select-none opacity-60' : ''}`}>{priceDisplay}</span>
                                 <div className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-[#080808]/95 backdrop-blur-md opacity-0 group-hover/capsule:opacity-100 transition-opacity duration-200">
                                     <button onClick={(e) => { e.stopPropagation(); onEdit(trade); }} className="p-1 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"><Edit2 size={10} /></button>
                                     <button onClick={handleDeleteClick} className={`p-1 rounded-full transition-colors ${deleteStatus === 'confirm' ? 'text-red-500 bg-red-500/10' : 'text-zinc-500 hover:text-red-500 hover:bg-red-500/10'}`}><Trash2 size={10} /></button>

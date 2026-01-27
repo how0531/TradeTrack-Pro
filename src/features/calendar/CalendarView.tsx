@@ -138,7 +138,7 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
             return { val: formatCurrency(monthlyStats.pnl, hideAmounts), unit: '' };
         }
 
-        const raw = hideAmounts ? '****' : formatCompactNumber(monthlyStats.pnl, false);
+        const raw = formatCompactNumber(monthlyStats.pnl, false);
         // Regex to separate numeric part from string part (e.g. "2.72" and "萬")
         const match = raw.match(/^([0-9.,+-]+)(.*)$/);
         return {
@@ -228,16 +228,8 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
                 <SyncDateModal 
                     isOpen={isSyncModalOpen}
                     onClose={() => setIsSyncModalOpen(false)}
-                    currentDate={new Date()}
-                    configs={useTradeContext().brokerConfigs}
-                    activeId={activeBrokerId}
-                    onUpdateBroker={updateBrokerConfig}
                     onSuccess={handleSyncSuccess}
                     lang={lang}
-                    portfolios={useTradeContext().portfolios}
-                    activePortfolioIds={activePortfolioIds}
-                    strategies={useTradeContext().strategies}
-                    emotions={useTradeContext().emotions}
                     existingTrades={trades}
                 />
 
@@ -307,7 +299,7 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
                     >
                         {/* Number on Top with Responsive Layout */}
                         <span 
-                            className={`${fontSizeClass} font-barlow-numeric font-bold tracking-tight flex items-baseline leading-none whitespace-nowrap ${monthlyStats.pnl >= 0 ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'}`}
+                            className={`${fontSizeClass} font-barlow-numeric font-bold tracking-tight flex items-baseline leading-none whitespace-nowrap ${monthlyStats.pnl >= 0 ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'} ${hideAmounts ? 'blur-md select-none opacity-60' : ''}`}
                         >
                             {pnlDisplay.val}
                             {pnlDisplay.unit && <span className="text-2xl ml-1 font-bold opacity-90">{pnlDisplay.unit}</span>}

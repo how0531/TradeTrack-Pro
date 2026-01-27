@@ -138,6 +138,27 @@ function MainApp() {
         return 'radial-gradient(circle at 50% -20%, rgba(200, 176, 133, 0.08), transparent 70%)';
     }, [isRiskAlert, metrics.winRate]);
 
+    // 計算選中策略的專屬 Metrics
+    const strategyMetrics = useMemo(() => {
+        if (!detailStrategy) return null;
+        
+        // 過濾出該策略的交易
+        const strategyTrades = filteredTrades.filter(t => t.strategy === detailStrategy);
+        
+        if (strategyTrades.length === 0) return null;
+        
+        // 使用 calculateMetrics 計算該策略的完整 metrics
+        return calculateMetrics(
+            strategyTrades,
+            portfolios,
+            activePortfolioIds,
+            frequency,
+            lang,
+            null,
+            null
+        );
+    }, [detailStrategy, filteredTrades, portfolios, activePortfolioIds, frequency, lang]);
+
     return (
         <div className={`min-h-[100dvh] bg-[#000000] text-[#E0E0E0] font-sans flex flex-col max-w-md mx-auto relative shadow-2xl transition-all duration-700 overflow-hidden ${isRiskAlert ? 'shadow-[0_0_50px_rgba(208,90,90,0.3)] border-x border-red-500/20' : ''}`}>
             
@@ -247,6 +268,8 @@ function MainApp() {
                             user={user}
                             t={t}
                             retrySync={triggerCloudBackup}
+                            showPurePnl={showPurePnl}
+                            setShowPurePnl={setShowPurePnl}
                         />
                     } />
                     
@@ -288,7 +311,7 @@ function MainApp() {
                 strategy={detailStrategy} 
                 onClose={() => setDetailStrategy(null)} 
                 lang={lang} 
-                metrics={metrics}
+                metrics={strategyMetrics}
                 hideAmounts={hideAmounts}
                 ddThreshold={ddThreshold}
             />

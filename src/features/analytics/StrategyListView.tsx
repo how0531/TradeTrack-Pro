@@ -124,11 +124,11 @@ export const StrategyListView = ({ data, onSelect, lang }: { data: { name: strin
                                         ) : name}
                                     </span>
                                     <div className="flex items-center gap-2 mt-0.5">
-                                        <span className="text-[9px] text-zinc-600 font-mono bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800/50">{stat.trades}T</span>
-                                        <span className="text-[9px] text-zinc-700 font-mono">WR {formatDecimal(stat.winRate)}%</span>
+                                        <span className="text-[9px] text-zinc-600 font-barlow-numeric bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800/50">{stat.trades}T</span>
+                                        <span className="text-[9px] text-zinc-700 font-barlow-numeric">WR {formatDecimal(stat.winRate)}%</span>
                                     </div>
                                 </div>
-                                <span className={`font-mono text-sm font-bold tracking-tight ${textColor} drop-shadow-sm`}>
+                                <span className={`font-barlow-numeric text-sm font-bold tracking-tight ${textColor} drop-shadow-sm`}>
                                     {formatStealthPnl(pnl)}
                                 </span>
                             </div>

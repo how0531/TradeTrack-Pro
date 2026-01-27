@@ -3,11 +3,12 @@ import React, { useState, useRef } from 'react';
 import { 
     Cloud, UserCircle, Check, LogOut, Shield, Settings as SettingsIcon, Languages, Palette, 
     HardDrive, Download, Upload, AlertOctagon, Target, Info, Layers, Plus as PlusIcon, 
-    X, Briefcase, Trash2, Pencil, Loader2, FileKey, ChevronRight, Eye, EyeOff, FolderOpen, Save, AlertCircle, User, CloudLightning 
+    X, Briefcase, Trash2, Pencil, Loader2, FileKey, ChevronRight, Eye, EyeOff, FolderOpen, Save, AlertCircle, User, CloudLightning, Copy 
 } from 'lucide-react';
 import { SettingsViewProps, Portfolio, Lang } from '../../types';
 import { THEME, I18N, DEFAULT_PALETTE } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { ImportConflictModal } from '../../components/modals/ImportConflictModal';
 import { useTradeContext } from '../../context/TradeContext';
 import { BrokerSettings } from './components/BrokerSettings';
@@ -280,7 +281,7 @@ export const AccountManager = ({
 // --- MAIN SETTINGS VIEW ---
 export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const { 
-        trades, portfolios, actions, lang, setLang, 
+        trades, portfolios, actions, lang, setLang, hideAmounts,
         authStatus, user: currentUser, login: onLogin, logout: onLogout, 
         isSyncing, syncStatus, syncError, lastBackupTime, triggerCloudBackup, manualPull, repairDatabase,
         availableStrategies: strategies, availableEmotions: emotions,
@@ -300,6 +301,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const [isForceBackingUp, setIsForceBackingUp] = useState(false); // State for button loading
     const [isForcePulling, setIsForcePulling] = useState(false); // State for pull loading
     const jsonInputRef = useRef<HTMLInputElement>(null);
+
     
     const handleAddStrategy = (e: React.FormEvent) => {
         e.preventDefault();
@@ -598,8 +600,11 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                         </div>
                         <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">雲端備份 (Push)</span>
                     </button>
-                  </div>
-            </div>
+                   </div>
+
+
+             </div>
+
 
             {/* SYSTEM DIAGNOSIS & REPAIR */}
 

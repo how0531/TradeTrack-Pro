@@ -2,11 +2,12 @@ import React, { useState, useRef } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { I18N, FREQUENCIES } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
+import { Frequency, Lang } from '../../types';
 
-export const FrequencySelector = ({ currentFreq, setFreq, lang }: any) => {
+export const FrequencySelector = ({ currentFreq, setFreq, lang }: { currentFreq: Frequency, setFreq: (f: Frequency) => void, lang: Lang }) => {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
-    const t = I18N[lang] || I18N['zh'];
+    const t = I18N[lang];
     const options = FREQUENCIES;
 
     useClickOutside(menuRef, () => setIsOpen(false));
@@ -45,7 +46,7 @@ export const FrequencySelector = ({ currentFreq, setFreq, lang }: any) => {
 
             {isOpen && (
                 <div className="absolute top-full left-0 mt-2 w-32 bg-black/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.9)] overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col ring-1 ring-white/10 z-[100]">
-                    {options.map((f: string) => (
+                    {(options as readonly Frequency[]).map((f) => (
                         <div
                             key={f}
                             onClick={() => { setFreq(f); setIsOpen(false); }}

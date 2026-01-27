@@ -2,11 +2,12 @@ import React, { useState, useRef } from 'react';
 import { ChevronDown, Check, Briefcase, Layers } from 'lucide-react';
 import { I18N } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
+import { Portfolio, Lang } from '../../types';
 
-export const PortfolioSelector = ({ portfolios, activeIds, onChange, lang }: any) => {
+export const PortfolioSelector = ({ portfolios, activeIds, onChange, lang }: { portfolios: Portfolio[], activeIds: string[], onChange: (ids: string[]) => void, lang: Lang }) => {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
-    const t = I18N[lang] || I18N['zh'];
+    const t = I18N[lang];
 
     useClickOutside(menuRef, () => setIsOpen(false));
 

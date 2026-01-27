@@ -8,6 +8,7 @@ import { getLocalDateStr, formatDateWithWeekday } from '../../utils/format';
 import { CustomDateRangeModal } from './CustomDateRangeModal';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { GlassSelect } from '../common/GlassSelect';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 // --- Interfaces ---
 interface SyncDateModalProps {
@@ -32,6 +33,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
     const [startDate, setStartDate] = useState(today);
     const [endDate, setEndDate] = useState(today);
     const [showCalendar, setShowCalendar] = useState(false);
+    const [showApiHelper, setShowApiHelper] = useState(false);
 
     // Data
     const [configs, setConfigs] = useState<BrokerConfig[]>([]);
@@ -39,6 +41,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
     const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
     const [targetPortfolioId, setTargetPortfolioId] = useState<string>('');
     const [transactions, setTransactions] = useState<any[]>([]); // Need Trade type + selected
+    const [autoMerge, setAutoMerge] = useLocalStorage('sync_auto_merge', false);
 
     // Consts (Mock)
     const strategies = ['動能突破', '急殺抄底', '波段趨勢', '當沖'];
@@ -131,82 +134,121 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
             // 處理結果
             // 處理結果 & 重複判斷
             // 處理結果 & 重複判斷
-            const mappedTrades = result.details.map((d, i) => {
-                // User Request: 個股名稱 | 損益%數 | 買賣張數
-                // format: 2890 永豐金 | 1.51% | 5張
-                // d.code has format "2890 Name". We use it as is or split it? User screenshot implies full name.
+            // 處理結果
+            let processedTrades = result.details.map((d, i) => {
+                // Base transformation
                 const sheets = d.quantity ? (d.quantity / 1000).toFixed(0) : '0';
                 const yieldStr = d.yield ? `${d.yield > 0 ? '+' : ''}${d.yield}%` : '0%';
-                
-                // Auto Note Format: [Code] Name | Yield% | Sheets 
-                // e.g. [2890 永豐金] | +1.51% | 5張
-                // Wait, user said: "個股名稱 | 損益%數 | 買賣張數"
-                // Let's use `${d.code} | ${yieldStr} | ${sheets}張`
-                const autoNote = `${d.code} | ${yieldStr} | ${sheets}張`.trim();
-
-                // Advanced Deduplication Logic
-                let isDup = false;
-                let dupReason = '';
-                
-                if (existingTrades && existingTrades.length > 0) {
-                     // Try to find the BEST match
-                     // Priority 1: Exact Order ID Match (High Confidence)
-                     const orderMatch = existingTrades.find(e => 
-                        d.orderNo && (e.orderNo === d.orderNo || e.note?.includes(d.orderNo))
-                     );
-                     
-                     if (orderMatch) {
-                         isDup = true;
-                         dupReason = `單號重複`;
-                     } else {
-                         // Priority 2: Date + PnL + Code Match (Medium Confidence)
-                         const codeMatch = existingTrades.find(e => 
-                            e.date === d.date && 
-                            Math.abs(e.pnl - d.pnl) < 0.1 && 
-                            (e.note?.includes(d.code) || e.note?.includes(`[${d.code}]`))
-                         );
-                         
-                         if (codeMatch) {
-                             isDup = true;
-                             dupReason = `金額與代碼重複`;
-                         } else {
-                             // Priority 3: Date + PnL Match (Low Confidence)
-                             const pnlMatch = existingTrades.find(e => 
-                                e.date === d.date && 
-                                Math.abs(e.pnl - d.pnl) < 0.1
-                             );
-                             
-                             if (pnlMatch) {
-                                 isDup = true;
-                                 dupReason = `日期與金額相同`;
-                             }
-                         }
-                     }
-                }
                 
                 return {
                     id: `tx-${Date.now()}-${i}`,
                     date: d.date,
-                    orderNo: d.orderNo, // ✅ Stored but not in note
+                    orderNo: d.orderNo || `unknown-${i}`,
                     code: d.code,
                     pnl: d.pnl,
                     price: d.price,
                     quantity: d.quantity,
                     side: d.quantity > 0 ? 'Buy' : 'Sell',
-                    selected: !isDup, // Default key to UNCHECKED if duplicate
-                    isDuplicate: isDup,
-                    duplicateReason: dupReason,
+                    selected: true, // Default true first, will update in Dup Check
+                    isDuplicate: false,
+                    duplicateReason: '',
                     portfolioId: targetPortfolioId,
                     strategy: '',
                     emotion: '',
-                    note: autoNote, // Clean note: Name | % | Vol
-                    showNoteInput: false
+                    note: `${d.code} | ${yieldStr} | ${sheets}張`.trim(),
+                    showNoteInput: false,
+                    // Store raw for aggregation
+                    raw_yield: d.yield || 0
                 };
             });
 
-            setTransactions(mappedTrades);
+            // 1. 合併分筆交易整合 (Aggregation)
+            // 只有當 autoMerge=true 時，才合併「同 orderNo + 同標的」的交易
+            if (autoMerge) {
+                const groupedMap = new Map<string, typeof processedTrades[0]>();
+                
+                processedTrades.forEach(trade => {
+                    // 產生複合 key: orderNo + 標的代號，確保只有同標的才會合併
+                    const stockCode = trade.code.split(' ')[0];
+                    const orderNo = trade.orderNo;
+                    
+                    // 無有效 orderNo，不合併
+                    if (!orderNo || orderNo.startsWith('unknown')) {
+                        groupedMap.set(trade.id, trade); 
+                        return;
+                    }
+                    
+                    // 複合 key = orderNo + stockCode
+                    const compositeKey = `${orderNo}_${stockCode}`;
+
+                    if (groupedMap.has(compositeKey)) {
+                        // 執行合併
+                        const existing = groupedMap.get(compositeKey)!;
+                        const totalQty = existing.quantity + trade.quantity;
+                        // 計算平均價格 (加權平均)
+                        const avgPrice = totalQty !== 0 
+                            ? (existing.price * existing.quantity + trade.price * trade.quantity) / totalQty
+                            : existing.price;
+                        
+                        existing.quantity = totalQty;
+                        existing.price = avgPrice;
+                        existing.pnl += trade.pnl;
+                        
+                        // 更新備註中的張數
+                        const mergedSheets = Math.abs(totalQty / 1000).toFixed(0);
+                        const noteParts = existing.note.split('|');
+                        if (noteParts.length >= 2) {
+                             existing.note = `${noteParts[0]} | ${noteParts[1]} | ${mergedSheets}張`.trim();
+                        }
+                    } else {
+                        groupedMap.set(compositeKey, trade);
+                    }
+                });
+                
+                processedTrades = Array.from(groupedMap.values());
+            }
+
+            // 2. 重複交易檢測 (與現有交易比對)
+            // 判斷標準：同日期 + 同標的 (精確比對) + 同損益 (±1 容差)
+            // 注意：這只是「標記」為重複並預設不勾選，不會刪除交易
+            processedTrades = processedTrades.map(trade => {
+                 let isDup = false;
+                 let dupReason = '';
+
+                 if (existingTrades && existingTrades.length > 0) {
+                     const tradeStockCode = trade.code.split(' ')[0]; // 取得純股票代號如 "2890"
+                     
+                     const match = existingTrades.find(e => {
+                         const sameDate = e.date === trade.date;
+                         
+                         // 標的比對：更精確的匹配 - 使用正規表達式確保完整代號匹配
+                         // 例如 "2890" 應該匹配 "2890 永豐金" 但不應該匹配 "28901"
+                         const codeRegex = new RegExp(`\\b${tradeStockCode}\\b`);
+                         const sameCode = e.note && codeRegex.test(e.note);
+                         
+                         // 損益比對 (允許浮點數微小誤差)
+                         const samePnl = Math.abs(e.pnl - trade.pnl) < 1;
+
+                         return sameDate && sameCode && samePnl;
+                     });
+
+                     if (match) {
+                         isDup = true;
+                         dupReason = '日期、標的與損益重複';
+                     }
+                 }
+
+                 return {
+                     ...trade,
+                     isDuplicate: isDup,
+                     duplicateReason: dupReason,
+                     selected: !isDup // 若重複預設不勾選，但仍顯示供使用者決定
+                 };
+            });
+
+            setTransactions(processedTrades);
             setStatus('idle');
-            if (mappedTrades.length === 0) {
+            if (processedTrades.length === 0) {
                 setResultMsg("此區間無交易紀錄");
             } else {
                 setStep(2);
@@ -254,7 +296,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                         <div className="space-y-8 animate-in slide-in-from-bottom-3 duration-300">
                             {/* Date Selection */}
                             <div className="space-y-3">
-                                <div className="flex justify-between items-end">
+                                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between w-full">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                                         <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
                                         日期範圍 (DATE RANGE)
@@ -296,7 +338,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                             <CalendarDays size={20}/>
                                         </div>
                                         <div className="flex flex-col items-start gap-1">
-                                            <div className="text-sm font-bold text-white font-barlow-numeric tracking-wide">
+                                            <div className="text-xs sm:text-sm font-bold text-white font-barlow-numeric tracking-wide">
                                                 {startDate} <span className="text-slate-600 mx-2">➔</span> {endDate}
                                             </div>
                                         </div>
@@ -386,6 +428,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                         </div>
                                         );
                                     })}
+                                    
+
                                 </div>
                              
                             {/* Error or Login Prompt */}
@@ -395,6 +439,20 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                     {resultMsg}
                                 </div>
                             )}
+
+                            {/* Auto Merge Option */}
+                            <div className="flex items-center gap-2 px-1">
+                                <input 
+                                    type="checkbox" 
+                                    id="sync-auto-merge"
+                                    checked={autoMerge} 
+                                    onChange={(e) => setAutoMerge(e.target.checked)}
+                                    className="w-3.5 h-3.5 rounded border-white/20 bg-white/5 text-[#C8B085] focus:ring-[#C8B085] focus:ring-offset-0 cursor-pointer"
+                                />
+                                <label htmlFor="sync-auto-merge" className="text-[10px] text-slate-400 cursor-pointer select-none">
+                                    {lang === 'zh' ? '合併同單號分筆交易' : 'Merge Split Fills (Group by Order No)'}
+                                </label>
+                            </div>
                         </div>
                     )}
 
@@ -439,90 +497,93 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                 ) : (
                                     transactions.map(tx => (
                                         <div key={tx.id} className="space-y-1">
-                                            <div className={`px-2.5 py-2.5 rounded-2xl border transition-all flex items-center gap-2 relative overflow-hidden ${
+                                            <div className={`px-2.5 py-2 rounded-2xl border transition-all flex items-start gap-2.5 relative overflow-hidden ${
                                                 !tx.selected 
-                                                    ? 'bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-60 transition-opacity' // Unselected
+                                                    ? 'bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-60 transition-opacity'
                                                     : tx.isDuplicate 
                                                         ? 'bg-amber-500/5 border-amber-500/20 shadow-[inset_0_0_20px_rgba(245,158,11,0.02)]' 
                                                         : 'bg-[#1C1E22]/50 border-white/10 shadow-lg shadow-black/25'
                                             }`}>
+                                                {/* Left: Checkbox (Top aligned) */}
                                                 <input 
                                                     type="checkbox" 
                                                     checked={tx.selected} 
                                                     onChange={() => toggleSelection(tx.id)}
-                                                    className={`w-4 h-4 rounded-md border-white/20 bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${tx.selected && tx.isDuplicate ? 'text-amber-500 border-amber-500/50' : 'text-[#C8B085] border-[#C8B085]/30'}`}
+                                                    className={`mt-1 w-4 h-4 rounded-md border-white/20 bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${tx.selected && tx.isDuplicate ? 'text-amber-500 border-amber-500/50' : 'text-[#C8B085] border-[#C8B085]/30'}`}
                                                 />
                                                 
-                                                {/* Meta Info: Identity Group */}
-                                                <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-                                                    {/* Column 1: Priority Status & Date */}
-                                                    <div className="flex flex-col items-start gap-1 min-w-[62px] shrink-0">
-                                                        {tx.isDuplicate ? (
-                                                            <span className="bg-amber-500 text-black text-[7px] px-1.2 rounded-[3px] font-black whitespace-nowrap tracking-tighter leading-none py-0.5 shadow-sm">
+                                                {/* Right: Content Column (2 rows) */}
+                                                <div className="flex flex-col gap-1 w-full min-w-0">
+                                                    {/* Row 1: Metadata (Date + Badge) */}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] text-zinc-500 font-bold tracking-tight shrink-0 leading-none">
+                                                            {formatDateWithWeekday(tx.date).split('(')[0].slice(5)}({formatDateWithWeekday(tx.date).split('(')[1]}
+                                                        </span>
+                                                        {tx.isDuplicate && (
+                                                            <span className="bg-amber-500 text-black text-[7px] px-1.5 py-0.5 rounded font-black whitespace-nowrap tracking-tighter leading-none">
                                                                 可能重複
                                                             </span>
-                                                        ) : (
-                                                            <div className="h-[10px]" />
                                                         )}
-                                                        <span className="text-[9px] text-zinc-400 font-bold tracking-tighter shrink-0 leading-none">
-                                                            {formatDateWithWeekday(tx.date).split('(')[0].slice(5)} ({formatDateWithWeekday(tx.date).split('(')[1]}
-                                                        </span>
-                                                    </div>
-                                                    
-                                                    {/* Column 2: Data Pill (Stock & PnL) */}
-                                                    <div className="flex items-center gap-2 min-w-0 bg-white/5 px-2.5 py-1 rounded-xl border border-white/10 h-[28px]">
-                                                        <span className="text-[11px] font-black text-white truncate max-w-[55px] tracking-tight">{tx.code.split(' ')[1] || tx.code}</span>
-                                                        <div className="w-[1.5px] h-3 bg-white/10 shrink-0" />
-                                                        <span className={`text-[11px] font-black font-barlow-numeric tracking-tight ${tx.pnl >= 0 ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'}`}>
-                                                            {tx.pnl >= 0 ? '+' : ''}{formatMoney(tx.pnl)}
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Configuration Area (Flexible Action Group) */}
-                                                <div className="flex-1 flex items-center gap-1 min-w-0 justify-end overflow-hidden">
-                                                    {/* Account - Stable but can shrink */}
-                                                    <div className="min-w-[70px] flex-shrink-0">
-                                                        <GlassSelect 
-                                                            value={tx.portfolioId || targetPortfolioId}
-                                                            onChange={(val) => updateTxField(tx.id, 'portfolioId', val)}
-                                                            options={portfolios.map(p => ({ value: p.id, label: p.name }))}
-                                                            placeholder="帳號"
-                                                            variant="capsule"
-                                                            className="w-full"
-                                                        />
                                                     </div>
 
-                                                    {/* Strategy - Flexible Growth Priority */}
-                                                    <div className="min-w-[50px] flex-1 flex-shrink min-w-0 max-w-[100px]">
-                                                        <GlassSelect 
-                                                            value={tx.strategy}
-                                                            onChange={(val) => updateTxField(tx.id, 'strategy', val)}
-                                                            options={[{value: '', label: '策略'}, ...strategies.map(s => ({ value: s, label: s }))]}
-                                                            placeholder="策略"
-                                                            variant="capsule"
-                                                            className="w-full"
-                                                        />
-                                                    </div>
+                                                    {/* Row 2: Main Data & Actions */}
+                                                    <div className="flex items-center gap-1.5 justify-between sm:justify-start">
+                                                        {/* Stock & PnL Pill */}
+                                                        <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg border border-white/10 shrink-0">
+                                                            <span className="text-[10px] font-black text-white truncate max-w-[50px] tracking-tight">{tx.code.split(' ')[1] || tx.code}</span>
+                                                            <div className="w-[1px] h-2.5 bg-white/10 shrink-0" />
+                                                            <span className={`text-[10px] font-black font-barlow-numeric tracking-tight ${tx.pnl >= 0 ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'}`}>
+                                                                {tx.pnl >= 0 ? '+' : ''}{formatMoney(tx.pnl)}
+                                                            </span>
+                                                        </div>
 
-                                                    {/* Tag - Compact */}
-                                                    <div className="min-w-[50px] flex-shrink-0">
-                                                        <GlassSelect 
-                                                            value={tx.tag}
-                                                            onChange={(val) => updateTxField(tx.id, 'tag', val)}
-                                                            options={[{value: '', label: '標籤'}, ...emotions.map(e => ({ value: e, label: e }))]}
-                                                            placeholder="標籤"
-                                                            variant="capsule"
-                                                            className="w-full"
-                                                        />
-                                                    </div>
+                                                        {/* Action Buttons Group */}
+                                                        <div className="flex items-center gap-1 ml-auto sm:ml-0">
+                                                            {/* Strategy */}
+                                                            <div className="w-[72px]">
+                                                                <GlassSelect 
+                                                                    value={tx.strategy}
+                                                                    onChange={(val) => updateTxField(tx.id, 'strategy', val)}
+                                                                    options={[{value: '', label: '策略'}, ...strategies.map(s => ({ value: s, label: s }))]}
+                                                                    placeholder="策略"
+                                                                    variant="capsule"
+                                                                    className="w-full text-[10px]"
+                                                                />
+                                                            </div>
 
-                                                    <button 
-                                                        onClick={() => updateTxField(tx.id, 'showNoteInput', !tx.showNoteInput)}
-                                                        className={`h-6 w-6 flex items-center justify-center rounded-lg transition-all border shrink-0 ${tx.showNoteInput ? 'bg-[#C8B085] text-black border-[#C8B085]' : 'bg-white/5 text-slate-400 border-white/10 hover:border-white/20 active:scale-95'}`}
-                                                    >
-                                                        <MessageSquare size={11}/>
-                                                    </button>
+                                                            {/* Tag */}
+                                                            <div className="w-[48px]">
+                                                                <GlassSelect 
+                                                                    value={tx.tag}
+                                                                    onChange={(val) => updateTxField(tx.id, 'tag', val)}
+                                                                    options={[{value: '', label: '標籤'}, ...emotions.map(e => ({ value: e, label: e }))]}
+                                                                    placeholder="標籤"
+                                                                    variant="capsule"
+                                                                    className="w-full text-[10px]"
+                                                                />
+                                                            </div>
+
+                                                            {/* Account */}
+                                                            <div className="w-[50px]">
+                                                                <GlassSelect 
+                                                                    value={tx.portfolioId || targetPortfolioId}
+                                                                    onChange={(val) => updateTxField(tx.id, 'portfolioId', val)}
+                                                                    options={portfolios.map(p => ({ value: p.id, label: p.name }))}
+                                                                    placeholder="帳號"
+                                                                    variant="capsule"
+                                                                    className="w-full text-[10px]"
+                                                                />
+                                                            </div>
+
+                                                            {/* Note Button */}
+                                                            <button 
+                                                                onClick={() => updateTxField(tx.id, 'showNoteInput', !tx.showNoteInput)}
+                                                                className={`h-5 w-5 flex items-center justify-center rounded transition-all shrink-0 ${tx.showNoteInput ? 'bg-[#C8B085] text-black' : 'bg-white/5 text-slate-500 hover:text-slate-300 active:scale-95'}`}
+                                                            >
+                                                                <MessageSquare size={10}/>
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -603,6 +664,75 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                     </div>
                 </div>
             </div>
+
+            {/* API Setup Helper Dialog */}
+            {showApiHelper && createPortal(
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowApiHelper(false)}>
+                    <div 
+                        className="bg-[#1A1C21]/95 rounded-3xl border border-white/10 p-6 max-w-md mx-4 shadow-2xl animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+                                <ShieldCheck size={20}/>
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="text-sm font-bold text-white mb-1">永豐金 API 設定</h4>
+                                <p className="text-[10px] text-slate-400 leading-relaxed">
+                                    使用 Python API 需要先在永豐金網站簽署同意書並取得 API Key
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-3 mb-5">
+                            <div className="p-3 bg-white/5 rounded-xl border border-white/10">
+                                <p className="text-[10px] font-bold text-slate-300 mb-2">請問您是否已開通 Python API？</p>
+                            </div>
+
+                            {/* Option 1: Not yet signed */}
+                            <button
+                                onClick={() => {
+                                    window.open('https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/', '_blank');
+                                    setShowApiHelper(false);
+                                }}
+                                className="w-full p-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition-all group"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div className="text-left">
+                                        <p className="text-xs font-bold text-amber-300 mb-0.5">尚未開通</p>
+                                        <p className="text-[9px] text-slate-400">前往簽署 API 使用同意書</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-amber-400 group-hover:translate-x-1 transition-transform"/>
+                                </div>
+                            </button>
+
+                            {/* Option 2: Already signed */}
+                            <button
+                                onClick={() => {
+                                    window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank');
+                                    setShowApiHelper(false);
+                                }}
+                                className="w-full p-4 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition-all group"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div className="text-left">
+                                        <p className="text-xs font-bold text-emerald-300 mb-0.5">已開通</p>
+                                        <p className="text-[9px] text-slate-400">前往管理我的 API Key</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-1 transition-transform"/>
+                                </div>
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={() => setShowApiHelper(false)}
+                            className="w-full py-2 text-[10px] font-bold text-slate-500 hover:text-white transition-colors"
+                        >
+                            取消
+                        </button>
+                    </div>
+                </div>
+            , document.body)}
 
             {/* Date Range Modal */}
             <CustomDateRangeModal 

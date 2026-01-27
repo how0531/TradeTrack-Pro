@@ -46,6 +46,8 @@ interface JournalPageProps {
     user: User | null;
     t: any;
     retrySync: () => void;
+    showPurePnl: boolean;
+    setShowPurePnl: (b: boolean) => void;
 }
 
 export const JournalPage: React.FC<JournalPageProps> = (props) => {
@@ -85,6 +87,8 @@ export const JournalPage: React.FC<JournalPageProps> = (props) => {
                 user={props.user}
                 t={props.t}
                 retrySync={props.retrySync}
+                showPurePnl={props.showPurePnl}
+                setShowPurePnl={props.setShowPurePnl}
                 onZoom={(s, e) => {
                     props.setCustomRange({start: s, end: e});
                     props.setTimeRange('CUSTOM');

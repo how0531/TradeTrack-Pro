@@ -369,5 +369,12 @@ export const calculateStreaks = (trades: Trade[]): Streaks => {
         }
     }
 
-    return { currentWin, currentLoss, bestWin };
+    return { 
+        currentWin, 
+        currentLoss, 
+        bestWin,
+        bestLoss: 0, // TODO: Calculate if needed
+        maxWin: bestWin, // Alias for bestWin
+        maxLoss: 0 // TODO: Calculate if needed
+    };
 };

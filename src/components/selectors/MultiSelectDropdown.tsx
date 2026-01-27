@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, LucideIcon } from 'lucide-react';
 import { I18N } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
+import { Lang } from '../../types';
 
-export const MultiSelectDropdown = ({ options, selected, onChange, icon: Icon, defaultLabel, lang }: any) => {
+export const MultiSelectDropdown = ({ options, selected, onChange, icon: Icon, defaultLabel, lang }: { options: string[], selected: string[], onChange: (s: string[]) => void, icon?: LucideIcon, defaultLabel: string, lang: Lang }) => {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 

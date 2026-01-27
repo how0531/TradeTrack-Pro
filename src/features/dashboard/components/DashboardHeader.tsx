@@ -203,7 +203,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 </div>
 
                 {/* FREQUENCY + TIME RANGE + FILTER CONTROLS */}
-                <div className="flex items-center gap-1.5 mb-3 shrink-0 h-[28px]">
+                <div className="flex items-center gap-1.5 mb-3 shrink-0 h-[28px] overflow-x-auto no-scrollbar w-full mask-gradient">
                     <FrequencySelector currentFreq={frequency} setFreq={setFrequency} lang={lang} />
                     
                     <TimeRangeSelector 

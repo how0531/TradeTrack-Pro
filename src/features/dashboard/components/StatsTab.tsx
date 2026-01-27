@@ -27,11 +27,11 @@ interface StatsContentProps extends StatsCommonProps {
 }
 
 // --- INTERNAL COMPONENT: StatCard ---
-const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName }: any) => (
+const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName, hideAmounts }: any) => (
     <div className={`p-3 rounded-xl border flex flex-col items-center justify-center min-h-[72px] relative overflow-hidden group transition-colors shadow-lg shadow-black/20 backdrop-blur-md ${className || 'border-white/5 bg-[#1A1C20]/40 hover:bg-[#1A1C20]/60'}`}>
         <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
         <span 
-            className={`text-lg font-bold font-barlow-numeric tracking-tight mb-0.5 ${valueClassName || ''}`} 
+            className={`text-lg font-bold font-barlow-numeric tracking-tight mb-0.5 ${valueClassName || ''} ${hideAmounts ? 'blur-[6px] select-none opacity-60' : ''}`} 
             style={{ color: valueColor || '#E0E0E0' }}
         >
             {value}
@@ -44,10 +44,10 @@ const StatCard = ({ label, value, valueColor, subLabel, className, valueClassNam
 );
 
 // --- TOOLTIPS ---
-const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios, showPurePnl }: any) => {
+const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios, showPurePnl }: { active?: boolean, payload?: any[], hideAmounts: boolean, lang: 'zh' | 'en', portfolios: any[], showPurePnl?: boolean }) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
-        const t = I18N[lang] || I18N['zh'];
+        const t = I18N[lang];
         const systemKeys = ['date', 'equity', 'peak', 'pnl', 'isNewPeak', 'ddAmt', 'ddPct', 'fullDate', 'label', 'cumulativePnl', 'timestamp', 'crowding', 'escapeAngle', 'isCrowded'];
         const activePidsInPoint = Object.keys(data).filter(key => !systemKeys.includes(key) && !key.endsWith('_pos') && !key.endsWith('_neg') && data[key] !== 0);
         
@@ -430,15 +430,15 @@ export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, st
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
              <div className="flex flex-col gap-2">
                  <div className="grid grid-cols-3 gap-2">
-                    <StatCard label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate < 40 ? THEME.GREEN : THEME.RED} />
-                    <StatCard label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
-                    <StatCard label={t.sharpe} value={formatDecimal(metrics.sharpe)} valueColor={metrics.sharpe >= 1 ? THEME.RED : '#E0E0E0'} />
+                    <StatCard hideAmounts={hideAmounts} label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate < 40 ? THEME.GREEN : THEME.RED} />
+                    <StatCard hideAmounts={hideAmounts} label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
+                    <StatCard hideAmounts={hideAmounts} label={t.sharpe} value={formatDecimal(metrics.sharpe)} valueColor={metrics.sharpe >= 1 ? THEME.RED : '#E0E0E0'} />
                  </div>
                  <div className="grid grid-cols-4 gap-2">
-                    <StatCard label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
-                    <StatCard label={t.riskReward} value={formatDecimal(metrics.riskReward)} valueColor="#E0E0E0" />
-                    <StatCard label={t.daysSincePeak} value={metrics.maxStagnationDays} valueColor={metrics.maxStagnationDays > 30 ? THEME.GREEN : '#E0E0E0'} />
-                    <StatCard label={t.trades} value={metrics.totalTrades} valueColor="#E0E0E0" />
+                    <StatCard hideAmounts={hideAmounts} label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
+                    <StatCard hideAmounts={hideAmounts} label={t.riskReward} value={formatDecimal(metrics.riskReward)} valueColor="#E0E0E0" />
+                    <StatCard hideAmounts={hideAmounts} label={t.daysSincePeak} value={metrics.maxStagnationDays} valueColor={metrics.maxStagnationDays > 30 ? THEME.GREEN : '#E0E0E0'} />
+                    <StatCard hideAmounts={hideAmounts} label={t.trades} value={metrics.totalTrades} valueColor="#E0E0E0" />
                  </div>
             </div>
 
