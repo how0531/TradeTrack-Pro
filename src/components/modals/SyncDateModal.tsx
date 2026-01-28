@@ -515,34 +515,35 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                                 />
                                                 
                                                 {/* Right: Content Column (2 rows) */}
-                                                <div className="flex flex-col gap-1 w-full min-w-0">
-                                                    {/* Row 1: Metadata (Date + Badge) */}
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className="text-[10px] text-zinc-500 font-bold tracking-tight shrink-0 leading-none">
-                                                            {formatDateWithWeekday(tx.date).split('(')[0].slice(5)}({formatDateWithWeekday(tx.date).split('(')[1]}
-                                                        </span>
-                                                        {tx.isDuplicate && (
-                                                            <span className="bg-amber-500 text-black text-[7px] px-1.5 py-0.5 rounded font-black whitespace-nowrap tracking-tighter leading-none">
-                                                                可能重複
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                                    <div className="flex flex-col gap-2 w-full min-w-0">
+                                                        {/* Row 1: Info (Date Left, PnL Right) */}
+                                                        <div className="flex items-center justify-between">
+                                                            {/* Date + Badge */}
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="text-[10px] text-zinc-500 font-bold tracking-tight shrink-0 leading-none">
+                                                                    {formatDateWithWeekday(tx.date).split('(')[0].slice(5)}({formatDateWithWeekday(tx.date).split('(')[1]}
+                                                                </span>
+                                                                {tx.isDuplicate && (
+                                                                    <span className="bg-amber-500 text-black text-[7px] px-1.5 py-0.5 rounded font-black whitespace-nowrap tracking-tighter leading-none">
+                                                                        可能重複
+                                                                    </span>
+                                                                )}
+                                                            </div>
 
-                                                    {/* Row 2: Main Data & Actions */}
-                                                    <div className="flex items-center gap-1.5 justify-between sm:justify-start">
-                                                        {/* Stock & PnL Pill */}
-                                                        <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg border border-white/10 shrink-0">
-                                                            <span className="text-[10px] font-black text-white truncate max-w-[50px] tracking-tight">{tx.code.split(' ')[1] || tx.code}</span>
-                                                            <div className="w-[1px] h-2.5 bg-white/10 shrink-0" />
-                                                            <span className={`text-[10px] font-black font-barlow-numeric tracking-tight ${tx.pnl >= 0 ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'}`}>
-                                                                {tx.pnl >= 0 ? '+' : ''}{formatMoney(tx.pnl)}
-                                                            </span>
+                                                            {/* Stock & PnL Pill (Moved to Right) */}
+                                                            <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg border border-white/10 shrink-0">
+                                                                <span className="text-[10px] font-black text-white truncate max-w-[50px] tracking-tight">{tx.code.split(' ')[1] || tx.code}</span>
+                                                                <div className="w-[1px] h-2.5 bg-white/10 shrink-0" />
+                                                                <span className={`text-[10px] font-black font-barlow-numeric tracking-tight ${tx.pnl >= 0 ? 'text-[#D05A5A]' : 'text-[#5B9A8B]'}`}>
+                                                                    {tx.pnl >= 0 ? '+' : ''}{formatMoney(tx.pnl)}
+                                                                </span>
+                                                            </div>
                                                         </div>
 
-                                                        {/* Action Buttons Group */}
-                                                        <div className="flex items-center gap-1 ml-auto sm:ml-0">
+                                                        {/* Row 2: Actions (Full Width) */}
+                                                        <div className="flex items-center gap-2 w-full">
                                                             {/* Strategy */}
-                                                            <div className="w-[72px]">
+                                                            <div className="flex-1 min-w-[70px]">
                                                                 <GlassSelect 
                                                                     value={tx.strategy}
                                                                     onChange={(val) => updateTxField(tx.id, 'strategy', val)}
@@ -554,7 +555,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                                             </div>
 
                                                             {/* Tag */}
-                                                            <div className="w-[48px]">
+                                                            <div className="flex-1 min-w-[60px]">
                                                                 <GlassSelect 
                                                                     value={tx.tag}
                                                                     onChange={(val) => updateTxField(tx.id, 'tag', val)}
@@ -566,7 +567,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                                             </div>
 
                                                             {/* Account */}
-                                                            <div className="w-[50px]">
+                                                            <div className="flex-1 min-w-[60px]">
                                                                 <GlassSelect 
                                                                     value={tx.portfolioId || targetPortfolioId}
                                                                     onChange={(val) => updateTxField(tx.id, 'portfolioId', val)}
@@ -580,13 +581,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                                             {/* Note Button */}
                                                             <button 
                                                                 onClick={() => updateTxField(tx.id, 'showNoteInput', !tx.showNoteInput)}
-                                                                className={`h-5 w-5 flex items-center justify-center rounded transition-all shrink-0 ${tx.showNoteInput ? 'bg-[#C8B085] text-black' : 'bg-white/5 text-slate-500 hover:text-slate-300 active:scale-95'}`}
+                                                                className={`h-6 w-6 flex items-center justify-center rounded transition-all shrink-0 ${tx.showNoteInput ? 'bg-[#C8B085] text-black' : 'bg-white/5 text-slate-500 hover:text-slate-300 active:scale-95'}`}
                                                             >
-                                                                <MessageSquare size={10}/>
+                                                                <MessageSquare size={12}/>
                                                             </button>
                                                         </div>
                                                     </div>
-                                                </div>
                                             </div>
 
                                             {tx.showNoteInput && (
