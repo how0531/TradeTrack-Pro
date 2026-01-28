@@ -191,7 +191,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     className="w-full max-w-[340px] aspect-[4/5] bg-black rounded-3xl border border-white/10 relative overflow-hidden flex flex-col shadow-2xl"
                 >
                     {/* Header */}
-                    <div className="p-6 pb-2 flex justify-between items-start z-10">
+                    <div className="p-6 pb-2 flex justify-between items-center z-10">
                         <div>
                             <h3 className="text-white font-bold text-lg tracking-wider">交易損益</h3>
                             <p className="text-[#666] font-barlow-numeric text-[11px] mt-0.5 tracking-wide font-medium">
@@ -200,7 +200,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                         </div>
                         <div className="flex items-center gap-1.5 opacity-80">
                             <div className="w-1.5 h-1.5 rounded-full bg-[#C8B085]"></div>
-                            <span className="text-[#C8B085] font-bold text-[10px] tracking-widest uppercase">TradeTrack</span>
+                            <span className="text-[#C8B085] font-bold text-[10px] tracking-widest uppercase leading-none">TradeTrack</span>
                         </div>
                     </div>
 

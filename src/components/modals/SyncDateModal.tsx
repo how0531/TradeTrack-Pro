@@ -297,36 +297,38 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                             {/* Date Selection */}
                             <div className="space-y-3">
                                 <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between w-full">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                        <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
-                                        日期範圍 (DATE RANGE)
-                                    </label>
-                                    <div className="flex gap-1">
-                                        {[5, 10, 20, 30].map(days => {
-                                            const today = new Date();
-                                            const past = new Date();
-                                            past.setDate(today.getDate() - days + 1);
-                                            const rangeStart = getLocalDateStr(past);
-                                            const rangeEnd = getLocalDateStr(today);
-                                            const isActive = startDate === rangeStart && endDate === rangeEnd;
+                                    <div className="w-full flex justify-between items-center mb-1.5 px-1">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                            <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
+                                            日期範圍 (DATE RANGE)
+                                        </label>
+                                        <div className="flex gap-1">
+                                            {[5, 10, 20, 30].map(days => {
+                                                const today = new Date();
+                                                const past = new Date();
+                                                past.setDate(today.getDate() - days + 1);
+                                                const rangeStart = getLocalDateStr(past);
+                                                const rangeEnd = getLocalDateStr(today);
+                                                const isActive = startDate === rangeStart && endDate === rangeEnd;
 
-                                            return (
-                                                <button
-                                                    key={days}
-                                                    onClick={() => {
-                                                        setEndDate(rangeEnd);
-                                                        setStartDate(rangeStart);
-                                                    }}
-                                                    className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all font-barlow-numeric border ${
-                                                        isActive 
-                                                            ? 'bg-[#C8B085] text-black border-[#C8B085]' 
-                                                            : 'bg-white/5 border-white/5 hover:bg-[#C8B085] hover:text-black hover:border-[#C8B085] text-slate-500'
-                                                    }`}
-                                                >
-                                                    {days}D
-                                                </button>
-                                            );
-                                        })}
+                                                return (
+                                                    <button
+                                                        key={days}
+                                                        onClick={() => {
+                                                            setEndDate(rangeEnd);
+                                                            setStartDate(rangeStart);
+                                                        }}
+                                                        className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all font-barlow-numeric border ${
+                                                            isActive 
+                                                                ? 'bg-[#C8B085] text-black border-[#C8B085]' 
+                                                                : 'bg-white/5 border-white/5 hover:bg-[#C8B085] hover:text-black hover:border-[#C8B085] text-slate-500'
+                                                        }`}
+                                                    >
+                                                        {days}D
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
                                 <button 
