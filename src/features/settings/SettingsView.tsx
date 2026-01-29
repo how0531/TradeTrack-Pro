@@ -6,7 +6,7 @@ import {
     X, Briefcase, Trash2, Pencil, Loader2, FileKey, ChevronRight, Eye, EyeOff, FolderOpen, Save, AlertCircle, User, CloudLightning, Copy 
 } from 'lucide-react';
 import { SettingsViewProps, Portfolio, Lang } from '../../types';
-import { THEME, I18N, DEFAULT_PALETTE } from '../../constants';
+import { THEME, I18N, DEFAULT_PALETTE, APP_VERSION } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { ImportConflictModal } from '../../components/modals/ImportConflictModal';
@@ -661,7 +661,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                  </div>
             </div>
             
-            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2 underline decoration-red-500/50">TradeTrack Pro v1.5.0-STABLE</div>
+            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2 underline decoration-red-500/50">TradeTrack Pro {APP_VERSION}</div>
             
             {showLogoutConfirm && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
