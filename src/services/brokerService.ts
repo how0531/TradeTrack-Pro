@@ -27,8 +27,9 @@ export interface BrokerSyncResult {
 }
 
 export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: BrokerConfig): Promise<BrokerSyncResult> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    const startTime = performance.now();
+    console.log('🔍 [PERF] fetchBrokerPnl 開始:', new Date().toISOString());
+    console.log('📅 [PERF] 日期範圍:', startDate.toISOString().split('T')[0], '→', endDate.toISOString().split('T')[0]);
 
     if (!config.isConnected) {
         throw new Error('Broker not connected');
@@ -101,11 +102,17 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 branchCode: payload.branchCode // ✅ 顯示分公司代碼
             });
 
+            const fetchStartTime = performance.now();
+            console.log('🌐 [PERF] 發送 PnL API 請求至:', `${API_BASE}/api/broker/pnl`);
+            
             const response = await fetch(`${API_BASE}/api/broker/pnl`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            
+            const fetchElapsed = performance.now() - fetchStartTime;
+            console.log(`📡 [PERF] PnL API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
 
             if (!response.ok) {
                 const errorData = await response.json();
@@ -113,6 +120,9 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
             }
 
             const result = await response.json();
+            const totalElapsed = performance.now() - startTime;
+            console.log(`✅ [PERF] fetchBrokerPnl 完成: ${totalElapsed.toFixed(0)}ms`);
+            console.log(`📊 [PERF] 擷取交易筆數: ${result.details?.length || 0}`);
             
             // 將 Python 後端返回的資料轉換為前端格式
             if (result.status === 'success' && result.details) {
@@ -259,21 +269,28 @@ export interface BrokerProfile {
  * Pings the backend health endpoint to wake it up (for Render free tier).
  */
 export const pingBackend = async (): Promise<boolean> => {
+    const startTime = performance.now();
+    console.log('🔍 [PERF] Ping 開始:', new Date().toISOString());
+    
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
         const response = await fetch(`${API_BASE}/health`, { signal: controller.signal });
         clearTimeout(timeoutId);
+        
+        const elapsed = performance.now() - startTime;
+        console.log(`✅ [PERF] Ping 完成: ${elapsed.toFixed(0)}ms`, response.ok ? '(成功)' : '(失敗)');
         return response.ok;
     } catch (e) {
-        console.warn('Backend ping failed, might still be waking up...');
+        const elapsed = performance.now() - startTime;
+        console.warn(`❌ [PERF] Ping 失敗: ${elapsed.toFixed(0)}ms`);
         return false;
     }
 };
 
 export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerProfile> => {
-    // Simulate Login Delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const startTime = performance.now();
+    console.log('🔍 [PERF] fetchBrokerProfile 開始:', new Date().toISOString());
     
     if (config.provider === 'shioaji') {
         if (!config.apiKey || !config.apiSecret || !config.personId || !config.caPath) {
@@ -292,11 +309,17 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
                 environment: config.environment || 'production' // ✅ 傳遞環境設定
             };
 
+            const fetchStartTime = performance.now();
+            console.log('🌐 [PERF] 發送 Profile API 請求至:', `${API_BASE}/api/broker/profile`);
+            
             const response = await fetch(`${API_BASE}/api/broker/profile`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            
+            const fetchElapsed = performance.now() - fetchStartTime;
+            console.log(`📡 [PERF] Profile API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
 
             if (!response.ok) {
                 const errorData = await response.json();
@@ -304,6 +327,8 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
             }
 
             const result = await response.json();
+            const totalElapsed = performance.now() - startTime;
+            console.log(`✅ [PERF] fetchBrokerProfile 完成: ${totalElapsed.toFixed(0)}ms`);
             
             // If the backend says multiple accounts, return it immediately
             if (result.status === 'multiple_accounts') {

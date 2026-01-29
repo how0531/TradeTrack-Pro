@@ -56,6 +56,96 @@ BRANCH_MAP = {
 }
 
 
+# Global Session Manager Instance
+_SESSION_MANAGER = None
+
+
+class ShioajiSessionManager:
+    def __init__(self):
+        self.api = None
+        self.current_person_id = None
+        self.last_used_time = None
+        self.is_simulation = True
+
+    def get_api(
+        self, api_key, secret_key, person_id, ca_path, ca_password, simulation=True
+    ):
+        """
+        Get an active API instance. reused if possible, otherwise create new.
+        """
+        # 1. Check if we can reuse the existing session
+        if (
+            self.api
+            and self.current_person_id == person_id
+            and self.is_simulation == simulation
+        ):
+            print(
+                f"DEBUG: [SessionReuse] Reusing existing connection for {person_id}",
+                flush=True,
+            )
+            return self.api
+
+        # 2. If valid session exists but credentials changed, logout first
+        if self.api:
+            print(
+                f"DEBUG: [SessionReuse] Credentials changed (Old: {self.current_person_id}, New: {person_id}). Logging out...",
+                flush=True,
+            )
+            try:
+                self.api.logout()
+            except Exception as e:
+                print(f"WARNING: Logout failed during switch: {e}", flush=True)
+            self.api = None
+
+        # 3. Create new connection
+        print(
+            f"DEBUG: [SessionReuse] Creating NEW connection for {person_id} (Sim={simulation})",
+            flush=True,
+        )
+        new_api = sj.Shioaji(simulation=simulation)
+
+        # Login
+        accounts = new_api.login(
+            api_key=api_key,
+            secret_key=secret_key,
+            fetch_contract=False,  # We fetch contracts only when needed
+        )
+        print(f"DEBUG: Login successful. Found {len(accounts)} account(s).", flush=True)
+
+        # Activate CA immediately to be ready
+        try:
+            # Try simple activation first if path exists
+            if os.path.exists(ca_path):
+                new_api.activate_ca(
+                    ca_path=ca_path,
+                    ca_passwd=ca_password,
+                    person_id=person_id,
+                )
+                print("DEBUG: CA Activated during login.", flush=True)
+            else:
+                print(
+                    f"DEBUG: CA Path {ca_path} not found during login. Will try fallback later.",
+                    flush=True,
+                )
+        except Exception as e:
+            print(f"WARNING: Initial CA Activation failed: {e}", flush=True)
+
+        # Update State
+        self.api = new_api
+        self.current_person_id = person_id
+        self.is_simulation = simulation
+        self.last_used_time = datetime.now()
+
+        return self.api
+
+
+def get_session_manager():
+    global _SESSION_MANAGER
+    if _SESSION_MANAGER is None:
+        _SESSION_MANAGER = ShioajiSessionManager()
+    return _SESSION_MANAGER
+
+
 def login_and_fetch_pnl(
     api_key,
     secret_key,
@@ -68,7 +158,7 @@ def login_and_fetch_pnl(
     simulation=True,
     branch_filter=None,
 ):
-    # 0. 關鍵欄位去除前後空白，防止複製貼上產生的空格導致簽章錯誤
+    # 0. 關鍵欄位去除前後空白
     api_key = api_key.strip() if api_key else api_key
     secret_key = secret_key.strip() if secret_key else secret_key
     person_id = person_id.strip() if person_id else person_id
@@ -78,6 +168,11 @@ def login_and_fetch_pnl(
 
     # 1. 如果有傳入 Base64 內容，優先建立臨時檔案
     if ca_content:
+        # Check if we already have a valid session with this user to avoid re-creating temp file unnecessarily?
+        # Actually safer to always recreate temp file if provided, to ensure path validity.
+        # But for optimization, if we reuse session, we might not need CA path again if already activated.
+        # however, activate_ca might check path existence.
+
         print(f"DEBUG: Processing Base64 CA Content (Length: {len(ca_content)})")
         try:
             with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as tf:
@@ -89,18 +184,16 @@ def login_and_fetch_pnl(
             print(f"ERROR: Failed to create temporary CA file: {e}")
 
     try:
-        # 根據 SKILL.md 標準範例：明確指定 simulation 模式
-        print(f"DEBUG: Initializing Shioaji (simulation={simulation})", flush=True)
-        api = sj.Shioaji(simulation=simulation)
+        # Get Session Manager
+        manager = get_session_manager()
 
-        # 2. 執行登入（Profile 驗證時不需載入全部合約，避免超時）
-        print(f"DEBUG: Logging in with API Key...", flush=True)
-        accounts = api.login(
-            api_key=api_key,
-            secret_key=secret_key,
-            fetch_contract=False,  # Profile 驗證階段不需要合約資料
+        # Get API Instance (Reuse or New)
+        api = manager.get_api(
+            api_key, secret_key, person_id, ca_path, ca_password, simulation
         )
-        print(f"DEBUG: Login successful. Found {len(accounts)} account(s).", flush=True)
+
+        # Accounts are already loaded in api instance
+        accounts = api.list_accounts()
 
         environment = "production" if not simulation else "simulation"
 
@@ -346,19 +439,25 @@ def login_and_fetch_pnl(
             "status": "error",
             "message": f"Login Failed: {str(login_err)}",
         }
+    except Exception as login_err:
+        print(f"[ERROR] Login exception: {str(login_err)}", flush=True)
+        return {
+            "status": "error",
+            "message": f"Login Failed: {str(login_err)}",
+        }
     finally:
-        # 確保 API 連線被正確關閉，避免 "Too Many Connections" 錯誤
-        try:
-            if "api" in locals():
-                print("DEBUG: Logging out from Shioaji...", flush=True)
-                api.logout()
-                print("DEBUG: Logout successful.", flush=True)
-        except Exception as logout_err:
-            print(f"[WARNING] Logout error (non-critical): {logout_err}", flush=True)
+        # Session Reuse Optimization:
+        # DO NOT Logout here. We want to keep the session alive.
+        # Logout will only happen when:
+        # 1. Credentials change (handled in get_api)
+        # 2. Server restarts
+        # 3. Explicit timeout (not implemented yet, relying on UptimeRobot)
+        pass
 
         # Cleanup temp file
         if temp_ca_path and os.path.exists(temp_ca_path):
             try:
+                # wait a bit to ensure it is released? usually fine.
                 os.remove(temp_ca_path)
             except:
                 pass

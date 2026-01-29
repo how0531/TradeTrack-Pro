@@ -9,6 +9,8 @@ import { CustomDateRangeModal } from './CustomDateRangeModal';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { GlassSelect } from '../common/GlassSelect';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useTradeContext } from '../../context/TradeContext';
+import { getCache, setCache } from '../../utils/cache';
 
 // --- Interfaces ---
 interface SyncDateModalProps {
@@ -22,6 +24,9 @@ interface SyncDateModalProps {
 // --- Internal Component: GlassSelect Moved to common/GlassSelect.tsx ---
 
 export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, onSuccess, lang = 'zh', existingTrades = [] }) => {
+    // --- Context ---
+    const { availableStrategies, availableEmotions } = useTradeContext();
+
     // --- State ---
     const [step, setStep] = useState<1 | 2>(1);
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -42,40 +47,17 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
     const [targetPortfolioId, setTargetPortfolioId] = useState<string>('');
     const [transactions, setTransactions] = useState<any[]>([]); // Need Trade type + selected
     const [autoMerge, setAutoMerge] = useLocalStorage('sync_auto_merge', false);
-
-    // Consts (Mock)
-    const strategies = ['動能突破', '急殺抄底', '波段趨勢', '當沖'];
-    const emotions = ['FOMO', '冷靜', '猶豫', '貪婪'];
+    
+    // 🎨 視覺回饋優化
+    const [loadingMessage, setLoadingMessage] = useState('');
+    const [loadingProgress, setLoadingProgress] = useState(0);
 
     // --- Effects ---
     useEffect(() => {
         if (isOpen) {
-            // Load Configs
-            try {
-                const savedConfigs = localStorage.getItem('broker_configs');
-                if (savedConfigs) {
-                    const parsed = JSON.parse(savedConfigs);
-                    setConfigs(parsed);
-                    if (parsed.length > 0) setSelectedConfigIds([`${parsed[0].id}-0`]);
-                }
-                
-                // Load Portfolios
-                const savedPortfolios = localStorage.getItem('portfolios'); // Assuming this key
-                if (savedPortfolios) {
-                    const parsedP = JSON.parse(savedPortfolios);
-                    setPortfolios(parsedP);
-                    if (parsedP.length > 0) setTargetPortfolioId(parsedP[0].id);
-                } else {
-                    // Fallback Mock
-                     setPortfolios([{ id: 'main', name: 'Main Account', initialCapital: 100000, profitColor: '#D05A5A', lossColor: '#5B9A8B' }]);
-                     setTargetPortfolioId('main');
-                }
-
-                // Check Backend
-                handleManualPing();
-            } catch (e) {
-                console.error("Error loading initial data", e);
-            }
+            // ✅ 樂觀更新策略:立即顯示快取資料,背景驗證
+            loadConfigsWithOptimisticUpdate();
+        
         } else {
             // Reset
             setStep(1);
@@ -85,6 +67,64 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
     }, [isOpen]);
 
     // --- Handlers ---
+    
+    /**
+     * ✅ 樂觀更新策略載入帳號設定
+     * 1. 立即顯示快取資料 (如果有)
+     * 2. 背景驗證並靜默更新
+     */
+    const loadConfigsWithOptimisticUpdate = async () => {
+        try {
+            // 1. 先嘗試從快取載入 (TTL 5 分鐘)
+            const cachedConfigs = getCache<BrokerConfig[]>('broker_configs_cache');
+            
+            // 2. 立即顯示快取資料
+            let initialConfigs: BrokerConfig[] = [];
+            if (cachedConfigs && cachedConfigs.length > 0) {
+                console.log('✅ 使用快取資料,立即顯示');
+                initialConfigs = cachedConfigs;
+                setConfigs(cachedConfigs);
+                if (cachedConfigs.length > 0) {
+                    setSelectedConfigIds([`${cachedConfigs[0].id}-0`]);
+                }
+            } else {
+                // 3. 沒有快取,從 localStorage 載入完整設定
+                const savedConfigs = localStorage.getItem('broker_configs');
+                if (savedConfigs) {
+                    const parsed = JSON.parse(savedConfigs);
+                    initialConfigs = parsed;
+                    setConfigs(parsed);
+                    if (parsed.length > 0) setSelectedConfigIds([`${parsed[0].id}-0`]);
+                    // 存入快取供下次使用
+                    setCache('broker_configs_cache', parsed, 5 * 60 * 1000);
+                }
+            }
+            
+            // 4. 載入 Portfolios (不快取,因為變動較少)
+            const savedPortfolios = localStorage.getItem('portfolios');
+            if (savedPortfolios) {
+                const parsedP = JSON.parse(savedPortfolios);
+                setPortfolios(parsedP);
+                if (parsedP.length > 0) setTargetPortfolioId(parsedP[0].id);
+            } else {
+                setPortfolios([{
+                    id: 'main',
+                    name: 'Main Account',
+                    initialCapital: 100000,
+                    profitColor: '#D05A5A',
+                    lossColor: '#5B9A8B'
+                }]);
+                setTargetPortfolioId('main');
+            }
+            
+            // 5. 背景檢測後端狀態 (不阻塞 UI)
+            handleManualPing();
+            
+        } catch (e) {
+            console.error("Error loading configs", e);
+        }
+    };
+    
     const handleManualPing = async () => {
         setBackendStatus('checking');
         const isOnline = await pingBackend();
@@ -108,8 +148,39 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
     const toggleSelection = (id: string) => {
         setTransactions(prev => prev.map(t => t.id === id ? { ...t, selected: !t.selected } : t));
     };
+    
+    // 🎨 階段式載入動畫
+    const startLoadingAnimation = () => {
+        setLoadingProgress(0);
+        setLoadingMessage('正在連接券商 API...');
+        
+        // 階段式訊息切換
+        const messages = [
+            { time: 0, text: '正在連接券商 API...', progress: 10 },
+            { time: 2000, text: '正在驗證身份...', progress: 30 },
+            { time: 4000, text: '正在擷取交易紀錄...', progress: 50 },
+            { time: 6000, text: '資料處理中...', progress: 70 },
+            { time: 8000, text: '即將完成...', progress: 85 }
+        ];
+        
+        messages.forEach(({ time, text, progress }) => {
+            setTimeout(() => {
+                setLoadingMessage(text);
+                setLoadingProgress(progress);
+            }, time);
+        });
+    };
+    
+    const stopLoadingAnimation = () => {
+        setLoadingProgress(100);
+        setLoadingMessage('');
+    };
 
     const handleFetch = async () => {
+        const totalStartTime = performance.now();
+        console.log('🚀 [PERF] ===== 開始擷取券商資料 =====');
+        console.log('🕐 [PERF] 開始時間:', new Date().toISOString());
+        
         if (selectedConfigIds.length === 0) {
             setResultMsg("請至少選擇一個券商帳號");
             return;
@@ -117,24 +188,30 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
 
         setStatus('loading');
         setResultMsg('');
+        
+        // 🎨 啟動階段式載入提示
+        startLoadingAnimation();
 
         try {
             // 找出選中的 config
-            // Note: uniqueKey is id-idx, we map back to config
+            const step1Start = performance.now();
             const selectedKeys = selectedConfigIds.map(k => k.split('-')[0]);
             const targetConfig = configs.find(c => selectedKeys.includes(c.id));
             
             if (!targetConfig) throw new Error("無效的帳號設定");
+            console.log(`✅ [PERF] 步驟1 - 帳號驗證: ${(performance.now() - step1Start).toFixed(0)}ms`);
 
             // 呼叫後端
+            console.log('📞 [PERF] 步驟2 - 準備呼叫後端 API...');
+            const step2Start = performance.now();
             const startD = new Date(startDate);
             const endD = new Date(endDate);
             const result = await fetchBrokerPnl(startD, endD, targetConfig);
+            console.log(`✅ [PERF] 步驟2 - API 呼叫完成: ${(performance.now() - step2Start).toFixed(0)}ms`);
 
             // 處理結果
-            // 處理結果 & 重複判斷
-            // 處理結果 & 重複判斷
-            // 處理結果
+            console.log(`🔄 [PERF] 步驟3 - 開始處理 ${result.details.length} 筆交易資料...`);
+            const step3Start = performance.now();
             let processedTrades = result.details.map((d, i) => {
                 // Base transformation
                 const sheets = d.quantity ? (d.quantity / 1000).toFixed(0) : '0';
@@ -240,19 +317,28 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
 
                  return {
                      ...trade,
-                     isDuplicate: isDup,
+                    isDuplicate: isDup,
                      duplicateReason: dupReason,
                      selected: !isDup // 若重複預設不勾選，但仍顯示供使用者決定
                  };
             });
+            console.log(`✅ [PERF] 步驟3 - 資料處理完成: ${(performance.now() - step3Start).toFixed(0)}ms`);
 
             setTransactions(processedTrades);
             setStatus('idle');
+            
+            // 🎨 停止載入動畫
+            stopLoadingAnimation();
+            
             if (processedTrades.length === 0) {
                 setResultMsg("此區間無交易紀錄");
             } else {
                 setStep(2);
             }
+
+            const totalElapsed = performance.now() - totalStartTime;
+            console.log('🎉 [PERF] ===== 券商資料擷取完成 =====');
+            console.log(`⏱️  [PERF] 總耗時: ${totalElapsed.toFixed(0)}ms (${(totalElapsed/1000).toFixed(2)}s)`);
 
         } catch (e: any) {
             console.error("Fetch Error:", e);
@@ -499,11 +585,11 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                 ) : (
                                     transactions.map(tx => (
                                         <div key={tx.id} className="space-y-1">
-                                            <div className={`px-2.5 py-2 rounded-2xl border transition-all flex items-start gap-2.5 relative overflow-hidden ${
+                                            <div className={`px-2.5 py-2 rounded-2xl border transition-all flex items-start gap-2.5 relative group/item ${
                                                 !tx.selected 
-                                                    ? 'bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-60 transition-opacity'
+                                                    ? 'bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-100 hover:grayscale-0 transition-all duration-300'
                                                     : tx.isDuplicate 
-                                                        ? 'bg-amber-500/5 border-amber-500/20 shadow-[inset_0_0_20px_rgba(245,158,11,0.02)]' 
+                                                        ? 'bg-gradient-to-r from-amber-500/5 to-transparent border-white/5 hover:border-amber-500/30 shadow-[inset_0_0_20px_rgba(245,158,11,0.02)]' 
                                                         : 'bg-[#1C1E22]/50 border-white/10 shadow-lg shadow-black/25'
                                             }`}>
                                                 {/* Left: Checkbox (Top aligned) */}
@@ -511,7 +597,13 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                                     type="checkbox" 
                                                     checked={tx.selected} 
                                                     onChange={() => toggleSelection(tx.id)}
-                                                    className={`mt-1 w-4 h-4 rounded-md border-white/20 bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${tx.selected && tx.isDuplicate ? 'text-amber-500 border-amber-500/50' : 'text-[#C8B085] border-[#C8B085]/30'}`}
+                                                    className={`mt-1 w-4 h-4 rounded-md border-white/20 bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${
+                                                        tx.selected && tx.isDuplicate 
+                                                            ? 'text-amber-500 border-amber-500/50' 
+                                                            : tx.isDuplicate && !tx.selected 
+                                                                ? 'checked:text-amber-500/50' // Should not be checked usually
+                                                                : 'text-[#C8B085] border-[#C8B085]/30'
+                                                    }`}
                                                 />
                                                 
                                                 {/* Right: Content Column (2 rows) */}
@@ -519,14 +611,26 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                                         {/* Row 1: Info (Date Left, PnL Right) */}
                                                         <div className="flex items-center justify-between">
                                                             {/* Date + Badge */}
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="text-[10px] text-zinc-500 font-bold tracking-tight shrink-0 leading-none">
-                                                                    {formatDateWithWeekday(tx.date).split('(')[0].slice(5)}({formatDateWithWeekday(tx.date).split('(')[1]}
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[9px] text-zinc-500 font-bold tracking-tight shrink-0 leading-none">
+                                                                    {formatDateWithWeekday(tx.date).split('(')[0].trim()}
                                                                 </span>
                                                                 {tx.isDuplicate && (
-                                                                    <span className="bg-amber-500 text-black text-[7px] px-1.5 py-0.5 rounded font-black whitespace-nowrap tracking-tighter leading-none">
-                                                                        可能重複
-                                                                    </span>
+                                                                    <div className="group/tooltip relative flex items-center gap-1 cursor-help transition-all hover:bg-amber-500/10 rounded px-1 -ml-1">
+                                                                        <AlertTriangle size={10} className="text-amber-500/70" />
+                                                                    <span className="text-amber-500/70 text-[8px] font-bold tracking-tighter uppercase group-hover/tooltip:text-amber-500 transition-colors">
+                                                                            可能重複
+                                                                        </span>
+                                                                        
+                                                                        {/* Tooltip Content */}
+                                                                        <div className="absolute left-0 bottom-full mb-1.5 hidden group-hover/tooltip:block z-50 whitespace-nowrap">
+                                                                            <div className="bg-zinc-900 border border-white/10 text-zinc-300 text-[9px] px-2 py-1 rounded-lg shadow-xl backdrop-blur-xl">
+                                                                                 {tx.duplicateReason || '此交易已在記錄中存在'}
+                                                                                 {/* Arrow */}
+                                                                                 <div className="absolute left-2 top-full w-2 h-2 bg-zinc-900 border-r border-b border-white/10 transform rotate-45 -mt-1"></div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
                                                                 )}
                                                             </div>
 
@@ -547,7 +651,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                                                 <GlassSelect 
                                                                     value={tx.strategy}
                                                                     onChange={(val) => updateTxField(tx.id, 'strategy', val)}
-                                                                    options={[{value: '', label: '策略'}, ...strategies.map(s => ({ value: s, label: s }))]}
+                                                                    options={[{value: '', label: '策略'}, ...availableStrategies.map((s: string) => ({ value: s, label: s }))]}
                                                                     placeholder="策略"
                                                                     variant="capsule"
                                                                     className="w-full text-[10px]"
@@ -559,7 +663,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                                                                 <GlassSelect 
                                                                     value={tx.tag}
                                                                     onChange={(val) => updateTxField(tx.id, 'tag', val)}
-                                                                    options={[{value: '', label: '標籤'}, ...emotions.map(e => ({ value: e, label: e }))]}
+                                                                    options={[{value: '', label: '標籤'}, ...availableEmotions.map((e: string) => ({ value: e, label: e }))]}
                                                                     placeholder="標籤"
                                                                     variant="capsule"
                                                                     className="w-full text-[10px]"
@@ -654,14 +758,38 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({ isOpen, onClose, o
                     <button 
                         onClick={step === 1 ? handleFetch : handleConfirmImport}
                         disabled={status === 'loading'}
-                        className="px-8 py-3 rounded-2xl bg-[#C8B085] hover:bg-[#B09870] text-black font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 shadow-lg shadow-[#C8B085]/10 active:scale-95"
+                        className={`relative overflow-hidden px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-3 shadow-lg active:scale-95 
+                            ${status === 'loading' 
+                                ? 'bg-zinc-800 text-white w-full justify-center disabled:opacity-100 disabled:cursor-wait' 
+                                : 'bg-[#C8B085] hover:bg-[#B09870] text-black shadow-[#C8B085]/10 disabled:opacity-50 disabled:cursor-not-allowed'
+                            }`}
                     >
-                        {status === 'loading' 
-                            ? (lang === 'zh' ? '讀取中...' : 'FETCHING...') 
-                            : step === 1 
-                                ? (lang === 'zh' ? '登入並同步' : 'LOGIN & SYNC') 
-                                : (lang === 'zh' ? '確認匯入' : 'CONFIRM IMPORT')}
-                        {!status.includes('loading') && <CheckCircle2 size={14}/>}
+                        {status === 'loading' && (
+                            <div 
+                                className="absolute inset-0 bg-[#C8B085] transition-all duration-300 ease-out opacity-20"
+                                style={{ width: `${loadingProgress}%` }}
+                            />
+                        )}
+                        
+                        <span className="relative z-10 flex items-center gap-2">
+                            {status === 'loading' 
+                                ? (
+                                    <>
+                                        <RefreshCw size={12} className="animate-spin"/>
+                                        <span>{loadingMessage || '處理中...'}</span>
+                                        <span className="opacity-50 ml-1">{loadingProgress}%</span>
+                                    </>
+                                )
+                                : (
+                                    <>
+                                        {step === 1 
+                                            ? (lang === 'zh' ? '登入並同步' : 'LOGIN & SYNC') 
+                                            : (lang === 'zh' ? '確認匯入' : 'CONFIRM IMPORT')}
+                                        <CheckCircle2 size={14}/>
+                                    </>
+                                )
+                            }
+                        </span>
                     </button>
                     </div>
                 </div>
