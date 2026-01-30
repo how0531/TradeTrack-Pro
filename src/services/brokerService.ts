@@ -91,6 +91,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 caPassword: config.caPassword,
                 caContent: config.caContent, // 傳送 Base64 憑證內容
                 branchCode: config.branchCode, // ✅ 傳遞分公司代碼
+                accountType: config.accountType, // ✅ 傳遞帳號類型 (S/F)
                 environment: config.environment || 'production', // ✅ 傳遞環境設定
                 startDate: startDate.toISOString().split('T')[0],
                 endDate: endDate.toISOString().split('T')[0]
@@ -116,7 +117,11 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.message || 'Backend P&L API call failed');
+                let errMsg = errorData.message || errorData.error || 'Backend check failed';
+                if (typeof errMsg === 'string' && errMsg.includes('key:') && errMsg.includes('not exist')) {
+                     errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                }
+                throw new Error(errMsg);
             }
 
             const result = await response.json();
@@ -206,7 +211,7 @@ export const validateBrokerConnection = async (config: BrokerConfig): Promise<bo
     return true;
 };
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://tradetrack-backend-8h4x.onrender.com';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
 
 const BRANCH_MAP: Record<string, string> = {
     "9A95": "經紀部",
@@ -252,7 +257,7 @@ const BRANCH_MAP: Record<string, string> = {
     "9A9q": "潮州",
     "9A69": "屏東",
     "9A81": "匯立",
-    "F002": "模擬分公司",
+    "F002": "期貨",
 };
 
 export interface BrokerProfile {
@@ -323,13 +328,28 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.message || 'Backend API call failed');
+                let errMsg = errorData.message || errorData.error || 'Backend API call failed';
+                
+                // Improve error message for known Shioaji errors
+                if (typeof errMsg === 'string') {
+                    if (errMsg.includes('key:') && errMsg.includes('not exist')) {
+                         errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                    } else if (errMsg.includes('Account Not Acceptable')) {
+                         errMsg = '帳號授權失敗，請確認該帳號是否有效 (Account Not Acceptable)';
+                    }
+                }
+                
+                throw new Error(errMsg);
             }
 
             const result = await response.json();
             const totalElapsed = performance.now() - startTime;
             console.log(`✅ [PERF] fetchBrokerProfile 完成: ${totalElapsed.toFixed(0)}ms`);
             
+            if (result.status === 'error') {
+                throw new Error(result.message || result.error || 'Backend reported an error');
+            }
+
             // If the backend says multiple accounts, return it immediately
             if (result.status === 'multiple_accounts') {
                 return result;
@@ -344,7 +364,10 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
             }
             
             const rawCode = String(result.branchCode || '').trim();
-            const branchName = BRANCH_MAP[rawCode] || '永豐金 - ' + rawCode;
+            const codes = rawCode.split(',').map(c => c.trim()).filter(Boolean);
+            const branchName = codes.length > 0
+                ? codes.map(c => BRANCH_MAP[c] || c).join(', ')
+                : (BRANCH_MAP[rawCode] || '永豐金 - ' + rawCode);
             
             return {
                 status: 'success',

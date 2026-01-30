@@ -203,47 +203,49 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 </div>
 
                 {/* FREQUENCY + TIME RANGE + FILTER CONTROLS */}
-                <div className="flex items-center gap-1.5 mb-3 shrink-0 h-[28px] overflow-x-auto no-scrollbar w-full mask-gradient">
+                <div className="flex items-center gap-1.5 mb-3 shrink-0 h-[28px] w-full relative z-20">
+                    {/* Fixed Frequency Selector - Outside overflow to prevent clipping */}
                     <FrequencySelector currentFreq={frequency} setFreq={setFrequency} lang={lang} />
                     
-                    <TimeRangeSelector 
-                        currentRange={timeRange} 
-                        setRange={(r: any) => { 
-                            if(r === 'CUSTOM') setIsDatePickerOpen(true); 
-                            else { setTimeRange(r); setCustomRange({start: null, end: null}); }
-                        }} 
-                        lang={lang} 
-                        customRangeLabel={
-                            customRange.start && customRange.end ? (
-                                <div className="flex flex-col items-center justify-center leading-none -space-y-0.5">
-                                    <span className="text-[8px] font-barlow-numeric font-bold tracking-tighter">{customRange.start.slice(5).replace('-','/')}</span>
-                                    <span className="text-[8px] font-barlow-numeric font-bold tracking-tighter opacity-80">{customRange.end.slice(5).replace('-','/')}</span>
-                                </div>
-                            ) : (customRange.start ? customRange.start.slice(5).replace('-','/') : undefined)
-                        } 
-                    />
+                    {/* Scrollable controls */}
+                    <div className="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar mask-gradient mask-gradient-right h-full">
+                        <TimeRangeSelector 
+                            currentRange={timeRange} 
+                            setRange={(r: any) => { 
+                                if(r === 'CUSTOM') setIsDatePickerOpen(true); 
+                                else { setTimeRange(r); setCustomRange({start: null, end: null}); }
+                            }} 
+                            lang={lang} 
+                            customRangeLabel={
+                                customRange.start && customRange.end ? (
+                                    <div className="flex flex-col items-center justify-center leading-none -space-y-0.5">
+                                        <span className="text-[8px] font-barlow-numeric font-bold tracking-tighter">{customRange.start.slice(5).replace('-','/')}</span>
+                                        <span className="text-[8px] font-barlow-numeric font-bold tracking-tighter opacity-80">{customRange.end.slice(5).replace('-','/')}</span>
+                                    </div>
+                                ) : (customRange.start ? customRange.start.slice(5).replace('-','/') : undefined)
+                            } 
+                        />
 
-                    <button 
-                        onClick={() => setIsShareModalOpen(true)}
-                        className="h-[28px] w-[28px] flex items-center justify-center rounded-lg border bg-[#C8B085]/10 border-[#C8B085]/20 text-[#C8B085] hover:bg-[#C8B085]/20 shrink-0 transition-colors"
-                    >
-                        <Share2 size={12} />
-                    </button>
+                        <button 
+                            onClick={() => setIsShareModalOpen(true)}
+                            className="h-[28px] w-[28px] flex items-center justify-center rounded-lg border bg-[#C8B085]/10 border-[#C8B085]/20 text-[#C8B085] hover:bg-[#C8B085]/20 shrink-0 transition-colors"
+                        >
+                            <Share2 size={12} />
+                        </button>
 
-
-
-                    <button 
-                        onClick={() => { setIsFilterOpen(!isFilterOpen); vibrate('impactLight'); }} 
-                        className={`
-                            h-[28px] w-[28px] flex items-center justify-center rounded-lg border transition-all shrink-0
-                            ${isFilterOpen || hasActiveFilters 
-                                ? 'bg-[#C8B085] text-black border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)]' 
-                                : 'bg-[#C8B085]/10 border-[#C8B085]/20 text-[#C8B085] hover:bg-[#C8B085]/20'
-                            }
-                        `}
-                    >
-                        <Filter size={12} />
-                    </button>
+                        <button 
+                            onClick={() => { setIsFilterOpen(!isFilterOpen); vibrate('impactLight'); }} 
+                            className={`
+                                h-[28px] w-[28px] flex items-center justify-center rounded-lg border transition-all shrink-0
+                                ${isFilterOpen || hasActiveFilters 
+                                    ? 'bg-[#C8B085] text-black border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)]' 
+                                    : 'bg-[#C8B085]/10 border-[#C8B085]/20 text-[#C8B085] hover:bg-[#C8B085]/20'
+                                }
+                            `}
+                        >
+                            <Filter size={12} />
+                        </button>
+                    </div>
                 </div>
 
                 {isFilterOpen && (

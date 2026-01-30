@@ -3,6 +3,7 @@ import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, Shie
 import { BrokerConfig } from '../../../types';
 import { fetchBrokerProfile, pingBackend } from '../../../services/brokerService';
 import { useEffect } from 'react';
+import { ACCOUNT_CATEGORY_THEMES } from '../../../constants';
 
 interface BrokerSettingsProps {
     configs: BrokerConfig[];
@@ -21,7 +22,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const [accountChoices, setAccountChoices] = useState<any[]>([]);
     
     // New state for backend health check
-    const [backendStatus, setBackendStatus] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle');
+    const [backendStatus, setBackendStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    
+    // Derived state for button type
     const [errors, setErrors] = useState<Record<string, boolean>>({});
 
     const emptyConfig: BrokerConfig = {
@@ -46,7 +50,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             };
             checkStatus();
         } else {
-            setBackendStatus('idle');
+            setBackendStatus('online'); // Default to online when idle in dev
         }
     }, [isEditing]);
 
@@ -124,11 +128,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "Production required.");
             }
 
-            const updated = {
+            const updated: BrokerConfig = {
                 ...localConfig,
                 isConnected: true,
                 branch: result.branch || localConfig.branch,
                 branchCode: result.branchCode,
+                accounts: result.branchCode, // Standardize: use branchCode as the primary storage for acc IDs
                 brokerUsername: result.username,
                 environment: result.environment
             };
@@ -157,40 +162,123 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     return (
         <div className="space-y-4">
             <div className="flex flex-col gap-3">
-                {configs.map(config => (
-                    <div 
-                        key={config.id}
-                        className="group relative p-5 rounded-2xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all"
-                    >
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${config.isConnected ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                                    {config.isConnected ? <ShieldCheck size={20}/> : <AlertCircle size={20}/>}
-                                </div>
-                                <div className="flex flex-col">
-                                    <h4 className="text-sm font-bold text-slate-200">
-                                        {config.provider === 'shioaji' ? '永豐金' : 'Broker'} - {config.branch || 'Unknown'}
-                                    </h4>
-                                    <div className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5 font-mono">
-                                        <span className="text-zinc-300">
+                {configs.flatMap(config => {
+                    const branches = (config.branch || 'Unknown').split(',');
+                    // Assuming branchCode matches branch count and order if it exists, otherwise use empty or index
+                    // Actually usually they are paired. Since I can't guarantee branchCode is stored as CSV properly in all legacy cases,
+                    // I will rely on index binding. Ideally branchCode should be stored same way.
+                    // For now, let's just use branch name and index for display.
+                    
+                    return branches.map((bRaw, idx) => {
+                        const bText = bRaw.trim();
+                        
+                         // --- ROBUST IDENTIFICATION LOGIC (Dev Refactor) ---
+                         const isFuture = bText.includes('期貨') || bText.includes('Futures');
+                         const isSub = bText.includes('複委託') || bText.includes('Sub') || bText.includes('H-');
+                         
+                         const theme = isFuture 
+                            ? ACCOUNT_CATEGORY_THEMES.FUTURES 
+                            : isSub 
+                                ? ACCOUNT_CATEGORY_THEMES.SUB 
+                                : ACCOUNT_CATEGORY_THEMES.STOCK; // Default Fallback to Red (Stock)
+
+                         const typeLabel = theme.label;
+                         const themeClass = theme.fullClass;
+                         
+                         // Dynamic Style Objects (Legacy support if needed, but primarily using tailwind)
+                         const dynamicTextStyle = { color: theme.text.replace('text-', '').replace('/90', '') }; // Rough approximation
+                         const dynamicBorderStyle = { borderColor: theme.borderColor.replace('border-', '') };
+
+                        // Specific Delete Handler
+                        const handleDeleteAccount = () => {
+                            const currentBranches = (config.branch || '').split(',');
+                            const currentCodes = (config.branchCode || '').split(','); 
+                            
+                            // If this is the only account, delete the whole config
+                            if (currentBranches.length <= 1) {
+                                onDelete(config.id);
+                                return;
+                            }
+
+                            // Otherwise remove just this one
+                            const newBranches = currentBranches.filter((_, i) => i !== idx).join(',');
+                            // Try to update codes if length matches
+                            let newCodes = config.branchCode;
+                            if (config.branchCode && currentCodes.length === currentBranches.length) {
+                                newCodes = currentCodes.filter((_, i) => i !== idx).join(',');
+                            }
+
+                            // Construct updated config
+                            const { ...rest } = config;
+                            const updatedConfig = { ...rest, branch: newBranches, branchCode: newCodes };
+                            
+                            // Call onUpdate to save the new account list
+                            onUpdate(config.id, updatedConfig);
+                        };
+
+                        return (
+                            <div 
+                                key={`${config.id}-${idx}`}
+                                className={`
+                                    group relative p-4 rounded-3xl border transition-all flex items-center justify-between
+                                    ${config.isConnected 
+                                        ? 'bg-[#1C1E22] border-white/20 shadow-[0_4px_20px_rgba(0,0,0,0.5)]' 
+                                        : 'bg-white/[0.01] border-white/5 opacity-80'}
+                                    hover:border-white/30 hover:bg-white/[0.02]
+                                `}
+                            >
+                                <div className="flex flex-col gap-2">
+                                    {/* Row 1: Header (Broker - Branch/Type - Name) */}
+                                    <div className="flex items-center gap-2">
+                                         <span className="text-[14px] font-bold tracking-wide text-zinc-100">
                                             {(() => {
+                                                const brokerName = '永豐金';
+                                                const middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '');
                                                 const name = config.alias || config.brokerUsername || 'User';
-                                                return name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
+                                                const cleanName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
+                                                return `${brokerName}-${middle} | ${cleanName}`;
                                             })()}
+                                         </span>
+                                    </div>
+                                    
+                                        {/* Row 2: Badge + Code/Account */}
+                                    <div className="flex items-center gap-3">
+                                        {/* Type Badge */}
+                                        <span className={`px-3 py-0.5 rounded-full text-[10px] font-bold border ${themeClass} shadow-sm whitespace-nowrap w-[52px] flex items-center justify-center`}>
+                                            {typeLabel}
                                         </span>
-                                        <span className="text-zinc-600">|</span>
-                                        <span className="tracking-wide text-zinc-500">{config.personId}</span>
+                                        {/* Detail: Code - Account */}
+                                         <span className="text-[12px] font-bold text-zinc-500 font-mono tracking-wide">
+                                            {(() => {
+                                                const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
+                                                const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
+                                                
+                                                // Robust Fallback: if accounts is empty but branchCode looks like a 7-digit ID, use it.
+                                                const displayAcc = accList[idx] || (codeList[idx]?.length >= 7 ? codeList[idx] : '');
+                                                return displayAcc;
+                                            })()}
+                                         </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-4">
+                                    {/* Connection Status Icon (Matching Image 4 Right Side) */}
+                                    {config.isConnected && (
+                                        <div className="w-6 h-6 rounded-full bg-[#C8B085] flex items-center justify-center shadow-[0_0_10px_rgba(200,176,133,0.3)]">
+                                            <Check size={14} className="text-[#1C1E22] stroke-[4]" />
+                                        </div>
+                                    )}
+
+                                    {/* Actions Reveal on Hover */}
+                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => handleStartEdit(config.id)} className="p-2.5 rounded-xl bg-white/5 text-slate-400 hover:text-white border border-white/5 hover:border-white/10 transition-all"><FileKey size={14}/></button>
+                                        <button onClick={handleDeleteAccount} className="p-2.5 rounded-xl bg-red-500/5 text-red-500/70 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/10 transition-all"><Trash2 size={14}/></button>
                                     </div>
                                 </div>
                             </div>
-
-                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleStartEdit(config.id)} className="p-2.5 rounded-xl bg-white/5 text-slate-400 hover:text-white"><FileKey size={14}/></button>
-                                <button onClick={() => onDelete(config.id)} className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20"><Trash2 size={14}/></button>
-                            </div>
-                        </div>
-                    </div>
-                ))}
+                        );
+                    });
+                })}
 
                 <button 
                     onClick={() => handleStartEdit('new')}
@@ -380,103 +468,6 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     </div>
                                 </div>
                             </div>
-
-                            {/* ACCOUNT SELECTION (Hidden until testing) */}
-                            {accountChoices.length > 0 && (
-                                <div className="pl-9 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="flex flex-col gap-3 p-4 rounded-2xl bg-zinc-900 border border-[#C8B085]/20">
-                                        <div className="flex items-center gap-2 mb-1 px-1 text-[#C8B085]">
-                                            <BrainCircuit size={14}/>
-                                            <span className="text-[10px] font-bold uppercase tracking-widest">請選擇連線分公司</span>
-                                        </div>
-                                        {accountChoices.map(acc => (
-                                            <button
-                                                type="button"
-                                                key={acc.account_id}
-                                                disabled={isTesting}
-                                                onClick={async () => {
-                                                    // ... (Existing selection logic)
-                                                    console.log('Branch selected:', acc.branch_code, acc.branch_name);
-                                                    setErrorMsg(null);
-                                                    setIsTesting(true);
-                                                    
-                                                    const updatedConfig = {
-                                                        ...localConfig,
-                                                        branchCode: acc.branch_code,
-                                                        branch: acc.branch_name
-                                                    };
-                                                    setLocalConfig(updatedConfig);
-                                                    
-                                                    await new Promise(resolve => setTimeout(resolve, 50));
-                                                    
-                                                    try {
-                                                        const result = await fetchBrokerProfile(updatedConfig);
-                                                        
-                                                        if (result.status === 'success') {
-                                                            const finalConfig = {
-                                                                ...updatedConfig,
-                                                                isConnected: true,
-                                                                brokerUsername: result.username,
-                                                                environment: result.environment
-                                                            };
-                                                            
-                                                            if (isEditing === 'new') onAdd(finalConfig);
-                                                            else onUpdate(updatedConfig.id, finalConfig);
-                                                            
-                                                            setIsEditing(null);
-                                                            setAccountChoices([]);
-                                                        } else {
-                                                            setErrorMsg('驗證失敗，請重試');
-                                                        }
-                                                    } catch (error: any) {
-                                                        setErrorMsg(error?.message || '連線失敗');
-                                                    } finally {
-                                                        setIsTesting(false);
-                                                    }
-                                                }}
-                                                className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085]/10 border-[#C8B085]/50' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}`}
-                                            >
-                                                <div className="flex flex-col items-start font-mono gap-0.5">
-                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                                                        永豐金 - {acc.branch_name} ({acc.branch_code})
-                                                    </span>
-                                                    <div className="flex items-center gap-1.5">
-                                                        {(() => {
-                                                            let typeLabel = '帳戶';
-                                                            let typeStyle = 'text-zinc-400 bg-white/5 border-white/10';
-                                                            
-                                                            if (acc.account_type === 'S' || (!acc.account_type && acc.account_id.length === 7)) {
-                                                                typeLabel = '台股';
-                                                                typeStyle = 'text-red-400 bg-red-500/10 border-red-500/20';
-                                                            } else if (acc.account_type === 'H' || (!acc.account_type && acc.account_id.length !== 7)) {
-                                                                typeLabel = '複委託';
-                                                                typeStyle = 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-                                                            } else if (acc.account_type === 'F') {
-                                                                typeLabel = '期貨';
-                                                                typeStyle = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
-                                                            }
-
-                                                            return (
-                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${typeStyle}`}>
-                                                                    {typeLabel}
-                                                                </span>
-                                                            );
-                                                        })()}
-                                                        <span className="text-sm font-bold text-slate-200">
-                                                            - {acc.account_id}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${localConfig.branchCode === acc.branch_code ? 'bg-[#C8B085] border-[#C8B085]' : 'border-white/10'}`}>
-                                                    {isTesting && localConfig.branchCode === acc.branch_code && (
-                                                        <Loader2 size={10} className="animate-spin text-black" />
-                                                    )}
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
                         </div>
 
                         <div className="px-6 pb-2 flex items-center justify-between text-[10px] font-mono">
@@ -513,13 +504,179 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                         <div className="p-6 border-t border-white/5 flex flex-col sm:flex-row items-center gap-3 bg-black/20 font-bold uppercase tracking-tight text-[10px]">
                             <button onClick={handleSave} className="w-full sm:w-auto flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10 order-2 sm:order-1">僅儲存</button>
+                            {accountChoices.length === 0 && (
+                                <button 
+                                    disabled={isTesting}
+                                    onClick={handleTestConnection}
+                                    className="w-full sm:w-auto flex-[2] py-4 px-8 rounded-2xl bg-[#C8B085] text-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 order-1 sm:order-2"
+                                >
+                                    {isTesting ? <Loader2 className="animate-spin" size={16}/> : <Check size={16}/>}
+                                    <span>{isTesting ? '驗證中...' : '同步券商'}</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ACCOUNT SELECTION MODAL */}
+            {accountChoices.length > 0 && (
+                <div className="fixed inset-0 z-[10005] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
+                    <div className="w-full max-w-sm bg-[#1C1E22] rounded-3xl border border-[#C8B085]/30 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                        <div className="p-5 border-b border-white/5 flex justify-between items-center bg-[#C8B085]/5">
+                            <div className="flex items-center gap-2 text-[#C8B085]">
+                                <BrainCircuit size={18}/>
+                                <h4 className="text-sm font-bold uppercase tracking-widest">請選擇連線帳號</h4>
+                            </div>
                             <button 
-                                disabled={isTesting}
-                                onClick={handleTestConnection}
-                                className="w-full sm:w-auto flex-[2] py-4 px-8 rounded-2xl bg-[#C8B085] text-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 order-1 sm:order-2"
+                                onClick={() => setAccountChoices([])}
+                                className="p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
                             >
-                                {isTesting ? <Loader2 className="animate-spin" size={16}/> : <Check size={16}/>}
-                                <span>{isTesting ? '驗證中...' : '同步券商'}</span>
+                                <X size={18}/>
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                            <p className="text-xs text-zinc-400 mb-2 leading-relaxed">
+                                您的憑證包含多個帳號，請選擇您希望同步的帳號(可多選)。
+                            </p>
+                            
+                            {accountChoices.map(acc => {
+                                const isSelected = selectedIds.includes(acc.account_id);
+                                
+                                const toggleLogic = () => {
+                                    if (isSelected) {
+                                        setSelectedIds(prev => prev.filter(id => id !== acc.account_id));
+                                    } else {
+                                        setSelectedIds(prev => [...prev, acc.account_id]);
+                                    }
+                                };
+
+                                return (
+                                    <button
+                                        type="button"
+                                        key={acc.account_id}
+                                        disabled={isTesting}
+                                        onClick={toggleLogic}
+                                        className={`
+                                            w-full p-4 rounded-3xl border flex items-center justify-between transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed group 
+                                            ${isSelected ? 'bg-[#1C1E22] border-[#C8B085] shadow-[0_0_20px_rgba(200,176,133,0.1)]' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}
+                                        `}
+                                    >
+                                        <div className="flex flex-col items-start gap-2">
+                                             <span className={`text-[14px] font-bold tracking-wide transition-colors ${isSelected ? 'text-white' : 'text-zinc-300 group-hover:text-white'}`}>
+                                                {(() => {
+                                                    const brokerName = '永豐金';
+                                                    const middle = acc.branch_name ? acc.branch_name.replace(/\(.*\)/, '').replace('分公司', '') : '期貨';
+                                                    const name = acc.username || '用戶';
+                                                    return `${brokerName}-${middle} | ${name}`;
+                                                })()}
+                                             </span>
+                                             
+                                             {/* Row 2: Details */}
+                                             <div className="flex items-center gap-3">
+                                                 {(() => {
+                                                     const type = String(acc.account_type || '').toUpperCase();
+                                                     const branch = String(acc.branch_name || '');
+                                                     const id = String(acc.account_id || '');
+ 
+                                                     // Enhanced Detection
+                                                     const isFuture = type.includes('F') || type.includes('FUTURE') || branch.includes('期貨');
+                                                     const isSub = type.includes('H') || branch.includes('複委託') || (id.length !== 7 && !type.includes('F'));
+                                                     
+                                                     const theme = isSub ? ACCOUNT_CATEGORY_THEMES.SUB : isFuture ? ACCOUNT_CATEGORY_THEMES.FUTURES : ACCOUNT_CATEGORY_THEMES.STOCK;
+ 
+                                                     return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${theme.fullClass}`}>{theme.label}</span>;
+                                                 })()}
+                                                 <span className="text-[12px] font-mono font-bold text-zinc-500">{acc.account_id}</span>
+                                             </div>
+                                        </div>
+                                        
+                                        {/* Right Side Check */}
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)]' : 'border-zinc-700 group-hover:border-zinc-500'}`}>
+                                            {isSelected && <Check size={14} className="text-black stroke-[4px]" />}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="p-5 border-t border-white/5 bg-zinc-900/50 flex gap-3">
+                            <button
+                                onClick={() => setAccountChoices([])}
+                                className="flex-1 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white font-bold text-sm transition-all"
+                            >
+                                取消
+                            </button>
+                            <button
+                                disabled={selectedIds.length === 0}
+                                onClick={async () => {
+                                    setIsTesting(true);
+                                    setErrorMsg(null);
+                                    try {
+                                        if (!localConfig) return; // Guard clause
+
+                                        // Improved ID construction: Prioritize account_id for uniqueness.
+                                        // pnl.py checks both (acc_id or branch_code). Using account_id avoids ambiguity if multiple accounts share a branch.
+                                        // Fallback to branch_code only if account_id is empty.
+                                        const idString = accountChoices
+                                            .filter(a => selectedIds.includes(a.account_id))
+                                            .map(a => a.account_id || a.branch_code)
+                                            .join(',');
+
+                                         const updatedConfig: BrokerConfig = {
+                                            ...localConfig,
+                                            branchCode: idString, 
+                                            accounts: idString, // Populating accounts field correctly
+                                            branch: accountChoices
+                                                .filter(a => selectedIds.includes(a.account_id))
+                                                .map(a => {
+                                                    const shortBranch = a.branch_name.split('(')[0].replace('永豐金', '').trim();
+                                                    const type = String(a.account_type || '');
+                                                    const simpleType = (type.includes('S') || (!type && a.account_id.length === 7)) ? '台股' : '期貨'; 
+                                                    if (type.includes('H') || (!type && a.account_id.length !== 7)) return `${shortBranch}(複委託)`;
+                                                    return `${shortBranch}(${simpleType})`;
+                                                })
+                                                .join(', ')
+                                        };
+                                        
+                                        const result: any = await fetchBrokerProfile(updatedConfig);
+                                        
+                                        if (result.status === 'error') throw new Error(result.message || result.error);
+
+                                        if (result.environment !== 'production') {
+                                            throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "Production required.");
+                                        }
+
+                                        const finalConfig: BrokerConfig = {
+                                            ...updatedConfig,
+                                            isConnected: true,
+                                            environment: result.environment,
+                                            brokerUsername: result.username 
+                                        };
+                                        
+                                        // Clear cache to ensure SyncDateModal picks up new config immediately
+                                        try {
+                                            // Simple way to clear cache if function not imported, or relying on invalidation from parent
+                                            // But best to try clearing local storage cache key manually if possible
+                                            localStorage.removeItem('broker_configs_cache');
+                                        } catch (e) { console.warn('Cache clear failed', e); }
+
+                                        setLocalConfig(finalConfig);
+                                        if (isEditing === 'new') onAdd(finalConfig);
+                                        else onUpdate(localConfig.id, finalConfig);
+                                        
+                                        setIsEditing(null);
+                                        setIsTesting(false);
+                                        setAccountChoices([]);
+                                    } catch (error: any) {
+                                        setErrorMsg(error?.message || 'Connection failed');
+                                        setIsTesting(false);
+                                    }
+                                }}
+                                className="flex-[2] py-3 rounded-xl bg-[#C8B085] hover:bg-[#E0C8A0] text-black font-bold text-sm shadow-[0_0_20px_rgba(200,176,133,0.2)] disabled:opacity-50 disabled:shadow-none transition-all flex items-center justify-center gap-2"
+                            >
+                                {isTesting ? <Loader2 size={16} className="animate-spin"/> : <Check size={16}/>}
+                                確認同步已選帳號 ({selectedIds.length})
                             </button>
                         </div>
                     </div>

@@ -19,6 +19,31 @@ export const THEME = {
     PURPLE_LOSS: '#8B5CF6',
 };
 
+// Unified Account Category Styles
+export const ACCOUNT_CATEGORY_THEMES = {
+    STOCK: {
+        label: '台股',
+        text: 'text-rose-400',
+        bg: 'bg-rose-500/10',
+        borderColor: 'border-rose-500/20',
+        fullClass: 'text-rose-400 bg-rose-500/10 border-rose-500/20'
+    },
+    FUTURES: {
+        label: '期貨',
+        text: 'text-sky-400',
+        bg: 'bg-sky-500/10',
+        borderColor: 'border-sky-500/20',
+        fullClass: 'text-sky-400 bg-sky-500/10 border-sky-500/20'
+    },
+    SUB: {
+        label: '複委託',
+        text: 'text-purple-400',
+        bg: 'bg-purple-500/10',
+        borderColor: 'border-purple-500/20',
+        fullClass: 'text-purple-400 bg-purple-500/10 border-purple-500/20'
+    }
+} as const;
+
 export const DEFAULT_PALETTE = [
     '#C8B085', '#526D82', '#D05A5A', '#8884d8', '#c97e59', '#1F618D', '#5DADE2', '#a3526d', '#E74C3C',
     '#5B9A8B', '#2C5F54', '#28573f' // Added Greens for selection

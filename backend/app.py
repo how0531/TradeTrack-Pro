@@ -4,15 +4,27 @@ import sys
 import os
 import traceback
 
-# 添加 scripts 目錄到路徑
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "scripts"))
+# 添加 core 目錄到路徑 (如果尚未添加) - 雖然通常在同一包下不需要，但為了確保
+# sys.path.append(os.path.join(os.path.dirname(__file__), "core"))
 
 try:
-    from shioaji_login import login_and_fetch_pnl
+    from core.pnl import login_and_fetch_pnl
+    import core.pnl
+    import os
+    import datetime
+    log_file = os.path.join(os.path.expanduser("~"), "debug_backend.log")
+    with open(log_file, "a") as f:
+        f.write(f"[{datetime.datetime.now()}] LOADED PNL FROM: {core.pnl.__file__}\n")
+    print(f"DEBUG: Imported login_and_fetch_pnl from core.pnl: {core.pnl.__file__}", flush=True)
 except ImportError as e:
-    print(f"Error importing shioaji_login: {e}")
-    print(f"Current sys.path: {sys.path}")
-    raise
+    print(f"Error importing core.pnl: {e}")
+    # Fallback for dev environment path issues
+    try: 
+        from backend.core.pnl import login_and_fetch_pnl
+        print(f"DEBUG: Imported login_and_fetch_pnl from backend.core.pnl: {login_and_fetch_pnl}", flush=True)
+    except:
+        print(f"Critical Import Error: {e}")
+        raise
 
 app = Flask(__name__)
 CORS(app)  # 允許跨域請求 (Cloud 佈署必備)
@@ -57,6 +69,8 @@ def get_broker_profile():
             error_msg = f"Missing required fields: {', '.join(missing_fields)}"
             print(f"[ERROR] {error_msg}", flush=True)
             return jsonify({"status": "error", "message": error_msg}), 400
+
+
 
         # 從請求中獲取環境設定，預設為正式環境
         env_pref = data.get("environment", "production")
@@ -148,6 +162,7 @@ def get_broker_pnl():
             end_date=data["endDate"],
             simulation=is_simulation,
             branch_filter=data.get("branchCode"),  # Pass the branch filter
+            type_filter=data.get("accountType"),   # Pass strict account type filter
         )
 
         print(

@@ -66,7 +66,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://tradetrack-backend-8h4x.onrender.com',
+        target: 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
       }

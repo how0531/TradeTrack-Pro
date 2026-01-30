@@ -18,7 +18,9 @@ export interface BrokerConfig {
   apiSecret: string;
   personId: string;
   branch?: string; // e.g. "新店"
+  branch_name?: string; // e.g. "新店 (STOCK)"
   branchCode?: string; // e.g. "9A95"
+  accounts?: string; // Comma-separated list of account numbers (e.g. "9162673,9162674")
   brokerUsername?: string; // e.g. "SimulationUser"
   environment?: 'production' | 'simulation';
   caPath: string;
@@ -26,6 +28,7 @@ export interface BrokerConfig {
   isConnected: boolean;
   apiKeyHint?: string; // Hint derived from the actual key used by the backend
   caContent?: string;  // Base64 content of the .pfx file for dynamic uploads
+  accountType?: 'S' | 'F'; // Optional type filter for PnL fetching (S=Stock, F=Future)
 }
 
 export interface Trade {
