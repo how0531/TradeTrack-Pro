@@ -174,7 +174,15 @@ def login_and_fetch_pnl(
                              if ((max(buy_amt, sell_amt)) / price) > raw_qty * 800:
                                  raw_qty *= 1000
 
-                    log(f"TX RAW: code={code} name_attr={getattr(item, 'item_name', '')}")
+                    pid = os.getpid()
+                    log(f"TX RAW [PID:{pid}]: code={code} is_futures={is_futures} name_attr={getattr(item, 'item_name', '')}")
+
+                    # Sanity check: log Contracts state occasionally
+                    if code == "TXFB6" or "Unknown" in code:
+                        try:
+                            f_count = len(api.Contracts.Futures) if hasattr(api.Contracts.Futures, "__len__") else "Unknown"
+                            log(f"SDK STATE [PID:{pid}]: Futures Count={f_count}")
+                        except: pass
 
                     # Try to get Chinese Name (item_name/name are common in PnL objects)
                     name = getattr(item, "item_name", getattr(item, "name", getattr(item, "stock_name", "")))
@@ -183,35 +191,48 @@ def login_and_fetch_pnl(
                     
                     if not name or name == code:
                         try:
-                            # 1. Try Stocks (Direct access is usually fast)
-                            if not is_futures and not is_sub:
-                                contract = api.Contracts.Stocks[code]
-                                if contract:
-                                    name = getattr(contract, "name", "")
-                            
-                            # 2. Try nested lookups for Futures/Sub-brokerage
+                            # 1. Try Direct Indexing (Fastest, supported by many SDK versions)
+                            if is_futures:
+                                try:
+                                    contract = api.Contracts.Futures[code]
+                                    if contract: name = getattr(contract, "name", "")
+                                except: pass
+                            elif is_sub:
+                                try:
+                                    contract = api.Contracts.SubBrokerage[code]
+                                    if contract: name = getattr(contract, "name", "")
+                                except: pass
+                            else:
+                                try:
+                                    contract = api.Contracts.Stocks[code]
+                                    if contract: name = getattr(contract, "name", "")
+                                except: pass
+
+                            # 2. Nested lookup if direct fails
                             if not name or name == code:
-                                categories_root = None
-                                if is_futures: categories_root = api.Contracts.Futures
-                                elif is_sub: categories_root = api.Contracts.SubBrokerage
+                                root = None
+                                if is_futures: root = api.Contracts.Futures
+                                elif is_sub: root = api.Contracts.SubBrokerage
                                 
-                                if categories_root:
-                                    # Use vars() to get all category attributes (e.g. TXF, MXF)
-                                    for cat_key in vars(categories_root):
-                                        if cat_key.startswith("_"): continue
-                                        cat_tree = getattr(categories_root, cat_key)
-                                        if hasattr(cat_tree, "__getitem__") and code in cat_tree:
-                                            contract = cat_tree[code]
-                                            name = getattr(contract, "name", "")
-                                            break
-                            
-                            # 3. Last resort: Try global search if possible (some SDK versions)
-                            if (not name or name == code) and hasattr(api, "get_contract"):
-                                contract = api.get_contract(code)
-                                if contract:
-                                    name = getattr(contract, "name", "")
+                                if root:
+                                    # Fallback 2a: Try guessing category (TXF for TXFB6)
+                                    if len(code) >= 3:
+                                        cat_guess = code[:3]
+                                        if hasattr(root, cat_guess):
+                                            cat_obj = getattr(root, cat_guess)
+                                            if hasattr(cat_obj, "__getitem__") and code in cat_obj:
+                                                name = getattr(cat_obj[code], "name", "")
+
+                                    # Fallback 2b: Exhaustive search with dir()
+                                    if not name or name == code:
+                                        for attr in dir(root):
+                                            if attr.startswith("_"): continue
+                                            cat_tree = getattr(root, attr)
+                                            if hasattr(cat_tree, "__getitem__") and code in cat_tree:
+                                                name = getattr(cat_tree[code], "name", "")
+                                                break
                         except Exception as e:
-                            log(f"Lookup Error for {code}: {str(e)}")
+                            log(f"Lookup Error [PID:{pid}] for {code}: {str(e)}")
 
                     # If name found, append to code
                     if name and name != code:
@@ -223,7 +244,7 @@ def login_and_fetch_pnl(
                     else:
                         display_code = code
                     
-                    log(f"Final Name for {code}: {name} -> {display_code}")
+                    log(f"Final Name [PID:{pid}] for {code}: {name} -> {display_code}")
                     
                     details.append({
                         "date": item_date, 
