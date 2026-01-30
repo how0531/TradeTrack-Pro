@@ -182,16 +182,16 @@ def login_and_fetch_pnl(
                             if is_futures:
                                 # Futures lookup: nested under product codes (e.g., api.Contracts.Futures["TXF"]["TXFB6"])
                                 # We search across categories to find the match
-                                for category in api.Contracts.Futures:
-                                    cat_obj = api.Contracts.Futures[category]
+                                for cat_key in api.Contracts.Futures:
+                                    cat_obj = api.Contracts.Futures[cat_key]
                                     if code in cat_obj:
                                         contract = cat_obj[code]
                                         name = getattr(contract, "name", "")
                                         break
                             elif is_sub:
                                 # SubBrokerage lookup (複委託)
-                                for exch in api.Contracts.SubBrokerage:
-                                    exch_obj = api.Contracts.SubBrokerage[exch]
+                                for exch_key in api.Contracts.SubBrokerage:
+                                    exch_obj = api.Contracts.SubBrokerage[exch_key]
                                     if code in exch_obj:
                                         contract = exch_obj[code]
                                         name = getattr(contract, "name", "")
