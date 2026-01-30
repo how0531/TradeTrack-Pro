@@ -180,8 +180,22 @@ def login_and_fetch_pnl(
                     if not name or name == code:
                         try:
                             if is_futures:
-                                # Futures lookup: usually in Contracts.Futures[category][code]
-                                pass
+                                # Futures lookup: nested under product codes (e.g., api.Contracts.Futures["TXF"]["TXFB6"])
+                                # We search across categories to find the match
+                                for category in api.Contracts.Futures:
+                                    cat_obj = api.Contracts.Futures[category]
+                                    if code in cat_obj:
+                                        contract = cat_obj[code]
+                                        name = getattr(contract, "name", "")
+                                        break
+                            elif is_sub:
+                                # SubBrokerage lookup (複委託)
+                                for exch in api.Contracts.SubBrokerage:
+                                    exch_obj = api.Contracts.SubBrokerage[exch]
+                                    if code in exch_obj:
+                                        contract = exch_obj[code]
+                                        name = getattr(contract, "name", "")
+                                        break
                             else:
                                 # For stocks: Index lookup is standard
                                 contract = api.Contracts.Stocks[code]
