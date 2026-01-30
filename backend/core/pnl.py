@@ -174,38 +174,56 @@ def login_and_fetch_pnl(
                              if ((max(buy_amt, sell_amt)) / price) > raw_qty * 800:
                                  raw_qty *= 1000
 
+                    log(f"TX RAW: code={code} name_attr={getattr(item, 'item_name', '')}")
+
                     # Try to get Chinese Name (item_name/name are common in PnL objects)
-                    name = str(getattr(item, "item_name", getattr(item, "name", getattr(item, "stock_name", "")))).strip()
+                    name = getattr(item, "item_name", getattr(item, "name", getattr(item, "stock_name", "")))
+                    if name is None: name = ""
+                    name = str(name).strip()
                     
                     if not name or name == code:
                         try:
-                            if is_futures:
-                                # Futures lookup: nested under product codes (e.g., api.Contracts.Futures["TXF"]["TXFB6"])
-                                # We search across categories to find the match
-                                for cat_key in api.Contracts.Futures:
-                                    cat_obj = api.Contracts.Futures[cat_key]
-                                    if code in cat_obj:
-                                        contract = cat_obj[code]
-                                        name = getattr(contract, "name", "")
-                                        break
-                            elif is_sub:
-                                # SubBrokerage lookup (複委託)
-                                for exch_key in api.Contracts.SubBrokerage:
-                                    exch_obj = api.Contracts.SubBrokerage[exch_key]
-                                    if code in exch_obj:
-                                        contract = exch_obj[code]
-                                        name = getattr(contract, "name", "")
-                                        break
-                            else:
-                                # For stocks: Index lookup is standard
+                            # 1. Try Stocks (Direct access is usually fast)
+                            if not is_futures and not is_sub:
                                 contract = api.Contracts.Stocks[code]
                                 if contract:
                                     name = getattr(contract, "name", "")
-                        except:
-                            pass
+                            
+                            # 2. Try nested lookups for Futures/Sub-brokerage
+                            if not name or name == code:
+                                categories_root = None
+                                if is_futures: categories_root = api.Contracts.Futures
+                                elif is_sub: categories_root = api.Contracts.SubBrokerage
+                                
+                                if categories_root:
+                                    # Use vars() to get all category attributes (e.g. TXF, MXF)
+                                    for cat_key in vars(categories_root):
+                                        if cat_key.startswith("_"): continue
+                                        cat_tree = getattr(categories_root, cat_key)
+                                        if hasattr(cat_tree, "__getitem__") and code in cat_tree:
+                                            contract = cat_tree[code]
+                                            name = getattr(contract, "name", "")
+                                            break
+                            
+                            # 3. Last resort: Try global search if possible (some SDK versions)
+                            if (not name or name == code) and hasattr(api, "get_contract"):
+                                contract = api.get_contract(code)
+                                if contract:
+                                    name = getattr(contract, "name", "")
+                        except Exception as e:
+                            log(f"Lookup Error for {code}: {str(e)}")
 
                     # If name found, append to code
-                    display_code = f"{code} {name}".strip() if name and name != code else code
+                    if name and name != code:
+                        # If name already contains code (e.g. "TXFB6 台指期"), use name as is
+                        if code in name:
+                            display_code = name
+                        else:
+                            display_code = f"{code} {name}"
+                    else:
+                        display_code = code
+                    
+                    log(f"Final Name for {code}: {name} -> {display_code}")
                     
                     details.append({
                         "date": item_date, 

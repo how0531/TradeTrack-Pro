@@ -863,7 +863,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                                <div className="flex-1 flex flex-col gap-1.5">
                                                     {/* Row 1: Header */}
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-[13px] font-bold tracking-wide text-zinc-200">
+                                                        <span className="text-[11px] font-bold text-white tracking-tight">
                                                             永豐金-{middle} | {displayName}
                                                         </span>
                                                     </div>
@@ -997,9 +997,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                             <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg border border-white/10 shrink-0">
                               <span className="text-[10px] font-black text-white truncate max-w-[80px] tracking-tight">
                                 {(() => {
-                                    // Backend now sends "1815 富喬"
                                     const parts = tx.code.split(" ");
-                                    return parts.length > 1 ? parts[1] : parts[0];
+                                    return parts.length > 1 ? parts.slice(1).join(" ") : parts[0];
                                 })()}
                               </span>
                               <div className="w-[1px] h-2.5 bg-white/10 shrink-0" />
