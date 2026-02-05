@@ -243,8 +243,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     
                                         {/* Row 2: Badge + Code/Account */}
                                     <div className="flex items-center gap-3">
-                                        <span className={`text-[12px] font-bold font-mono tracking-wide ${theme.text}`}>
-                                            [{typeLabel}] {(() => {
+                                        <span className={`px-3 py-0.5 rounded-full text-[10px] font-bold border ${theme.fullClass} shadow-sm whitespace-nowrap w-[52px] flex items-center justify-center`}>
+                                            {typeLabel}
+                                        </span>
+                                        <span className="text-[12px] font-bold text-zinc-500 font-mono tracking-wide">
+                                            {(() => {
                                                 const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 
