@@ -32,7 +32,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
     console.log('📅 [PERF] 日期範圍:', startDate.toISOString().split('T')[0], '→', endDate.toISOString().split('T')[0]);
 
     if (!config.isConnected) {
-        throw new Error('Broker not connected');
+        throw new Error('券商未連線 (Broker not connected)');
     }
 
     if (config.provider === 'mock') {
@@ -78,7 +78,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
         // ===== 實際使用 config 中的憑證 =====
         // 驗證必要欄位是否已填寫
         if (!config.apiKey || !config.apiSecret || !config.personId || !config.caPath) {
-            throw new Error('P&L fetch failed: Missing required credentials');
+            throw new Error('P&L 擷取失敗：缺少必要憑證資訊 (Missing credentials)');
         }
 
         // ===== 嘗試呼叫 Python 後端 =====
@@ -138,12 +138,12 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 };
             }
             
-            throw new Error(result.message || 'Invalid response from backend');
+            throw new Error(result.message || '後端回應格式錯誤 (Invalid response)');
 
         } catch (fetchError: any) {
             // 如果後端服務未啟動，退回到模擬模式
             if (fetchError.message?.includes('fetch') || fetchError.message?.includes('NetworkError')) {
-                console.warn('Backend service not available, using simulation mode for P&L');
+                console.warn('後端服務未回應，將使用模擬模式進行 P&L 展示');
                 console.log('Simulating P&L using credentials from config:', {
                     apiKey: config.apiKey.substring(0, 10) + '...',
                     personId: config.personId,
@@ -299,7 +299,7 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
     
     if (config.provider === 'shioaji') {
         if (!config.apiKey || !config.apiSecret || !config.personId || !config.caPath) {
-            throw new Error("Login failed: Missing required credentials");
+            throw new Error("登入失敗：缺少必要憑證資訊 (Missing credentials)");
         }
 
         try {
@@ -328,7 +328,7 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
 
             if (!response.ok) {
                 const errorData = await response.json();
-                let errMsg = errorData.message || errorData.error || 'Backend API call failed';
+                let errMsg = errorData.message || errorData.error || '後端 API 呼叫失敗 (Backend API call failed)';
                 
                 // Improve error message for known Shioaji errors
                 if (typeof errMsg === 'string') {
@@ -347,7 +347,7 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
             console.log(`✅ [PERF] fetchBrokerProfile 完成: ${totalElapsed.toFixed(0)}ms`);
             
             if (result.status === 'error') {
-                throw new Error(result.message || result.error || 'Backend reported an error');
+                throw new Error(result.message || result.error || '後端回報錯誤 (Backend reported an error)');
             }
 
             // If the backend says multiple accounts, return it immediately
@@ -356,11 +356,11 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
             }
 
             if (result.environment !== 'production') {
-                throw new Error(`Login failed: Expected 'production' environment but got '${result.environment}'.`);
+                throw new Error(`登入失敗：預期 'production' 環境，但得到 '${result.environment}'`);
             }
 
             if (!result.branchCode || !result.username) {
-                throw new Error("Login failed: Missing account information");
+                throw new Error("登入失敗：缺少帳號資訊 (Missing account info)");
             }
             
             const rawCode = String(result.branchCode || '').trim();

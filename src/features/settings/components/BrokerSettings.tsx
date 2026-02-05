@@ -108,7 +108,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
-            setErrorMsg(lang === 'zh' ? '請填寫所有必填欄位' : 'Please fill in all required fields');
+            setErrorMsg(lang === 'zh' ? '請填寫所有必填欄位' : '請填寫所有必填欄位 (Please fill all fields)');
             setIsTesting(false);
             return;
         }
@@ -119,13 +119,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             
             if (result.status === 'multiple_accounts' && result.accounts) {
                 setAccountChoices(result.accounts);
-                setErrorMsg(lang === 'zh' ? "偵測到多個帳戶，請選擇一個分公司" : "Multiple accounts detected. Please select a branch.");
+                setErrorMsg(lang === 'zh' ? "偵測到多個帳戶，請選擇一個分公司" : "偵測到多個帳戶，請選擇一個分公司 (Multiple accounts)");
                 setIsTesting(false);
                 return;
             }
 
             if (result.environment !== 'production') {
-                throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "Production required.");
+                throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "僅支援正式環境 (Production required)");
             }
 
             const updated: BrokerConfig = {
@@ -146,11 +146,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             setIsTesting(false);
             setAccountChoices([]);
         } catch (error: any) {
-            let msg = error?.message || 'Connection failed';
+            let msg = error?.message || '連線失敗 (Connection failed)';
             if (msg.includes('Failed to fetch')) {
                 msg = lang === 'zh' 
                     ? "連線失敗：後端服務可能正在啟動中，請稍候 30 秒再試一次。" 
-                    : "Connection failed: Backend service might be starting up. Please wait 30s and try again.";
+                    : "連線失敗：後端服務可能正在啟動中，請稍候 30 秒再試一次。 (Connection failed: Backend starting)";
                 // 再次嘗試 ping 以確保喚醒
                 pingBackend();
             }
@@ -646,7 +646,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         if (result.status === 'error') throw new Error(result.message || result.error);
 
                                         if (result.environment !== 'production') {
-                                            throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "Production required.");
+                                            throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "僅支援正式環境 (Production required)");
                                         }
 
                                         const finalConfig: BrokerConfig = {
@@ -671,7 +671,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         setIsTesting(false);
                                         setAccountChoices([]);
                                     } catch (error: any) {
-                                        setErrorMsg(error?.message || 'Connection failed');
+                                        setErrorMsg(error?.message || '連線失敗 (Connection failed)');
                                         setIsTesting(false);
                                     }
                                 }}

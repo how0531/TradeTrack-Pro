@@ -66,7 +66,7 @@ def get_broker_profile():
         missing_fields = [field for field in required_fields if not data.get(field)]
 
         if missing_fields:
-            error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+            error_msg = f"缺少必要欄位 (Missing fields): {', '.join(missing_fields)}"
             print(f"[ERROR] {error_msg}", flush=True)
             return jsonify({"status": "error", "message": error_msg}), 400
 
@@ -143,7 +143,7 @@ def get_broker_pnl():
         missing_fields = [field for field in required_fields if not data.get(field)]
 
         if missing_fields:
-            error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+            error_msg = f"缺少必要欄位 (Missing fields): {', '.join(missing_fields)}"
             print(f"[ERROR] {error_msg}", flush=True)
             return jsonify({"status": "error", "message": error_msg}), 400
 

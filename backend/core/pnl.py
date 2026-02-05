@@ -47,7 +47,7 @@ def login_and_fetch_pnl(
             temp_ca_path = tf.name
             final_ca_path = temp_ca_path
         except Exception as e:
-            return {"error": f"CA Processing Failed: {str(e)}", "details": []}
+            return {"error": f"憑證處理失敗 (CA Failed): {str(e)}", "details": []}
 
     try:
         # 2. Get API Session
