@@ -115,16 +115,23 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
             const fetchElapsed = performance.now() - fetchStartTime;
             console.log(`📡 [PERF] PnL API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
 
+            const text = await response.text();
+            let result: any;
+            try {
+                result = text ? JSON.parse(text) : {};
+            } catch (e) {
+                console.error('JSON Parse Error (PnL):', text.substring(0, 200));
+                throw new Error(`後端回應格式錯誤 (Invalid JSON): ${text.substring(0, 50)}...`);
+            }
+
             if (!response.ok) {
-                const errorData = await response.json();
-                let errMsg = errorData.message || errorData.error || 'Backend check failed';
+                let errMsg = result.message || result.error || `後端錯誤 (${response.status}): ${text.substring(0, 100)}`;
                 if (typeof errMsg === 'string' && errMsg.includes('key:') && errMsg.includes('not exist')) {
                      errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
                 }
                 throw new Error(errMsg);
             }
 
-            const result = await response.json();
             const totalElapsed = performance.now() - startTime;
             console.log(`✅ [PERF] fetchBrokerPnl 完成: ${totalElapsed.toFixed(0)}ms`);
             console.log(`📊 [PERF] 擷取交易筆數: ${result.details?.length || 0}`);
@@ -326,9 +333,17 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
             const fetchElapsed = performance.now() - fetchStartTime;
             console.log(`📡 [PERF] Profile API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
 
+            const text = await response.text();
+            let result: any;
+            try {
+                result = text ? JSON.parse(text) : {};
+            } catch (e) {
+                console.error('JSON Parse Error:', text.substring(0, 200));
+                throw new Error(`後端回應格式錯誤 (Invalid JSON): ${text.substring(0, 50)}...`);
+            }
+
             if (!response.ok) {
-                const errorData = await response.json();
-                let errMsg = errorData.message || errorData.error || '後端 API 呼叫失敗 (Backend API call failed)';
+                let errMsg = result.message || result.error || `後端錯誤 (${response.status}): ${text.substring(0, 100)}`;
                 
                 // Improve error message for known Shioaji errors
                 if (typeof errMsg === 'string') {
@@ -342,7 +357,6 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
                 throw new Error(errMsg);
             }
 
-            const result = await response.json();
             const totalElapsed = performance.now() - startTime;
             console.log(`✅ [PERF] fetchBrokerProfile 完成: ${totalElapsed.toFixed(0)}ms`);
             
