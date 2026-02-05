@@ -429,8 +429,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     if (file) {
                                                         const reader = new FileReader();
                                                         reader.onload = (ev) => {
-                                                            const b64 = (ev.target?.result as string).split(',')[1];
-                                                            handleChange('caContent', b64);
+                                                            // Safari Mobile Fix: Ensure no newlines/spaces in base64
+                                                            const raw = (ev.target?.result as string).split(',')[1];
+                                                            const cleanB64 = raw.replace(/\s/g, '');
+                                                            handleChange('caContent', cleanB64);
                                                             handleChange('caPath', file.name);
                                                         };
                                                         reader.readAsDataURL(file);

@@ -380,6 +380,11 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
 
         } catch (fetchError: any) {
             console.error('Shioaji Profile Error:', fetchError);
+            console.error('Error Details:', {
+                name: fetchError.name,
+                message: fetchError.message,
+                stack: fetchError.stack
+            });
             throw fetchError;
         }
     }
