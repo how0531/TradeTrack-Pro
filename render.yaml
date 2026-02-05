@@ -14,7 +14,7 @@ services:
         value: 3.10.0
 
   # 2. Frontend Site (Static/Vite)
-  - type: static
+  - type: web
     name: tradetrack-frontend
     plan: free
     env: static
