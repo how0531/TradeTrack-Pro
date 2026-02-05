@@ -26,4 +26,4 @@ services:
         fromService:
           type: web
           name: tradetrack-backend
-          property: host
+          envVarKey: RENDER_EXTERNAL_URL
