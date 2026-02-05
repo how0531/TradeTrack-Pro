@@ -117,12 +117,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
         try {
             // Step 1: Wake up backend if needed
-            setProgressMsg('正在喚醒後端伺服器...');
+            setProgressMsg('正在喚醒後端伺服器 (Waking up backend)...');
             setErrorMsg(null);
             
-            const isAwake = await wakeUpBackend();
-            if (!isAwake) {
-                setErrorMsg('後端服務喚醒失敗，請檢查網路連線或稍後再試。');
+            const wakeResult = await wakeUpBackend();
+            if (!wakeResult.success) {
+                const specificError = wakeResult.error || 'Unknown Error';
+                console.error('[BrokerSettings] Wake Error:', specificError);
+                setErrorMsg(`後端服務喚醒失敗 (${specificError})。請檢查網路連線或稍後再試。`);
                 setIsTesting(false);
                 setProgressMsg('');
                 return;

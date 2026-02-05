@@ -388,9 +388,13 @@ export const pingBackend = async (): Promise<boolean> => {
  * Pre-emptively wake up Render backend if it's sleeping
  * This should be called before attempting login to reduce wait time
  */
-export const wakeUpBackend = async (): Promise<boolean> => {
-    console.log('🔔 [WAKE] Attempting to wake up backend...');
+export const wakeUpBackend = async (): Promise<{ success: boolean; error?: string }> => {
+    console.log(`🔔 [WAKE] Attempting to wake up backend at: ${API_BASE}/health`);
     try {
+        if (!API_BASE) {
+            return { success: false, error: 'API_BASE URL is empty. Check env vars.' };
+        }
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for wake-up
         
@@ -402,16 +406,18 @@ export const wakeUpBackend = async (): Promise<boolean> => {
         
         if (response.ok) {
             console.log('✅ [WAKE] Backend is awake');
-            return true;
+            return { success: true };
         }
-        console.warn('⚠️ [WAKE] Backend responded but not healthy');
-        return false;
+        console.warn(`⚠️ [WAKE] Backend responded with status: ${response.status}`);
+        return { success: false, error: `HTTP ${response.status} ${response.statusText}` };
     } catch (e: any) {
+        const errorMsg = e.message || 'Unknown network error';
         if (e.name === 'AbortError') {
             console.warn('❌ [WAKE] Timeout waiting for backend (30s)');
+            return { success: false, error: 'Timeout (30s)' };
         }
-        console.warn('❌ [WAKE] Failed to wake backend:', e.message);
-        return false;
+        console.warn('❌ [WAKE] Failed to wake backend:', errorMsg);
+        return { success: false, error: errorMsg };
     }
 };
 
