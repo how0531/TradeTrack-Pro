@@ -1,6 +1,6 @@
 
 // [Manage] Last Updated: 2026-01-30
-export const APP_VERSION = 'V2.1.3';
+export const APP_VERSION = 'V2.1.4';
 export const THEME = {
     GOLD: '#C8B085',       
     GOLD_BG: '#2A2824',    

@@ -346,58 +346,74 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const streakPercent = ((maxLossStreak - 2) / (10 - 2)) * 100;
 
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-32 pt-4">
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-48 pt-4">
             {/* CLOUD SYNC */}
             <div className="space-y-2">
                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2"><Cloud size={12}/> {t.syncTitle}</h3>
-                 <div className={`p-6 rounded-2xl relative overflow-hidden border transition-all duration-500 ${currentUser ? 'bg-white/5 border-white/10 backdrop-blur-xl' : 'bg-transparent border-white/5'}`}>
+                 <div className={`rounded-3xl relative overflow-hidden border transition-all duration-500 ${currentUser ? 'bg-[#1C1E22] border-[#C8B085]/20 p-5' : 'bg-transparent border-white/5 p-6'}`}>
+                    {/* Background Decoration */}
                     <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none transform translate-x-1/3 -translate-y-1/3">
-                        <UserCircle size={200} />
+                        <UserCircle size={180} />
                     </div>
+
                     {currentUser ? (
-                        <div className="relative z-10 flex flex-col gap-6">
-                            <div className="flex items-center gap-4">
-                                <div className="relative">
-                                    {currentUser.photoURL ? (
-                                        <img src={currentUser.photoURL} alt="User" className="w-16 h-16 rounded-full border-2 border-white/10 shadow-lg" />
-                                    ) : (
-                                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-white/10 to-transparent flex items-center justify-center border border-white/10"><UserCircle size={32} className="text-slate-400"/></div>
-                                    )}
-                                    <div className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-[#5B9A8B] border-2 border-[#1C1E22] shadow-sm flex items-center justify-center">
-                                        <Check size={8} className="text-[#1C1E22] stroke-[4]" />
-                                    </div>
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-bold text-white tracking-tight">{currentUser.displayName || 'Anonymous Trader'}</h2>
-                                    <p className="text-xs text-slate-500 font-mono mt-0.5">{currentUser.email}</p>
-                                    
-                                    {/* STATUS INDICATOR */}
-                                    <div className="flex flex-col gap-1 mt-2">
-                                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#5B9A8B]/10 border border-[#5B9A8B]/20 self-start">
-                                            <Cloud size={10} className="text-[#5B9A8B]"/>
-                                            <span className="text-[10px] font-bold text-[#5B9A8B] uppercase tracking-wider">{t.synced}</span>
+                        <div className="relative z-10">
+                            <div className="flex items-start justify-between gap-4">
+                                {/* Left: Avatar & Info */}
+                                <div className="flex items-center gap-4 flex-1 min-w-0">
+                                    <div className="relative shrink-0">
+                                        {currentUser.photoURL ? (
+                                            <img src={currentUser.photoURL} alt="User" className="w-14 h-14 rounded-full border-2 border-white/10 shadow-lg" />
+                                        ) : (
+                                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-white/10 to-transparent flex items-center justify-center border border-white/10"><UserCircle size={28} className="text-slate-400"/></div>
+                                        )}
+                                        <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#5B9A8B] border-[3px] border-[#1C1E22] shadow-sm flex items-center justify-center">
+                                            <Check size={8} className="text-[#1C1E22] stroke-[4]" />
                                         </div>
-                                         {lastBackupTime instanceof Date && (
-                                             <span className="text-[9px] text-slate-600 pl-1 font-mono">
-                                                 {t.lastBackup}: {lastBackupTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                             </span>
-                                         )}
+                                    </div>
+                                    
+                                    <div className="flex flex-col min-w-0">
+                                        <h2 className="text-base font-bold text-white tracking-tight truncate">
+                                            {currentUser.displayName || 'Anonymous Trader'}
+                                        </h2>
+                                        <p className="text-[10px] text-slate-500 font-mono truncate max-w-full opacity-80 mb-1.5">
+                                            {currentUser.email}
+                                        </p>
+                                        
+                                        {/* Status Row */}
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#5B9A8B]/10 border border-[#5B9A8B]/20">
+                                                <Cloud size={8} className="text-[#5B9A8B]"/>
+                                                <span className="text-[9px] font-bold text-[#5B9A8B] uppercase tracking-wider">{t.synced}</span>
+                                            </div>
+                                            {lastBackupTime instanceof Date && (
+                                                <span className="text-[9px] text-zinc-600 font-mono">
+                                                    {lastBackupTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
+
+                                {/* Right: Logout Icon Button */}
+                                <button 
+                                    onClick={() => setShowLogoutConfirm(true)} 
+                                    className="shrink-0 p-2.5 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all"
+                                    title={t.logout}
+                                >
+                                    <LogOut size={16} />
+                                </button>
                             </div>
-                            <button onClick={() => setShowLogoutConfirm(true)} className="w-full py-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center justify-center gap-2">
-                                <LogOut size={14} /> {t.logout}
-                            </button>
                         </div>
                     ) : (
-                        <div className="relative z-10 text-center py-3 space-y-3">
-                            <div className="w-10 h-10 mx-auto rounded-full bg-[#C8B085]/10 flex items-center justify-center border border-[#C8B085]/20 shadow-[0_0_20px_rgba(200,176,133,0.1)]"><Cloud size={20} className="text-[#C8B085]"/></div>
+                        <div className="relative z-10 text-center py-1 space-y-4">
+                            <div className="w-12 h-12 mx-auto rounded-full bg-[#C8B085]/10 flex items-center justify-center border border-[#C8B085]/20 shadow-[0_0_20px_rgba(200,176,133,0.1)]"><Cloud size={24} className="text-[#C8B085]"/></div>
                             <div>
                                 <h3 className="text-sm font-bold text-white mb-1">{t.syncTitle}</h3>
-                                <p className="text-[10px] text-slate-400 leading-relaxed px-4 opacity-80">{t.syncDesc}</p>
+                                <p className="text-[10px] text-slate-400 leading-relaxed px-2 opacity-80">{t.syncDesc}</p>
                             </div>
-                            <button onClick={onLogin} className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#C8B085] to-[#A08C65] text-black font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-[#C8B085]/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
-                                <UserCircle size={14} /> {t.loginWithGoogle}
+                            <button onClick={onLogin} className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#C8B085] to-[#A08C65] text-black font-bold uppercase tracking-widest text-[11px] shadow-lg shadow-[#C8B085]/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
+                                <UserCircle size={16} /> {t.loginWithGoogle}
                             </button>
                         </div>
                     )}

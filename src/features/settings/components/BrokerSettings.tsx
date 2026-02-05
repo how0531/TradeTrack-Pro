@@ -233,7 +233,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                          <span className="text-[14px] font-bold tracking-wide text-zinc-100">
                                             {(() => {
                                                 const brokerName = '永豐金';
-                                                const middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '');
+                                                const middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '').replace('分公司', '');
                                                 const name = config.alias || config.brokerUsername || 'User';
                                                 const cleanName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
                                                 return `${brokerName}-${middle} | ${cleanName}`;
@@ -243,21 +243,16 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     
                                         {/* Row 2: Badge + Code/Account */}
                                     <div className="flex items-center gap-3">
-                                        {/* Type Badge */}
-                                        <span className={`px-3 py-0.5 rounded-full text-[10px] font-bold border ${themeClass} shadow-sm whitespace-nowrap w-[52px] flex items-center justify-center`}>
-                                            {typeLabel}
-                                        </span>
-                                        {/* Detail: Code - Account */}
-                                         <span className="text-[12px] font-bold text-zinc-500 font-mono tracking-wide">
-                                            {(() => {
+                                        <span className={`text-[12px] font-bold font-mono tracking-wide ${theme.text}`}>
+                                            [{typeLabel}] {(() => {
                                                 const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 
-                                                // Robust Fallback: if accounts is empty but branchCode looks like a 7-digit ID, use it.
+                                                // Robust Fallback
                                                 const displayAcc = accList[idx] || (codeList[idx]?.length >= 7 ? codeList[idx] : '');
                                                 return displayAcc;
                                             })()}
-                                         </span>
+                                        </span>
                                     </div>
                                 </div>
 
@@ -282,7 +277,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                 <button 
                     onClick={() => handleStartEdit('new')}
-                    className="flex flex-col items-center justify-center gap-2 p-5 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] hover:bg-white/[0.03] text-slate-500 hover:text-[#C8B085] group transition-all"
+                    className="flex flex-col items-center justify-center gap-2 p-5 rounded-2xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/10 text-slate-500 hover:text-[#C8B085] group transition-all"
                 >
                     <div className="flex items-center gap-2">
                         <Plus size={16} className="group-hover:rotate-90 transition-transform"/>
