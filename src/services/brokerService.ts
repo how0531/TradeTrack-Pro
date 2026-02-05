@@ -218,7 +218,23 @@ export const validateBrokerConnection = async (config: BrokerConfig): Promise<bo
     return true;
 };
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
+// Enhanced API Configuration for Cloud Deployment
+const getApiBase = () => {
+    const env = (import.meta as any).env;
+    // 1. Priority: Full URL explicitly set
+    if (env?.VITE_API_URL && env.VITE_API_URL.startsWith('http')) {
+        return env.VITE_API_URL;
+    }
+    // 2. Fallback: Hostname provided by Render (force HTTPS)
+    if (env?.VITE_API_HOST) {
+        return `https://${env.VITE_API_HOST}`;
+    }
+    // 3. Localhost fallback
+    return '';
+};
+
+const API_BASE = getApiBase();
+console.log('🔗 [CONFIG] API Base URL:', API_BASE || '(Local/Relative)');
 
 const BRANCH_MAP: Record<string, string> = {
     "9A95": "經紀部",

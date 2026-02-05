@@ -22,6 +22,11 @@ services:
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     envVars:
+      - key: VITE_API_HOST
+        fromService:
+          type: web
+          name: tradetrack-backend
+          property: host
       - key: VITE_API_URL
         fromService:
           type: web
