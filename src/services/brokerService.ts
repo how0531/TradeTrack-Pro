@@ -274,6 +274,7 @@ export interface BrokerProfile {
     username?: string;
     environment?: 'production' | 'simulation';
     apiKeyHint?: string;
+    accountId?: string; // Individual account ID for single account login
     accounts?: { branch_code: string, branch_name: string, account_id: string, account_type?: string }[];
 }
 
@@ -535,7 +536,8 @@ export const fetchBrokerProfile = async (
                 branch: branchName,
                 username: result.username,
                 environment: result.environment as any,
-                apiKeyHint: result.apiKeyHint
+                apiKeyHint: result.apiKeyHint,
+                accountId: result.account_id || result.accountId // Backend may return account_id or accountId
             };
 
         } catch (fetchError: any) {

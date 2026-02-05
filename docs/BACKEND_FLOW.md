@@ -1,0 +1,260 @@
+# TradeTrack 後台連接完整路徑圖
+
+> 本文檔說明從後台喚醒、券商登入、取得資料的完整流程,包含成功與失敗路徑。
+
+---
+
+## 📊 流程總覽 (Comprehensive Flow)
+
+```mermaid
+graph TB
+    Start([使用者觸發操作]) --> Choice{操作類型}
+
+    Choice -->|券商登入<br/>BrokerSettings| LoginFlow[登入流程]
+    Choice -->|擷取損益<br/>SyncDateModal| SyncFlow[同步流程]
+
+    %% === 登入流程 (Login Flow) ===
+    LoginFlow --> L1[Step 1: 檢查後台狀態<br/>validateBackendStatus]
+
+    L1 --> L1_Check{後台狀態?}
+    L1_Check -->|ready ✅| L2
+    L1_Check -->|server_only ⚠️| L1_Warning[顯示: API 異常]
+    L1_Check -->|offline ❌| L1_Offline[顯示: 離線]
+    L1_Warning --> L1_Manual{使用者手動喚醒?}
+    L1_Offline --> L1_Manual
+    L1_Manual -->|是| L1_Wake[執行 wakeUpBackend]
+    L1_Manual -->|否| LoginEnd([結束])
+
+    L1_Wake --> L1_Wake_Result{喚醒成功?}
+    L1_Wake_Result -->|是| L2
+    L1_Wake_Result -->|否 30s timeout| L1_Error[錯誤: 後端服務喚醒失敗]
+    L1_Error --> LoginEnd
+
+    L2[Step 2: 呼叫 fetchBrokerProfile<br/>傳送憑證驗證]
+    L2 --> L2_Retry[重試機制 retryWithBackoff<br/>最多 3 次, 指數退避]
+
+    L2_Retry --> L2_Result{API 回應?}
+
+    L2_Result -->|400 驗證錯誤| L2_Error1[錯誤: 缺少必要憑證]
+    L2_Result -->|401/403| L2_Error2[錯誤: API Key 無效]
+    L2_Result -->|Network Error| L2_Error3[錯誤: 後端啟動中, 請等 30 秒]
+    L2_Result -->|200 + multiple_accounts| L2_Multi[顯示帳號選擇Modal]
+    L2_Result -->|200 + success| L2_Success
+
+    L2_Error1 --> LoginEnd
+    L2_Error2 --> LoginEnd
+    L2_Error3 --> L2_Auto[自動執行 pingBackend<br/>嘗試喚醒]
+    L2_Auto --> LoginEnd
+
+    L2_Multi --> L2_Multi_Select{使用者選擇帳號}
+    L2_Multi_Select -->|確認| L2_Multi_Confirm[再次呼叫 fetchBrokerProfile<br/>帶入選定帳號]
+    L2_Multi_Select -->|取消| LoginEnd
+    L2_Multi_Confirm --> L2_Multi_Result{結果?}
+    L2_Multi_Result -->|成功| L2_Success
+    L2_Multi_Result -->|失敗| LoginEnd
+
+    L2_Success[Step 3: 儲存設定<br/>isConnected=true<br/>branchCode, username 等]
+    L2_Success --> LoginComplete([✅ 登入完成])
+
+    %% === 同步流程 (Sync Flow) ===
+    SyncFlow --> S0[載入已儲存的券商設定<br/>loadConfigsWithOptimisticUpdate]
+
+    S0 --> S0_Cache{快取存在?}
+    S0_Cache -->|是 5分鐘內| S0_Show[立即顯示快取資料]
+    S0_Cache -->|否| S0_LS[從 localStorage 載入]
+    S0_Show --> S0_Ping
+    S0_LS --> S0_Ping[背景執行 pingBackend<br/>檢查後台健康狀態]
+
+    S0_Ping --> S1[使用者選擇日期與帳號]
+
+    S1 --> S1_Manual{手動喚醒?}
+    S1_Manual -->|是| S1_Wake[執行 wakeUpBackend]
+    S1_Manual -->|否| S2
+    S1_Wake --> S2
+
+    S2[Step 1: 點擊擷取]
+    S2 --> S2_Anim[啟動階段式載入動畫<br/>正在連接券商 API...]
+
+    S2_Anim --> S3[Step 2: 呼叫 fetchBrokerPnl<br/>多帳號分組請求]
+
+    S3 --> S3_Loop{遍歷每個帳號}
+    S3_Loop --> S3_Fetch[發送 POST /api/broker/pnl<br/>payload: apiKey, dates, branchCode, type]
+
+    S3_Fetch --> S3_Result{API 回應?}
+
+    S3_Result -->|200 + details| S3_Store[儲存交易資料<br/>標記 portfolioId]
+    S3_Result -->|400/401| S3_Error1[錯誤: 憑證無效]
+    S3_Result -->|500| S3_Error2[錯誤: 後端處理錯誤]
+    S3_Result -->|Network/Timeout| S3_Fallback[回退到模擬模式<br/>顯示示範資料]
+
+    S3_Error1 --> SyncEnd([❌ 同步失敗])
+    S3_Error2 --> SyncEnd
+    S3_Fallback --> S3_FallbackNote[註記: 僅示範用途<br/>實際請修復連線]
+    S3_FallbackNote --> S4
+
+    S3_Store --> S3_More{還有其他帳號?}
+    S3_More -->|是| S3_Loop
+    S3_More -->|否| S4
+
+    S4[Step 3: 資料處理]
+    S4 --> S4_Merge{autoMerge 啟用?}
+    S4_Merge -->|是| S4_MergeLogic[合併同 orderNo 交易<br/>計算加權平均價]
+    S4_Merge -->|否| S4_Dup
+    S4_MergeLogic --> S4_Dup
+
+    S4_Dup[重複交易檢測<br/>比對: 日期+標的+損益]
+    S4_Dup --> S4_Mark[標記重複項目<br/>預設不勾選]
+
+    S4_Mark --> S4_Display[Step 4: 顯示交易清單<br/>供使用者確認]
+
+    S4_Display --> S4_User{使用者操作?}
+    S4_User -->|確認匯入| S4_Import[onSuccess 回呼<br/>將勾選項目加入系統]
+    S4_User -->|取消| SyncEnd
+
+    S4_Import --> SyncComplete([✅ 同步完成])
+
+    style LoginComplete fill:#C8B085,stroke:#A08C65,color:#000
+    style SyncComplete fill:#5B9A8B,stroke:#2C5F54,color:#000
+    style L1_Error fill:#D05A5A,stroke:#A04040,color:#fff
+    style L2_Error1 fill:#D05A5A,stroke:#A04040,color:#fff
+    style L2_Error2 fill:#D05A5A,stroke:#A04040,color:#fff
+    style L2_Error3 fill:#D05A5A,stroke:#A04040,color:#fff
+    style S3_Error1 fill:#D05A5A,stroke:#A04040,color:#fff
+    style S3_Error2 fill:#D05A5A,stroke:#A04040,color:#fff
+    style S3_Fallback fill:#FFA500,stroke:#CC8400,color:#000
+```
+
+---
+
+## 🔑 關鍵元件說明
+
+### 1️⃣ 後台健康檢查 (Backend Health Check)
+
+#### 函數: `validateBackendStatus()`
+
+- **位置**: `src/services/brokerService.ts:285`
+- **流程**:
+  1. 發送 `GET /health` (3 秒 timeout)
+  2. 若成功,再發送空 payload 至 `POST /api/broker/profile`
+  3. 根據回應狀態碼判斷:
+     - `400` (Bad Request) → `ready` (API 正常運作)
+     - `404` (Not Found) → `server_only` (部署不完整)
+     - 其他有效回應 → `ready`
+     - Timeout/Network Error → `offline`
+
+#### 呼叫時機:
+
+- `BrokerSettings` 開啟編輯 Modal 時 (useEffect)
+- 使用者點擊「手動喚醒」按鈕
+
+---
+
+### 2️⃣ 後台喚醒 (Backend Wakeup)
+
+#### 函數: `wakeUpBackend()`
+
+- **位置**: `src/services/brokerService.ts:374`
+- **超時時間**: 30 秒
+- **用途**: Render free tier 會自動休眠,此函數用於喚醒服務
+
+#### 錯誤處理:
+
+- 若 30 秒內無回應 → 回傳 `false`
+- 顯示錯誤訊息:「後端服務喚醒失敗,請檢查網路連線」
+
+---
+
+### 3️⃣ 券商登入 (Broker Login)
+
+#### 函數: `fetchBrokerProfile()`
+
+- **位置**: `src/services/brokerService.ts:434`
+- **重試機制**: `retryWithBackoff` (最多 3 次,指數退避 1s/2s/5s)
+- **進度回呼**: `onProgress(message)` 顯示即時狀態
+
+#### 步驟 (BrokerSettings.tsx):
+
+1. **簽署 API 風險預告同意書** (外部連結)
+2. **取得 API Key 與憑證** (外部連結)
+3. **輸入用戶資訊**:
+   - 身分證字號 (personId)
+   - API Key
+   - Secret Key
+   - 連線環境 (production/simulation)
+4. **匯入憑證**:
+   - 上傳 `.pfx` 檔案 → Base64 編碼
+   - 或輸入絕對路徑 (本地開發)
+   - 憑證密碼 (預設為身分證字號)
+
+#### 回應處理:
+
+- **`status: 'multiple_accounts'`**: 顯示帳號選擇 Modal
+- **`status: 'success'`**: 儲存 `branchCode`, `username`, `isConnected=true`
+- **`status: 'error'`**: 顯示錯誤訊息
+
+---
+
+### 4️⃣ 損益資料擷取 (PnL Fetch)
+
+#### 函數: `fetchBrokerPnl()`
+
+- **位置**: `src/services/brokerService.ts:29`
+- **多帳號支援**: 根據 `branchCode` 和 `accountType` (S/F) 篩選
+
+#### 資料處理流程 (SyncDateModal.tsx):
+
+1. **合併分筆交易** (autoMerge 啟用時):
+   - 相同 `orderNo` + 相同標的 → 合併
+   - 計算加權平均價格
+2. **重複檢測**:
+   - 比對條件: 相同日期 + 相同標的 + 相同損益(±1)
+   - 重複項目預設不勾選,但仍顯示供使用者決定
+3. **帳號智慧匹配**:
+   - 根據分公司名稱(如「期貨」)自動配對對應的 Portfolio
+   - 使用者可手動調整目標 Portfolio
+
+#### Fallback 機制:
+
+- 若 API 無回應 → 切換到模擬模式
+- 回傳預寫的示範資料 (永豐金、台積電等)
+- 顯示警告:「僅示範用途,實際請修復連線」
+
+---
+
+## ❌ 常見錯誤與處理
+
+| 錯誤情境                   | 顯示訊息                                                 | 處理方式                                 |
+| -------------------------- | -------------------------------------------------------- | ---------------------------------------- |
+| 後台喚醒失敗 (30s timeout) | 「後端服務喚醒失敗,請檢查網路連線或稍後再試」            | 使用者需等待或檢查網路                   |
+| API Key 無效               | 「API Key 無效或不存在,請檢查憑證設定」                  | 重新檢查 SettingsView 中的憑證           |
+| 缺少必要憑證               | 「登入失敗:缺少必要憑證資訊」                            | 檢查 personId, apiKey, apiSecret, caPath |
+| Network Error (連線中斷)   | 「連線失敗:後端服務可能正在啟動中,請稍候 30 秒再試一次」 | 自動執行 `pingBackend()` 嘗試喚醒        |
+| 環境不符                   | 「僅支援正式環境 (Production)」                          | 切換環境至 production                    |
+| PnL API 空值回應           | 「後端回應格式錯誤 (Invalid JSON)」                      | 檢查後端服務狀態                         |
+| 損益資料為空               | 「此區間無交易紀錄」                                     | 正常回應,更換日期範圍                    |
+
+---
+
+## 🎨 UI 狀態指示器
+
+### BrokerSettings 後台狀態燈號:
+
+- 🟢 **已連線** (`ready`): 綠色圓點 + shadow
+- 🟡 **API 異常** (`server_only`): 黃色圓點
+- 🔴 **離線** (`offline`): 紅色圓點
+- ⚪ **喚醒中** (`checking`): 灰色圓點 + pulse 動畫
+
+### SyncDateModal 後台狀態按鈕:
+
+- 🟢 **已連線 (ONLINE)**: 綠色背景 + Wifi icon
+- 🔴 **喚醒後端 (WAKE UP)**: 紅色背景 + Power icon + 可點擊
+- ⚪ **連線中...**: 灰色背景 + RefreshCw (spin)
+
+---
+
+## 🔗 相關檔案
+
+- **後台服務**: [`src/services/brokerService.ts`](file:///src/services/brokerService.ts)
+- **登入介面**: [`src/features/settings/components/BrokerSettings.tsx`](file:///src/features/settings/components/BrokerSettings.tsx)
+- **同步介面**: [`src/components/modals/SyncDateModal.tsx`](file:///src/components/modals/SyncDateModal.tsx)
+- **環境設定**: [`file:///.env`](file:///.env)

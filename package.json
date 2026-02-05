@@ -1,7 +1,7 @@
 {
   "name": "tradetrack-pro",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,8 @@
     "test": "vitest"
   },
   "dependencies": {
+    "dexie": "^4.3.0",
+    "dexie-react-hooks": "^4.2.0",
     "firebase": "^10.8.0",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.344.0",

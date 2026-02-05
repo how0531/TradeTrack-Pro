@@ -303,7 +303,15 @@ function MainApp() {
                 onClose={() => setIsModalOpen(false)} 
                 form={form} 
                 setForm={setForm} 
-                onSubmit={(e: React.FormEvent) => { e.preventDefault(); actions.saveTrade(form, editingId); setIsModalOpen(false); }} 
+                onSubmit={(e: React.FormEvent) => { 
+                    e.preventDefault(); 
+                    // Calculate PnL from amount and type
+                    const amount = parseFloat(form.amount || '0');
+                    const pnl = form.type === 'profit' ? Math.abs(amount) : -Math.abs(amount);
+                    const tradeToSave = { ...form, pnl };
+                    actions.saveTrade(tradeToSave, editingId); 
+                    setIsModalOpen(false); 
+                }} 
                 isEditing={!!editingId} 
             />
 

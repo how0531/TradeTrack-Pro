@@ -1,13 +1,29 @@
 services:
+  # 1. Backend Service (Python/Flask)
   - type: web
     name: tradetrack-backend
     plan: free
     env: python
     rootDir: .
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT --timeout 120 --log-level info backend.app:app
+    startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT backend.app:app
     envVars:
       - key: PYTHONPATH
         value: .
       - key: PYTHON_VERSION
         value: 3.10.0
+
+  # 2. Frontend Site (Static/Vite)
+  - type: static
+    name: tradetrack-frontend
+    plan: free
+    env: static
+    rootDir: .
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: tradetrack-backend
+          property: host

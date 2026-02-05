@@ -141,35 +141,100 @@ const CustomPeakDot = ({ cx, cy, payload, dataLength }: any) => {
 const StrategyBubble = (props: any) => {
     const { cx, cy, payload, size, onSelect } = props;
     if (!cx || !cy) return null;
-    const radius = Math.sqrt(size || 0) * 0.45 + 4; 
+    
+    const radius = Math.sqrt(size || 0) * 0.25 + 3; 
     const isProfit = payload.pnl > 0;
     const fillColor = isProfit ? THEME.RED : THEME.GREEN;
-    const padding = 8;
+    
+    // 使用父組件計算的 Force-Directed 位置
+    const labelX = cx + (payload.labelOffsetX || 0);
+    const labelY = cy + (payload.labelOffsetY || 0);
+    
+    // 決定對齊方式
     let textAnchor: 'start' | 'middle' | 'end' = 'middle';
-    let labelX = cx;
-    let labelY = cy - radius - padding;
-    if (labelY < 15) {
-        labelY = cy + radius + padding + 10;
-    }
-    if (cx < 60) {
-        textAnchor = 'start';
-        labelX = cx - (radius * 0.3);
-    } else if (cx > 260) { 
+    if (labelX < cx - 5) {
         textAnchor = 'end';
-        labelX = cx + (radius * 0.3);
+    } else if (labelX > cx + 5) {
+        textAnchor = 'start';
     }
+    
     const label = (payload.name || '').split('_')[0];
+    
+    // 計算實際距離
+    const actualDistance = Math.sqrt(Math.pow(labelX - cx, 2) + Math.pow(labelY - cy, 2));
+    const baseDistance = radius + 20;
+    
+    // 智慧引線判斷：距離 > 基礎距離 * 1.2
+    // 在緊湊模式下，只有被明顯推開時才顯示引線
+    const needsLeaderLine = actualDistance > radius + 15;
+    
+    // 引線起點（圓圈邊緣）
+    const lineAngle = Math.atan2(labelY - cy, labelX - cx);
+    const lineStartX = cx + Math.cos(lineAngle) * radius;
+    const lineStartY = cy + Math.sin(lineAngle) * radius;
+    
+    // 使用動態字體大小
+    const fontSize = payload.dynamicFontSize || 10;
 
     return (
         <g onClick={() => onSelect && onSelect(payload.name)} style={{ cursor: 'pointer' }} className="group">
-            <circle cx={cx} cy={cy} r={radius} fill={fillColor} fillOpacity={0.85} stroke={fillColor} strokeWidth={1} className="transition-all duration-300 group-hover:fill-opacity-100 group-hover:stroke-white group-hover:stroke-[2px]" />
-            <text x={labelX} y={labelY} textAnchor={textAnchor} fill="#E0E0E0" fontSize={10} fontWeight="700" style={{ paintOrder: 'stroke', stroke: '#000000', strokeWidth: '3px', strokeLinecap: 'round', strokeLinejoin: 'round', pointerEvents: 'none', userSelect: 'none', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>{label}</text>
+            {/* 氣泡 */}
+            <circle 
+                cx={cx} 
+                cy={cy} 
+                r={radius} 
+                fill={fillColor} 
+                fillOpacity={0.85} 
+                stroke={fillColor} 
+                strokeWidth={1} 
+                className="transition-all duration-300 group-hover:fill-opacity-100 group-hover:stroke-white group-hover:stroke-[2px]" 
+            />
+            
+            {/* 引線（僅在需要時顯示） */}
+            {needsLeaderLine && (
+                <line
+                    x1={lineStartX}
+                    y1={lineStartY}
+                    x2={labelX}
+                    y2={labelY - 8} // 呼吸空間：不要直接碰到文字 (5 -> 8)
+                    stroke="#E0E0E0"
+                    strokeWidth={1}
+                    strokeOpacity={actualDistance < radius + 30 ? 0.1 : 0.3} // 動態隱形：距離近幾乎看不見
+                    strokeDasharray="1,2" // 極細虛線：更精緻的視覺感
+                    className="transition-all duration-300 group-hover:stroke-opacity-80 group-hover:stroke-[1.5px]"
+                    style={{ pointerEvents: 'none' }}
+                />
+            )}
+            
+            {/* 標籤文字（動態字體大小 + 視覺層次） */}
+            <text 
+                x={labelX} 
+                y={labelY} 
+                textAnchor={textAnchor} 
+                fill="#E0E0E0" 
+                fillOpacity={payload.labelOpacity || 1.0}
+                fontSize={fontSize}
+                fontWeight={payload.pnlLevel === 'large' ? '800' : '700'}
+                style={{ 
+                    paintOrder: 'stroke', 
+                    stroke: '#000000', 
+                    strokeWidth: '3px', 
+                    strokeLinecap: 'round', 
+                    strokeLinejoin: 'round', 
+                    pointerEvents: 'none', 
+                    userSelect: 'none', 
+                    filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' 
+                }}
+            >
+                {label}
+            </text>
         </g>
     );
 };
 
 const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { name: string; stat: StrategyStat }[], onSelect: (name: string) => void, lang: Lang, hideAmounts: boolean }) => {
     const t = I18N[lang] || I18N['zh'];
+    
     const chartData = useMemo(() => {
         return data.map((d) => ({
             name: d.name,
@@ -186,28 +251,121 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
     // Detect Max Finite Y for scaling
     const finiteYValues = chartData.map(d => d.y).filter(y => isFinite(y));
     const maxFiniteY = finiteYValues.length > 0 ? Math.max(...finiteYValues) : 0;
-    // Cap at reasonably high value (e.g. max * 1.5) or default 10 if all are infinite/zero
     const axisMaxY = Math.max(maxFiniteY * 1.5, 5); 
 
-    // Remap Infinite Y for Plotting
-    const plottedData = chartData.map(d => ({
-        ...d,
-        yPlot: isFinite(d.y) ? d.y : axisMaxY, // Plot at the very top if infinite
-        isInfinite: !isFinite(d.y) // Flag for tooltip
-    }));
+    // Force-Directed Layout: 自動分散標籤防止重疊
+    const plottedData = useMemo(() => {
+        // 1. 初始化標籤位置（使用角度分散）
+        const initialData = chartData.map((d, idx) => {
+            const radius = Math.sqrt(d.z || 0) * 0.25 + 3;
+            
+            // 視覺層次：根據 PnL 大小分級
+            const pnlLevel = d.z > 100000 ? 'large' : d.z > 50000 ? 'medium' : 'small';
+            const fontSize = pnlLevel === 'large' ? 11 : pnlLevel === 'medium' ? 10 : 9;
+            const labelOpacity = pnlLevel === 'large' ? 1.0 : pnlLevel === 'medium' ? 0.95 : 0.85;
+            
+            // 初始角度（均勻分散）
+            const angleDirections = Math.max(32, chartData.length); // 增加到32個方向
+            const angleSpread = (Math.PI * 2) / angleDirections;
+            const angle = idx * angleSpread;
+            
+            // 初始標籤位置
+            const baseDistance = radius + 20;
+            const labelX = Math.cos(angle) * baseDistance;
+            const labelY = Math.sin(angle) * baseDistance;
+            
+            return {
+                ...d,
+                yPlot: isFinite(d.y) ? d.y : axisMaxY,
+                isInfinite: !isFinite(d.y),
+                originalIndex: idx,
+                radius,
+                pnlLevel,
+                dynamicFontSize: fontSize,
+                labelOpacity,
+                // 標籤相對位置（相對於氣泡中心）
+                labelOffsetX: labelX,
+                labelOffsetY: labelY
+            };
+        });
+        
+        // 2. 力模擬：迭代調整標籤位置
+        const simulatedData = [...initialData];
+        const iterations = 50;
+        const repulsionStrength = 8; // 降低互推 (10 -> 8)，允許更親密
+        const attractionStrength = 1.5; // 強力吸附 (1.5)，標籤緊貼氣泡
+        const damping = 0.8; 
+        const gravityStrength = 0.05;
+        
+        for (let iter = 0; iter < iterations; iter++) {
+            simulatedData.forEach((item, i) => {
+                let forceX = 0;
+                let forceY = 0;
+                
+                // A. 排斥力
+                simulatedData.forEach((other, j) => {
+                    if (i === j) return;
+                    const dx = item.labelOffsetX - other.labelOffsetX;
+                    const dy = item.labelOffsetY - other.labelOffsetY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < 30) { // 縮小安全距離 (35 -> 30)
+                        const force = repulsionStrength / (distance + 1);
+                        forceX += (dx / distance) * force;
+                        forceY += (dy / distance) * force;
+                    }
+                });
+                
+                // B. 吸引力
+                const currentDistance = Math.sqrt(
+                    item.labelOffsetX * item.labelOffsetX + 
+                    item.labelOffsetY * item.labelOffsetY
+                );
+                const idealDistance = item.radius + 8; // 緊湊距離 (radius + 8)
+                
+                if (currentDistance > idealDistance) {
+                    const pullBack = (currentDistance - idealDistance) * attractionStrength;
+                    forceX -= (item.labelOffsetX / currentDistance) * pullBack;
+                    forceY -= (item.labelOffsetY / currentDistance) * pullBack;
+                }
+                
+                // C. 重力場
+                const verticalBias = item.labelOffsetY < 0 ? -1 : 1;
+                forceY += verticalBias * gravityStrength;
+                
+                // D. 阻尼
+                item.labelOffsetX += forceX * damping;
+                item.labelOffsetY += forceY * damping;
+                
+                // E. 嚴格邊界限制 (50 -> 40)
+                const maxOffset = 40;
+                item.labelOffsetX = Math.max(-maxOffset, Math.min(maxOffset, item.labelOffsetX));
+                item.labelOffsetY = Math.max(-maxOffset, Math.min(maxOffset, item.labelOffsetY));
+            });
+        }
+        
+        return simulatedData;
+    }, [chartData, axisMaxY]);
 
     return (
         <div className="w-full h-[320px] bg-black/20 rounded-3xl border border-white/5 p-4 relative overflow-hidden backdrop-blur-sm">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.03),_transparent_70%)] pointer-events-none"></div>
             <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <ScatterChart 
+                    margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+                >
                     <XAxis type="number" dataKey="x" name="Win Rate" unit="%" domain={[0, 100]} tick={{ fill: '#525252', fontSize: 10, fontWeight: 500 }} tickLine={false} axisLine={{ stroke: '#333', strokeWidth: 1 }} ticks={[0, 25, 50, 75, 100]} />
                     <YAxis type="number" dataKey="yPlot" name="R:R" domain={[0, axisMaxY]} tick={{ fill: '#525252', fontSize: 10, fontWeight: 500 }} tickLine={false} axisLine={{ stroke: '#333', strokeWidth: 1 }} width={20} />
                     <ZAxis type="number" dataKey="z" range={[64, 2500]} name="PnL Volume" />
                     <Tooltip content={<BubbleTooltip hideAmounts={hideAmounts} lang={lang} />} cursor={{ strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.2)' }} />
                     <ReferenceLine x={50} stroke="#444" strokeOpacity={0.3} strokeDasharray="4 4" />
                     <ReferenceLine y={1.0} stroke="#444" strokeOpacity={0.3} strokeDasharray="4 4" />
-                    <Scatter name="Strategies" data={plottedData} cursor="pointer" shape={(props: any) => <StrategyBubble {...props} onSelect={onSelect} />} />
+                    <Scatter 
+                        name="Strategies" 
+                        data={plottedData} 
+                        cursor="pointer" 
+                        shape={(props: any) => <StrategyBubble {...props} onSelect={onSelect} />} 
+                    />
                 </ScatterChart>
             </ResponsiveContainer>
         </div>

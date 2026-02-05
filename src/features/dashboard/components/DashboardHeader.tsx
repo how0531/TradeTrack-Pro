@@ -208,7 +208,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                     <FrequencySelector currentFreq={frequency} setFreq={setFrequency} lang={lang} />
                     
                     {/* Scrollable controls */}
-                    <div className="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar mask-gradient mask-gradient-right h-full">
+                    <div className="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar h-full">
                         <TimeRangeSelector 
                             currentRange={timeRange} 
                             setRange={(r: any) => { 

@@ -50,6 +50,38 @@
 - **多樣化視圖**：可切換「純數據」、「圖表」或「完整報告」分享。
 - **年份日期統一**：內建美觀的分享卡片模組，全日期格式統一為 `YYYY/MM/DD`。
 
+## 📖 功能頁面 (App Pages)
+
+### 1. 📊 首頁儀表板 (Dashboard)
+
+![Dashboard](./public/screenshots/dashboard_v2.png)
+
+- **核心指標**: 實時顯示 Win Rate, Profit Factor, Expectancy 等關鍵數據。
+- **策略分析**: 針對不同交易策略 (Strategy) 與心理狀態 (Emotion) 進行績效歸因。
+- **淨值曲線**: 可視化帳戶淨值成長與回撤 (Drawdown) 狀況。
+
+### 2. 📅 交易日誌 (Journal)
+
+![Journal](./public/screenshots/journal_v2.png)
+
+- **月曆視圖**: 直觀呈現每日損益熱力圖 (Heatmap)。
+- **連勝連敗**: 自動追蹤目前的連勝/連敗場次 (Streak)，輔助風險控管。
+
+### 3. 📝 歷史紀錄 (Logs)
+
+![Logs](./public/screenshots/logs_v2.png)
+
+- **交易流水帳**: 完整的交易列表，支援篩選與排序。
+- **編輯管理**: 可快速修改或刪除錯誤的交易紀錄。
+
+### 4. ⚙️ 系統設定 (Settings)
+
+![Settings](./public/screenshots/settings_v2.png)
+
+- **券商串接**: 設定 Shioaji API 連線與憑證管理。
+- **資料管理**: 執行雲端備份、還原與匯出功能。
+- **個人化**: 切換語系 (中/英)、設定停損顯色偏好。
+
 ## 🛠 技術棧
 
 - **Frontend**: React (Hooks, Context API)
@@ -101,8 +133,9 @@
 1. **啟動後端**
    進入 `backend` 資料夾並執行 `start.bat`。系統會自動安裝 Python 依賴並啟動 Flask 伺服器。
 
-2. **雲端運行 (24h)**
    如果您希望在電腦關閉時也能運作，請參考 [雲端佈署計畫](./cloud_deployment_plan.md) 將後端佈署至 Render 或 Railway。
+
+   > 📘 **詳細連線流程與錯誤處理**：請參考 [後台連接流程圖](./docs/BACKEND_FLOW.md)。
 
 ## 📄 版本更新
 

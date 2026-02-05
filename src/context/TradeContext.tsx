@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { useLocalData } from '../hooks/useLocalData';
+import { useIndexedDBData } from '../hooks/useIndexedDBData';
 import { useSync } from '../hooks/useSync';
 import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -124,7 +124,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         lossColor, setLossColor, actions: localActions,
         // Exposed setters for Sync
         setTrades, setStrategies, setEmotions, setPortfolios 
-    } = useLocalData();
+    } = useIndexedDBData();
 
     // 4. Preferences (Lifted from App.tsx)
     const [lang, setLang] = useLocalStorage<'zh' | 'en'>('app_lang', 'zh');

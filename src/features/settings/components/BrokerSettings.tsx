@@ -150,7 +150,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 isConnected: true,
                 branch: result.branch || localConfig.branch,
                 branchCode: result.branchCode,
-                accounts: result.branchCode, // Standardize: use branchCode as the primary storage for acc IDs
+                accounts: result.accountId || result.branchCode, // Use accountId if available, fallback to branchCode
                 brokerUsername: result.username,
                 environment: result.environment
             };
@@ -255,12 +255,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 const middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '').replace('分公司', '');
                                                 const name = config.alias || config.brokerUsername || 'User';
                                                 const cleanName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
-                                                return `${brokerName}-${middle} | ${cleanName}`;
+                                                // Removed brackets as per user request
+                                                return `${brokerName}-${middle} | ${cleanName.replace(/【|】/g, '')}`;
                                             })()}
                                          </span>
                                     </div>
                                     
-                                        {/* Row 2: Badge + Code/Account */}
+                                        {/* Row 2: Badge + Account Number */}
                                     <div className="flex items-center gap-3">
                                         <span className={`px-3 py-0.5 rounded-full text-[10px] font-bold border ${theme.fullClass} shadow-sm whitespace-nowrap w-[52px] flex items-center justify-center`}>
                                             {typeLabel}
@@ -270,8 +271,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 
-                                                // Robust Fallback
-                                                const displayAcc = accList[idx] || (codeList[idx]?.length >= 7 ? codeList[idx] : '');
+                                                // Robust Fallback: Try accounts first, then branchCode
+                                                const displayAcc = accList[idx] || codeList[idx] || '';
                                                 return displayAcc;
                                             })()}
                                         </span>
