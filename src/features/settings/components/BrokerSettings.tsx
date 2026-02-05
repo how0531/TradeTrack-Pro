@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw, ChevronRight, ArrowDown } from 'lucide-react';
 import { BrokerConfig } from '../../../types';
-import { fetchBrokerProfile, pingBackend } from '../../../services/brokerService';
+import { fetchBrokerProfile, pingBackend, validateBackendStatus, wakeUpBackend } from '../../../services/brokerService';
 import { useEffect } from 'react';
 import { ACCOUNT_CATEGORY_THEMES } from '../../../constants';
 
@@ -22,11 +22,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const [accountChoices, setAccountChoices] = useState<any[]>([]);
     
     // New state for backend health check
-    const [backendStatus, setBackendStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+    const [backendStatus, setBackendStatus] = useState<'ready' | 'server_only' | 'offline' | 'checking'>('checking');
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     
     // Derived state for button type
     const [errors, setErrors] = useState<Record<string, boolean>>({});
+    const [progressMsg, setProgressMsg] = useState<string>(''); // Track login progress
 
     const emptyConfig: BrokerConfig = {
         id: '',
@@ -40,24 +41,24 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         environment: 'production'
     };
 
-    // 自動喚醒 Render 後端 (由於免費版會休眠)
+    // 自動驗證後端功能 (檢查雲端 API 是否正常運作)
     useEffect(() => {
         if (isEditing) {
             const checkStatus = async () => {
                 setBackendStatus('checking');
-                const isOnline = await pingBackend();
-                setBackendStatus(isOnline ? 'online' : 'offline');
+                const status = await validateBackendStatus();
+                setBackendStatus(status);
             };
             checkStatus();
         } else {
-            setBackendStatus('online'); // Default to online when idle in dev
+            setBackendStatus('ready'); // Default to ready when idle
         }
     }, [isEditing]);
 
     const handleManualPing = async () => {
         setBackendStatus('checking');
-        const isOnline = await pingBackend();
-        setBackendStatus(isOnline ? 'online' : 'offline');
+        const status = await validateBackendStatus();
+        setBackendStatus(status);
     };
 
     const handleStartEdit = (id: string | 'new') => {
@@ -115,7 +116,23 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         setErrors({});
 
         try {
-            const result = await fetchBrokerProfile(localConfig);
+            // Step 1: Wake up backend if needed
+            setProgressMsg('正在喚醒後端伺服器...');
+            setErrorMsg(null);
+            
+            const isAwake = await wakeUpBackend();
+            if (!isAwake) {
+                setErrorMsg('後端服務喚醒失敗，請檢查網路連線或稍後再試。');
+                setIsTesting(false);
+                setProgressMsg('');
+                return;
+            }
+            
+            // Step 2: Attempt login with progress callback
+            setProgressMsg('正在連接券商 API...');
+            const result = await fetchBrokerProfile(localConfig, (msg) => {
+                setProgressMsg(msg);
+            });
             
             if (result.status === 'multiple_accounts' && result.accounts) {
                 setAccountChoices(result.accounts);
@@ -145,6 +162,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             setIsEditing(null);
             setIsTesting(false);
             setAccountChoices([]);
+            setProgressMsg('');
         } catch (error: any) {
             let msg = error?.message || '連線失敗 (Connection failed)';
             if (msg.includes('Failed to fetch')) {
@@ -156,6 +174,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             }
             setErrorMsg(msg);
             setIsTesting(false);
+            setProgressMsg('');
         }
     };
 
@@ -520,16 +539,22 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         <span>喚醒中...</span>
                                     </div>
                                 )}
-                                {backendStatus === 'online' && (
+                                {backendStatus === 'ready' && (
                                     <div className="flex items-center gap-1.5 text-emerald-500">
                                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"/>
-                                        <span>已就緒</span>
+                                        <span>已連線</span>
+                                    </div>
+                                )}
+                                {backendStatus === 'server_only' && (
+                                    <div className="flex items-center gap-1.5 text-amber-500">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"/>
+                                        <span>API 異常</span>
                                     </div>
                                 )}
                                 {backendStatus === 'offline' && (
                                     <div className="flex items-center gap-1.5 text-red-500">
                                         <div className="w-1.5 h-1.5 rounded-full bg-red-500"/>
-                                        <span>離線 (請稍候)</span>
+                                        <span>離線</span>
                                     </div>
                                 )}
                                 <button 
@@ -556,6 +581,26 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 </button>
                             )}
                         </div>
+                        
+                        {/* Progress & Error Messages */}
+                        {(progressMsg || errorMsg) && (
+                            <div className="px-6 pb-4 pt-2">
+                                {progressMsg && (
+                                    <div className="flex items-center gap-2 text-xs text-[#C8B085] animate-pulse">
+                                        <Loader2 size={14} className="animate-spin" />
+                                        <span>{progressMsg}</span>
+                                    </div>
+                                )}
+                                {errorMsg && !progressMsg && (
+                                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                                        <div className="flex items-start gap-2">
+                                            <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
+                                            <span className="text-xs text-red-300">{errorMsg}</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

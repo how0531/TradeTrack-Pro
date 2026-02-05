@@ -278,29 +278,163 @@ export interface BrokerProfile {
 }
 
 /**
- * Pings the backend health endpoint to wake it up (for Render free tier).
+ * Validates backend API readiness by checking both server health and API endpoint availability.
+ * Returns 'ready' if the backend can process API requests, 'server_only' if only health endpoint works,
+ * or 'offline' if completely unreachable.
  */
-export const pingBackend = async (): Promise<boolean> => {
+export const validateBackendStatus = async (): Promise<'ready' | 'server_only' | 'offline'> => {
     const startTime = performance.now();
-    console.log('🔍 [PERF] Ping 開始:', new Date().toISOString());
+    console.log('🔍 [BACKEND_CHECK] Starting comprehensive validation:', new Date().toISOString());
     
     try {
+        // Step 1: Check if server is alive
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-        const response = await fetch(`${API_BASE}/health`, { signal: controller.signal });
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+        const healthResponse = await fetch(`${API_BASE}/health`, { signal: controller.signal });
         clearTimeout(timeoutId);
         
+        if (!healthResponse.ok) {
+            console.warn(`❌ [BACKEND_CHECK] Health check failed with status ${healthResponse.status}`);
+            return 'offline';
+        }
+        
+        console.log(`✅ [BACKEND_CHECK] Server is alive (${(performance.now() - startTime).toFixed(0)}ms)`);
+        
+        // Step 2: Test if API endpoint structure is available
+        const apiCheckTime = performance.now();
+        const apiController = new AbortController();
+        const apiTimeoutId = setTimeout(() => apiController.abort(), 3000);
+        
+        // Send an intentionally invalid request to check if the endpoint exists
+        // We expect a 400 (bad request) response, not 404 (not found)
+        const apiResponse = await fetch(`${API_BASE}/api/broker/profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}), // Empty payload to trigger validation error
+            signal: apiController.signal
+        });
+        
+        clearTimeout(apiTimeoutId);
+        
+        // If we get 400, it means the endpoint exists and is validating input (good!)
+        // If we get 404, the API route doesn't exist
+        // If we get 500, there might be a configuration issue
+        if (apiResponse.status === 404) {
+            console.warn(`⚠️ [BACKEND_CHECK] API endpoint not found - deployment might be incomplete`);
+            return 'server_only';
+        }
+        
+        if (apiResponse.status === 400) {
+            console.log(`✅ [BACKEND_CHECK] API is functional (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
+            return 'ready';
+        }
+        
+        // Try to read the response to get more details
+        const text = await apiResponse.text();
+        let parsed: any = {};
+        try {
+            parsed = text ? JSON.parse(text) : {};
+        } catch(e) {
+            console.warn(`⚠️ [BACKEND_CHECK] Non-JSON response from API: ${text.substring(0, 100)}`);
+        }
+        
+        // If we get a proper error response with message, API is working
+        if (parsed.message || parsed.error) {
+            console.log(`✅ [BACKEND_CHECK] API is responding (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
+            return 'ready';
+        }
+        
+        console.warn(`⚠️ [BACKEND_CHECK] Unexpected API response: ${apiResponse.status}`);
+        return 'server_only';
+        
+    } catch (e: any) {
         const elapsed = performance.now() - startTime;
-        console.log(`✅ [PERF] Ping 完成: ${elapsed.toFixed(0)}ms`, response.ok ? '(成功)' : '(失敗)');
-        return response.ok;
-    } catch (e) {
-        const elapsed = performance.now() - startTime;
-        console.warn(`❌ [PERF] Ping 失敗: ${elapsed.toFixed(0)}ms`);
+        if (e.name === 'AbortError') {
+            console.warn(`❌ [BACKEND_CHECK] Timeout after ${elapsed.toFixed(0)}ms`);
+        } else {
+            console.warn(`❌ [BACKEND_CHECK] Failed: ${e.message} (${elapsed.toFixed(0)}ms)`);
+        }
+        return 'offline';
+    }
+};
+
+/**
+ * Legacy function for backward compatibility - simple health check only
+ */
+export const pingBackend = async (): Promise<boolean> => {
+    const status = await validateBackendStatus();
+    return status !== 'offline';
+};
+
+/**
+ * Pre-emptively wake up Render backend if it's sleeping
+ * This should be called before attempting login to reduce wait time
+ */
+export const wakeUpBackend = async (): Promise<boolean> => {
+    console.log('🔔 [WAKE] Attempting to wake up backend...');
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for wake-up
+        
+        const response = await fetch(`${API_BASE}/health`, { 
+            signal: controller.signal,
+            cache: 'no-cache'
+        });
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+            console.log('✅ [WAKE] Backend is awake');
+            return true;
+        }
+        console.warn('⚠️ [WAKE] Backend responded but not healthy');
+        return false;
+    } catch (e: any) {
+        if (e.name === 'AbortError') {
+            console.warn('❌ [WAKE] Timeout waiting for backend (30s)');
+        }
+        console.warn('❌ [WAKE] Failed to wake backend:', e.message);
         return false;
     }
 };
 
-export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerProfile> => {
+/**
+ * Retry wrapper with exponential backoff
+ */
+const retryWithBackoff = async <T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    onProgress?: (attempt: number, maxRetries: number) => void
+): Promise<T> => {
+    let lastError: any;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            if (onProgress) onProgress(attempt, maxRetries);
+            return await fn();
+        } catch (error: any) {
+            lastError = error;
+            
+            // Don't retry on validation errors (400)
+            if (error.message?.includes('缺少必要') || error.message?.includes('Missing')) {
+                throw error;
+            }
+            
+            if (attempt < maxRetries) {
+                const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5s
+                console.log(`⏳ [RETRY] Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+    
+    throw lastError;
+};
+
+export const fetchBrokerProfile = async (
+    config: BrokerConfig,
+    onProgress?: (message: string) => void
+): Promise<BrokerProfile> => {
     const startTime = performance.now();
     console.log('🔍 [PERF] fetchBrokerProfile 開始:', new Date().toISOString());
     
@@ -317,45 +451,57 @@ export const fetchBrokerProfile = async (config: BrokerConfig): Promise<BrokerPr
                 caPath: config.caPath,
                 caPassword: config.caPassword,
                 caContent: config.caContent,
-                branchCode: config.branchCode, // Send if already selected
-                environment: config.environment || 'production' // ✅ 傳遞環境設定
+                branchCode: config.branchCode,
+                environment: config.environment || 'production'
             };
 
-            const fetchStartTime = performance.now();
-            console.log('🌐 [PERF] 發送 Profile API 請求至:', `${API_BASE}/api/broker/profile`);
-            
-            const response = await fetch(`${API_BASE}/api/broker/profile`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            const fetchElapsed = performance.now() - fetchStartTime;
-            console.log(`📡 [PERF] Profile API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
-
-            const text = await response.text();
-            let result: any;
-            try {
-                result = text ? JSON.parse(text) : {};
-            } catch (e) {
-                console.error('JSON Parse Error:', text.substring(0, 200));
-                throw new Error(`後端回應格式錯誤 (Invalid JSON): ${text.substring(0, 50)}...`);
-            }
-
-            if (!response.ok) {
-                let errMsg = result.message || result.error || `後端錯誤 (${response.status}): ${text.substring(0, 100)}`;
+            // Wrap the fetch call with retry logic
+            const result = await retryWithBackoff(async () => {
+                if (onProgress) onProgress('正在連接券商 API...');
                 
-                // Improve error message for known Shioaji errors
-                if (typeof errMsg === 'string') {
-                    if (errMsg.includes('key:') && errMsg.includes('not exist')) {
-                         errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
-                    } else if (errMsg.includes('Account Not Acceptable')) {
-                         errMsg = '帳號授權失敗，請確認該帳號是否有效 (Account Not Acceptable)';
+                const fetchStartTime = performance.now();
+                console.log('🌐 [PERF] 發送 Profile API 請求至:', `${API_BASE}/api/broker/profile`);
+                
+                const response = await fetch(`${API_BASE}/api/broker/profile`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const fetchElapsed = performance.now() - fetchStartTime;
+                console.log(`📡 [PERF] Profile API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
+
+                const text = await response.text();
+                let result: any;
+                try {
+                    result = text ? JSON.parse(text) : {};
+                } catch (e) {
+                    console.error('JSON Parse Error:', text.substring(0, 200));
+                    throw new Error(`後端回應格式錯誤 (Invalid JSON): ${text.substring(0, 50)}...`);
+                }
+
+                if (!response.ok) {
+                    let errMsg = result.message || result.error || `後端錯誤 (${response.status}): ${text.substring(0, 100)}`;
+                    
+                    // Improve error message for known Shioaji errors
+                    if (typeof errMsg === 'string') {
+                        if (errMsg.includes('key:') && errMsg.includes('not exist')) {
+                             errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                        } else if (errMsg.includes('Account Not Acceptable')) {
+                             errMsg = '帳號授權失敗，請確認該帳號是否有效 (Account Not Acceptable)';
+                        } else if (errMsg.includes('缺少必要欄位')) {
+                             // Validation error - don't retry
+                             throw new Error(errMsg);
+                        }
                     }
+                    
+                    throw new Error(errMsg);
                 }
                 
-                throw new Error(errMsg);
-            }
+                return result;
+            }, 3, (attempt, max) => {
+                if (onProgress) onProgress(`連接中 (嘗試 ${attempt}/${max})...`);
+            });
 
             const totalElapsed = performance.now() - startTime;
             console.log(`✅ [PERF] fetchBrokerProfile 完成: ${totalElapsed.toFixed(0)}ms`);
