@@ -439,10 +439,51 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 className="hidden"
                                                 id="pfx-settings"
                                             />
-                                            <label htmlFor="pfx-settings" className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-slate-400 cursor-pointer hover:bg-black/60 hover:text-white flex justify-between items-center group transition-colors ${errors.caPath ? 'border-red-500 bg-red-500/5' : 'border-white/10'}`}>
-                                                <span className={`truncate pr-2 ${!localConfig.caPath ? 'text-zinc-700' : 'text-slate-400'}`}>{localConfig.caPath || '選擇檔案...'}</span>
-                                                <FolderOpen size={14} className="text-[#C8B085] shrink-0" />
-                                            </label>
+                                            {/* DUAL MODE PFX INPUT */}
+                                            {!localConfig.caContent ? (
+                                                <div className="relative group">
+                                                    <FileKey className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" size={14} />
+                                                    <input
+                                                        type="text"
+                                                        value={localConfig.caPath || ''}
+                                                        onChange={(e) => {
+                                                            handleChange('caPath', e.target.value);
+                                                            if (localConfig.caContent) handleChange('caContent', '');
+                                                        }}
+                                                        placeholder={lang === 'zh' ? "輸入絕對路徑 (C:\\ekey\\...) 或上傳" : "Enter absolute path or upload"}
+                                                        className={`w-full bg-black/40 border rounded-xl px-4 py-3 pl-10 text-xs font-mono text-slate-300 focus:border-[#C8B085]/50 focus:outline-none transition-colors placeholder:text-zinc-700 ${errors.caPath ? 'border-red-500 bg-red-500/5' : 'border-white/10'}`}
+                                                    />
+                                                    <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                                        <label 
+                                                            htmlFor="pfx-settings" 
+                                                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer border border-white/5 transition-all flex items-center gap-1 group/btn"
+                                                            title={lang === 'zh' ? "選取檔案" : "Select File"}
+                                                        >
+                                                            <FolderOpen size={12} className="text-[#C8B085] group-hover/btn:scale-110 transition-transform" />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="relative group">
+                                                    <div className={`w-full bg-[#C8B085]/10 border border-[#C8B085]/30 rounded-xl px-4 py-3 text-xs font-mono text-[#C8B085] flex justify-between items-center`}>
+                                                        <div className="flex items-center gap-2 truncate">
+                                                            <Check size={14} />
+                                                            <span className="truncate">{localConfig.caPath}</span>
+                                                        </div>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                handleChange('caPath', '');
+                                                                handleChange('caContent', '');
+                                                            }}
+                                                            className="p-1 hover:bg-black/20 rounded-full transition-colors"
+                                                            title="Clear"
+                                                        >
+                                                            <X size={14} className="text-[#C8B085]/70 hover:text-[#C8B085]" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex flex-col gap-2">
                                             <div className="flex justify-between items-center">
