@@ -157,44 +157,64 @@ def login_and_fetch_pnl(
                 log(f"Fetching PnL for {target_account.account_id} ({category})")
                 
                 # 🔧 RETRY LOGIC: Handle transient API failures
-                max_retries = 3
-                pnl_data = []
+                # 🔧 CONSENSUS STRATEGY: Fetch multiple times and pick the best result
+                # Shioaji API is known to return partial data under load.
+                # We fetch 2 times (or more if needed) and use the dataset with the MOST records.
                 
-                for attempt in range(max_retries):
+                candidates = []
+                max_attempts = 2  # Fetch at least twice to compare
+                log(f"🔄 [Consensus] Starting consensus fetch (attempts={max_attempts})...")
+
+                for attempt in range(max_attempts):
                     try:
-                        pnl_data = api.list_profit_loss(target_account, start_date, end_date)
+                        current_pnl = api.list_profit_loss(target_account, start_date, end_date)
+                        count = len(current_pnl) if current_pnl else 0
                         
-                        # Basic validation: If data found, break loop
-                        if pnl_data and len(pnl_data) > 0:
-                            log(f"✅ [API Success] Attempt {attempt+1}: Found {len(pnl_data)} records.")
+                        log(f"🔍 [API Fetch] Attempt {attempt+1}/{max_attempts}: Found {count} records.")
+                        
+                        # Save valid result
+                        if current_pnl and count > 0:
+                            candidates.append(current_pnl)
                             
-                            # 🐞 RAW DATA DUMP FOR DEBUGGING (Requested by User)
-                            try:
-                                dump_file = os.path.join(os.path.expanduser("~"), f"debug_pnl_raw_{target_account.account_id}_{attempt}.json")
+                        # 🐞 RAW DATA DUMP FOR DEBUGGING
+                        try:
+                            # Only dump if count > 0 or it's the last attempt
+                            if count > 0 or attempt == max_attempts - 1:
+                                dump_file = os.path.join(os.path.expanduser("~"), f"debug_pnl_raw_{target_account.account_id}_att{attempt+1}.json")
                                 import json
-                                # Convert PnlEntry objects to dict for dumping
                                 raw_list = []
-                                for item in pnl_data:
-                                    raw_list.append({k: str(v) for k, v in item.__dict__.items() if not k.startswith('_')})
+                                if current_pnl:
+                                    for item in current_pnl:
+                                        raw_list.append({k: str(v) for k, v in item.__dict__.items() if not k.startswith('_')})
                                 
                                 with open(dump_file, "w", encoding="utf-8") as f:
                                     json.dump(raw_list, f, indent=2, ensure_ascii=False)
-                                log(f"💾 [DEBUG] Raw data dumped to: {dump_file}")
-                            except Exception as dump_e:
-                                log(f"⚠️ [DEBUG] Failed to dump raw data: {dump_e}")
-                            
-                            break
-                        else:
-                            log(f"⚠️ [API Empty] Attempt {attempt+1}: No records found. Retrying...")
-                            time.sleep(1.5) # Wait before retry
-                            
-                    except Exception as loop_e:
-                        log(f"❌ [API Error] Attempt {attempt+1}: {str(loop_e)}")
-                        time.sleep(2)
-                
-                if not pnl_data: 
-                    log(f"❌ [API Failed] After {max_retries} attempts, still no data for {target_account.account_id}")
-                    continue
+                        except Exception as dump_e:
+                            log(f"⚠️ [DEBUG] Failed to dump raw data: {dump_e}")
+
+                        if attempt < max_attempts - 1:
+                            time.sleep(0.8) # Short pause between fetches
+
+                    except Exception as e:
+                        log(f"❌ [API Error] Attempt {attempt+1}: {str(e)}")
+                        time.sleep(1)
+
+                # Decision Logic
+                pnl_data = [] # Default empty
+                if not candidates:
+                    log(f"❌ [API Failed] No data found after {max_attempts} attempts.")
+                else:
+                    # Sort candidates by length (descending)
+                    candidates.sort(key=len, reverse=True)
+                    pnl_data = candidates[0]
+                    
+                    # Check for inconsistency
+                    lengths = [len(c) for c in candidates]
+                    if len(set(lengths)) > 1:
+                         log(f"⚠️ [API Inconsistency] Detected different record counts: {lengths}. Selected best: {len(pnl_data)}")
+                    else:
+                         log(f"✅ [API Stability] All successful fetches returned {len(pnl_data)} records.")
+
                 
                 for item in pnl_data:
                     code = getattr(item, "code", "Unknown")
