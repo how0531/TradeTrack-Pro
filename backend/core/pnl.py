@@ -217,155 +217,149 @@ def login_and_fetch_pnl(
 
                 
                 for item in pnl_data:
-                    code = getattr(item, "code", "Unknown")
-                    realized = float(getattr(item, "pnl", 0))
-                    item_date = str(getattr(item, "date", ""))
-                    if len(item_date) == 8:
-                        item_date = f"{item_date[:4]}-{item_date[4:6]}-{item_date[6:]}"
-                    
-                    raw_qty = int(getattr(item, "quantity", 0))
-                    price = float(getattr(item, "price", 0))
-                    buy_amt = float(getattr(item, "buy_amt", 0))
-                    sell_amt = float(getattr(item, "sell_amt", 0))
-                    
-                    # Share quantity correction for Stocks
-                    if not is_futures and not is_sub:
-                        cond_str = str(getattr(item, "cond", "")).upper()
-                        is_margin = any(x in cond_str for x in ["MARGIN", "SHORT", "融資", "融券"])
-                        if is_margin and 0 < raw_qty < 500: raw_qty *= 1000
-                        elif price > 0 and raw_qty > 0 and (max(buy_amt, sell_amt)) >= 500:
-                             if ((max(buy_amt, sell_amt)) / price) > raw_qty * 800:
-                                 raw_qty *= 1000
-
-                    pid = os.getpid()
-                    log(f"TX RAW [PID:{pid}]: code={code} is_futures={is_futures} name_attr={getattr(item, 'item_name', '')}")
-
-                    # Sanity check: log Contracts state occasionally
-                    if code == "TXFB6" or "Unknown" in code:
-                        try:
-                            f_count = len(api.Contracts.Futures) if hasattr(api.Contracts.Futures, "__len__") else "Unknown"
-                            log(f"SDK STATE [PID:{pid}]: Futures Count={f_count}")
-                        except: pass
-
-                    # Try to get Chinese Name (item_name/name are common in PnL objects)
-                    # Get name (try to extract from contracts API)
-                    name = getattr(item, "name", "")
-                    if name is None: name = ""
-                    name = str(name).strip()
-                    
-                    # 🔧 CRITICAL: Normalize futures names FIRST before SDK lookup
-                    # SDK sometimes returns inconsistent names like "臺股期貨02" vs "台指期"
-                    # Use standard mapping for consistency
-                    FUTURES_STANDARD_NAMES = {
-                        'TXF': '台指期',
-                        'MTX': '小台指',
-                        'TE': '電子期',
-                        'MTE': '小電子期',
-                        'TF': '金融期',
-                        'T5F': '櫃買期',
-                        'UNF': '非金電期',
-                        'GTF': '黃金期',
-                        'XIF': '東證期',
-                        'SP': 'S&P期',
-                        'ND': '那斯達克期',
-                    }
-                    
-                    # For futures, try to find standard name first
-                    if is_futures and len(code) >= 3:
-                        prefix3 = code[:3].upper()
-                        prefix2 = code[:2].upper()
+                    try:
+                        code = getattr(item, "code", "Unknown")
+                        # 🔧 FLOAT PRECISION FIX: Round to 4 decimals
+                        realized = round(float(getattr(item, "pnl", 0)), 4)
+                        item_date = str(getattr(item, "date", ""))
+                        if len(item_date) == 8:
+                            item_date = f"{item_date[:4]}-{item_date[4:6]}-{item_date[6:]}"
                         
-                        if prefix3 in FUTURES_STANDARD_NAMES:
-                            name = FUTURES_STANDARD_NAMES[prefix3]
-                            log(f"✅ [Name Query] Using standard name: {code} ({prefix3}) -> {name}")
-                        elif prefix2 in FUTURES_STANDARD_NAMES:
-                            name = FUTURES_STANDARD_NAMES[prefix2]
-                            log(f"✅ [Name Query] Using standard name: {code} ({prefix2}) -> {name}")
-                    
-                    # 🔧 EXTRA FIX: Handle Chinese variations (e.g. "臺股期貨" -> "台指期")
-                    if "臺股期" in name: 
-                        name = "台指期"
-                        log(f"✅ [Name Norm] Normalized Chinese name: {code} -> 台指期")
-                    elif "小型臺指" in name:
-                        name = "小台指"
-                        log(f"✅ [Name Norm] Normalized Chinese name: {code} -> 小台指")
-                    
-                    # Log query attempt
-                    log(f"🔍 [Name Query] Code: {code}, Type: {'Futures' if is_futures else 'Stock'}, Initial name: '{name}'")
-                    
-                    if not name or name == code:
-                        try:
-                            # 1. Try Direct Indexing (Fastest, supported by many SDK versions)
-                            if is_futures:
-                                try:
-                                    contract = api.Contracts.Futures[code]
-                                    if contract: name = getattr(contract, "name", "")
-                                except: pass
-                            elif is_sub:
-                                try:
-                                    contract = api.Contracts.SubBrokerage[code]
-                                    if contract: name = getattr(contract, "name", "")
-                                except: pass
+                        raw_qty = int(getattr(item, "quantity", 0))
+                        price = round(float(getattr(item, "price", 0)), 4)
+                        buy_amt = round(float(getattr(item, "buy_amt", 0)), 4)
+                        sell_amt = round(float(getattr(item, "sell_amt", 0)), 4)
+                        
+                        # Share quantity correction for Stocks
+                        if not is_futures and not is_sub:
+                            cond_str = str(getattr(item, "cond", "")).upper()
+                            is_margin = any(x in cond_str for x in ["MARGIN", "SHORT", "融資", "融券"])
+                            if is_margin and 0 < raw_qty < 500: raw_qty *= 1000
+                            elif price > 0 and raw_qty > 0 and (max(buy_amt, sell_amt)) >= 500:
+                                 if ((max(buy_amt, sell_amt)) / price) > raw_qty * 800:
+                                     raw_qty *= 1000
+    
+                        pid = os.getpid()
+                        log(f"TX RAW [PID:{pid}]: code={code} is_futures={is_futures}")
+    
+                        # Sanity check: log Contracts state occasionally
+                        if code == "TXFB6" or "Unknown" in code:
+                            try:
+                                f_count = len(api.Contracts.Futures) if hasattr(api.Contracts.Futures, "__len__") else "Unknown"
+                                log(f"SDK STATE [PID:{pid}]: Futures Count={f_count}")
+                            except: pass
+    
+                        # Try to get Chinese Name (item_name/name are common in PnL objects)
+                        name = getattr(item, "name", "")
+                        if name is None: name = ""
+                        name = str(name).strip()
+                        
+                        # 🔧 CRITICAL: Normalize futures names FIRST before SDK lookup
+                        FUTURES_STANDARD_NAMES = {
+                            'TXF': '台指期', 'MTX': '小台指', 'TE': '電子期', 'MTE': '小電子期',
+                            'TF': '金融期', 'T5F': '櫃買期', 'UNF': '非金電期', 'GTF': '黃金期',
+                            'XIF': '東證期', 'SP': 'S&P期', 'ND': '那斯達克期',
+                        }
+                        
+                        # For futures, try to find standard name first
+                        if is_futures and len(code) >= 3:
+                            prefix3 = code[:3].upper()
+                            prefix2 = code[:2].upper()
+                            
+                            if prefix3 in FUTURES_STANDARD_NAMES:
+                                name = FUTURES_STANDARD_NAMES[prefix3]
+                                log(f"✅ [Name Query] Using standard name: {code} ({prefix3}) -> {name}")
+                            elif prefix2 in FUTURES_STANDARD_NAMES:
+                                name = FUTURES_STANDARD_NAMES[prefix2]
+                                log(f"✅ [Name Query] Using standard name: {code} ({prefix2}) -> {name}")
+                        
+                        # 🔧 EXTRA FIX: Handle Chinese variations
+                        if "臺股期" in name: 
+                            name = "台指期"
+                            log(f"✅ [Name Norm] Normalized Chinese name: {code} -> 台指期")
+                        elif "小型臺指" in name:
+                            name = "小台指"
+                            log(f"✅ [Name Norm] Normalized Chinese name: {code} -> 小台指")
+                        
+                        # Log query attempt
+                        # log(f"🔍 [Name Query] Code: {code}, Type: {'Futures' if is_futures else 'Stock'}, Initial name: '{name}'")
+                        
+                        if not name or name == code:
+                            try:
+                                # 1. Try Direct Indexing (Fastest)
+                                if is_futures:
+                                    try:
+                                        contract = api.Contracts.Futures[code]
+                                        if contract: name = getattr(contract, "name", "")
+                                    except: pass
+                                elif is_sub:
+                                    try:
+                                        contract = api.Contracts.SubBrokerage[code]
+                                        if contract: name = getattr(contract, "name", "")
+                                    except: pass
+                                else:
+                                    try:
+                                        contract = api.Contracts.Stocks[code]
+                                        if contract: name = getattr(contract, "name", "")
+                                    except: pass
+    
+                                # 2. Nested lookup if direct fails
+                                if not name or name == code:
+                                    root = None
+                                    if is_futures: root = api.Contracts.Futures
+                                    elif is_sub: root = api.Contracts.SubBrokerage
+                                    
+                                    if root:
+                                        # Fallback 2a: Try guessing category
+                                        if len(code) >= 3:
+                                            cat_guess = code[:3]
+                                            if hasattr(root, cat_guess):
+                                                cat_obj = getattr(root, cat_guess)
+                                                if hasattr(cat_obj, "__getitem__") and code in cat_obj:
+                                                    name = getattr(cat_obj[code], "name", "")
+    
+                                        # Fallback 2b: Exhaustive search
+                                        if not name or name == code:
+                                            for attr in dir(root):
+                                                if attr.startswith("_"): continue
+                                                cat_tree = getattr(root, attr)
+                                                if hasattr(cat_tree, "__getitem__") and code in cat_tree:
+                                                    name = getattr(cat_tree[code], "name", "")
+                                                    break
+                            except Exception as e:
+                                log(f"Lookup Error [PID:{pid}] for {code}: {str(e)}")
+    
+                        # If name found, append to code
+                        if name and name != code:
+                            if code in name:
+                                display_code = name
                             else:
-                                try:
-                                    contract = api.Contracts.Stocks[code]
-                                    if contract: name = getattr(contract, "name", "")
-                                except: pass
-
-                            # 2. Nested lookup if direct fails
-                            if not name or name == code:
-                                root = None
-                                if is_futures: root = api.Contracts.Futures
-                                elif is_sub: root = api.Contracts.SubBrokerage
-                                
-                                if root:
-                                    # Fallback 2a: Try guessing category (TXF for TXFB6)
-                                    if len(code) >= 3:
-                                        cat_guess = code[:3]
-                                        if hasattr(root, cat_guess):
-                                            cat_obj = getattr(root, cat_guess)
-                                            if hasattr(cat_obj, "__getitem__") and code in cat_obj:
-                                                name = getattr(cat_obj[code], "name", "")
-
-                                    # Fallback 2b: Exhaustive search with dir()
-                                    if not name or name == code:
-                                        for attr in dir(root):
-                                            if attr.startswith("_"): continue
-                                            cat_tree = getattr(root, attr)
-                                            if hasattr(cat_tree, "__getitem__") and code in cat_tree:
-                                                name = getattr(cat_tree[code], "name", "")
-                                                break
-                        except Exception as e:
-                            log(f"Lookup Error [PID:{pid}] for {code}: {str(e)}")
-
-                    # If name found, append to code
-                    if name and name != code:
-                        # If name already contains code (e.g. "TXFB6 台指期"), use name as is
-                        if code in name:
-                            display_code = name
+                                display_code = f"{code} {name}"
+                            log(f"✅ [Name Query] Success: {code} -> {name}")
                         else:
-                            display_code = f"{code} {name}"
-                        log(f"✅ [Name Query] Success: {code} -> {name}")
-                    else:
-                        display_code = code
-                        log(f"⚠️ [Name Query] Failed for {code} - Will use code only (Frontend fallback available)")
-                    
-
-                    
-                    details.append({
-                        "date": item_date, 
-                        "code": display_code, 
-                        "price": price, 
-                        "quantity": raw_qty, 
-                        "pnl": realized, 
-                        "orderNo": getattr(item, "dseq", ""),
-                        "category": category,
-                        "buyAmt": buy_amt,
-                        "sellAmt": sell_amt
-                    })
-                    total_pnl += realized
+                            display_code = code
+                            # log(f"⚠️ [Name Query] Failed for {code} - Will use code only")
+                        
+                        details.append({
+                            "date": item_date, 
+                            "code": display_code, 
+                            "price": price, 
+                            "quantity": raw_qty, 
+                            "pnl": realized, 
+                            "orderNo": getattr(item, "dseq", ""),
+                            "category": category,
+                            "buyAmt": buy_amt,
+                            "sellAmt": sell_amt
+                        })
+                        total_pnl += realized
+                    except Exception as item_e:
+                         log(f"❌ [Dropped Item] Critical error processing item {getattr(item, 'code', 'Unknown')}: {item_e}")
+                         continue
             except Exception as e:
                 log(f"Error fetching pnl for {target_account.account_id}: {e}")
+            
+            # Rate limit protection between accounts
+            time.sleep(1.0)
 
         if temp_ca_path and os.path.exists(temp_ca_path):
             try: os.unlink(temp_ca_path)

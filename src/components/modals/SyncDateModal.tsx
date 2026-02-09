@@ -390,7 +390,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         } else {
           // Fallback: Use content-based hash (date + code + pnl + quantity)
           // This ensures same transaction always gets same ID
-          const contentKey = `${d.date}_${stockCode}_${d.pnl.toFixed(2)}_${d.quantity}_${d.price}`;
+          // 🔧 OPTIMIZATION: Use fixed precision for price to match backend (4 decimal places)
+          const contentKey = `${d.date}_${stockCode}_${d.pnl.toFixed(2)}_${d.quantity}_${Number(d.price).toFixed(4)}`;
           stableId = `tx-${contentKey}`;
         }
 
