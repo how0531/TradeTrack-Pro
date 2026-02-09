@@ -74,9 +74,6 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
         e.stopPropagation();
         const today = getLocalDateStr(new Date());
         setEndDate(today);
-        if (startDate && today < startDate) {
-            setStartDate(today);
-        }
     };
 
     return (

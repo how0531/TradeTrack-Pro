@@ -113,7 +113,13 @@ def login_and_fetch_pnl(
                 if not acc_name:
                     acc_name = person_id[:3] + "*****" + person_id[-2:] if person_id else "User"
 
-                bname = BRANCH_MAP.get(bid, "未知分公司") + f" ({atype})"
+                # Get branch name with logging for unknown codes
+                if bid in BRANCH_MAP:
+                    bname = BRANCH_MAP[bid] + f" ({atype})"
+                else:
+                    log(f"⚠️ [BRANCH_MAP] Unknown branch code: {bid} - Please update constants.py")
+                    bname = f"未知分公司[{bid}] ({atype})"
+
                 choices.append({
                     "branch_code": str(bid),
                     "branch_name": str(bname),
@@ -149,9 +155,46 @@ def login_and_fetch_pnl(
                 category = "期貨" if is_futures else ("複委託" if is_sub else "台股")
                 
                 log(f"Fetching PnL for {target_account.account_id} ({category})")
-                pnl_data = api.list_profit_loss(target_account, start_date, end_date)
                 
-                if not pnl_data: continue
+                # 🔧 RETRY LOGIC: Handle transient API failures
+                max_retries = 3
+                pnl_data = []
+                
+                for attempt in range(max_retries):
+                    try:
+                        pnl_data = api.list_profit_loss(target_account, start_date, end_date)
+                        
+                        # Basic validation: If data found, break loop
+                        if pnl_data and len(pnl_data) > 0:
+                            log(f"✅ [API Success] Attempt {attempt+1}: Found {len(pnl_data)} records.")
+                            
+                            # 🐞 RAW DATA DUMP FOR DEBUGGING (Requested by User)
+                            try:
+                                dump_file = os.path.join(os.path.expanduser("~"), f"debug_pnl_raw_{target_account.account_id}_{attempt}.json")
+                                import json
+                                # Convert PnlEntry objects to dict for dumping
+                                raw_list = []
+                                for item in pnl_data:
+                                    raw_list.append({k: str(v) for k, v in item.__dict__.items() if not k.startswith('_')})
+                                
+                                with open(dump_file, "w", encoding="utf-8") as f:
+                                    json.dump(raw_list, f, indent=2, ensure_ascii=False)
+                                log(f"💾 [DEBUG] Raw data dumped to: {dump_file}")
+                            except Exception as dump_e:
+                                log(f"⚠️ [DEBUG] Failed to dump raw data: {dump_e}")
+                            
+                            break
+                        else:
+                            log(f"⚠️ [API Empty] Attempt {attempt+1}: No records found. Retrying...")
+                            time.sleep(1.5) # Wait before retry
+                            
+                    except Exception as loop_e:
+                        log(f"❌ [API Error] Attempt {attempt+1}: {str(loop_e)}")
+                        time.sleep(2)
+                
+                if not pnl_data: 
+                    log(f"❌ [API Failed] After {max_retries} attempts, still no data for {target_account.account_id}")
+                    continue
                 
                 for item in pnl_data:
                     code = getattr(item, "code", "Unknown")
@@ -185,9 +228,50 @@ def login_and_fetch_pnl(
                         except: pass
 
                     # Try to get Chinese Name (item_name/name are common in PnL objects)
-                    name = getattr(item, "item_name", getattr(item, "name", getattr(item, "stock_name", "")))
+                    # Get name (try to extract from contracts API)
+                    name = getattr(item, "name", "")
                     if name is None: name = ""
                     name = str(name).strip()
+                    
+                    # 🔧 CRITICAL: Normalize futures names FIRST before SDK lookup
+                    # SDK sometimes returns inconsistent names like "臺股期貨02" vs "台指期"
+                    # Use standard mapping for consistency
+                    FUTURES_STANDARD_NAMES = {
+                        'TXF': '台指期',
+                        'MTX': '小台指',
+                        'TE': '電子期',
+                        'MTE': '小電子期',
+                        'TF': '金融期',
+                        'T5F': '櫃買期',
+                        'UNF': '非金電期',
+                        'GTF': '黃金期',
+                        'XIF': '東證期',
+                        'SP': 'S&P期',
+                        'ND': '那斯達克期',
+                    }
+                    
+                    # For futures, try to find standard name first
+                    if is_futures and len(code) >= 3:
+                        prefix3 = code[:3].upper()
+                        prefix2 = code[:2].upper()
+                        
+                        if prefix3 in FUTURES_STANDARD_NAMES:
+                            name = FUTURES_STANDARD_NAMES[prefix3]
+                            log(f"✅ [Name Query] Using standard name: {code} ({prefix3}) -> {name}")
+                        elif prefix2 in FUTURES_STANDARD_NAMES:
+                            name = FUTURES_STANDARD_NAMES[prefix2]
+                            log(f"✅ [Name Query] Using standard name: {code} ({prefix2}) -> {name}")
+                    
+                    # 🔧 EXTRA FIX: Handle Chinese variations (e.g. "臺股期貨" -> "台指期")
+                    if "臺股期" in name: 
+                        name = "台指期"
+                        log(f"✅ [Name Norm] Normalized Chinese name: {code} -> 台指期")
+                    elif "小型臺指" in name:
+                        name = "小台指"
+                        log(f"✅ [Name Norm] Normalized Chinese name: {code} -> 小台指")
+                    
+                    # Log query attempt
+                    log(f"🔍 [Name Query] Code: {code}, Type: {'Futures' if is_futures else 'Stock'}, Initial name: '{name}'")
                     
                     if not name or name == code:
                         try:
@@ -241,10 +325,12 @@ def login_and_fetch_pnl(
                             display_code = name
                         else:
                             display_code = f"{code} {name}"
+                        log(f"✅ [Name Query] Success: {code} -> {name}")
                     else:
                         display_code = code
+                        log(f"⚠️ [Name Query] Failed for {code} - Will use code only (Frontend fallback available)")
                     
-                    log(f"Final Name [PID:{pid}] for {code}: {name} -> {display_code}")
+
                     
                     details.append({
                         "date": item_date, 

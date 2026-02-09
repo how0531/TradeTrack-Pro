@@ -24,6 +24,7 @@ import {
   pingBackend,
 } from "../../services/brokerService";
 import { getLocalDateStr, formatDateWithWeekday } from "../../utils/format";
+import { formatSymbolCode } from "../../utils/symbolNames";
 import { CustomDateRangeModal } from "./CustomDateRangeModal";
 import { useClickOutside } from "../../hooks/useClickOutside";
 // No imports needed from SettingsView here
@@ -250,9 +251,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       const startD = new Date(startDate);
       const endD = new Date(endDate);
 
-      // Group selections by (Config ID + Target Portfolio ID)
-      // Key: `configId|targetPortfolioId`
-      const fetchGroups = new Map<string, { config: BrokerConfig, codes: Set<string>, targetPid: string, configId: string }>();
+      // Group selections by (Config ID + Target Portfolio ID + Account Type)
+      // Key: `configId|targetPortfolioId|type`
+      // CRITICAL: Must separate Futures and Stock accounts even from same broker config
+      const fetchGroups = new Map<string, { config: BrokerConfig, codes: Set<string>, targetPid: string, configId: string, type: 'S' | 'F' }>();
       
       console.log('🔍 [DEBUG] Selected Config IDs:', selectedConfigIds);
       console.log('🔍 [DEBUG] Account Portfolio Map:', accountPortfolioMap);
@@ -263,20 +265,26 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           const subIdx = parseInt(subIdxStr || '0', 10);
           const original = configs.find(c => c.id === confId);
           
+          if (!original) return;
+          
+          // 🔍 CRITICAL FIX: Determine account type FIRST based on the specific branch
+          const allBranches = (original.branch || '').split(',');
+          const specificBranchName = allBranches[subIdx] || '';
+          const type: 'S' | 'F' = (specificBranchName.includes('期貨') || specificBranchName.includes('Futures') || specificBranchName.includes('Option')) ? 'F' : 'S';
+          
+          console.log(`🔍 [DEBUG] Account ${key} -> Branch: "${specificBranchName}" -> Type: ${type}`);
+          
           // Determine target portfolio: mapped specific > global target
           let targetPid = accountPortfolioMap[key];
 
           // 🧠 Smart Auto-Detection:
           // If no explicit mapping exists, try to guess based on branch name
-          if (!targetPid && original) {
-               const branches = (original.branch || '').split(',');
-               const branchName = branches[subIdx] || '';
-               
-               if (branchName.includes('期貨') || branchName.includes('Futures') || branchName.includes('Option')) {
+          if (!targetPid) {
+               if (type === 'F') {
                    // Try to find a portfolio named "期貨" or "Futures"
                    const futuresPortfolio = portfolios.find(p => p.name.includes('期貨') || p.name.includes('Futures'));
                    if (futuresPortfolio) {
-                       console.log(`🤖 [SMART] Auto-detected Futures account: ${branchName} -> ${futuresPortfolio.name}`);
+                       console.log(`🤖 [SMART] Auto-detected Futures account: ${specificBranchName} -> ${futuresPortfolio.name}`);
                        targetPid = futuresPortfolio.id;
                        // IMPORTANT: Persist this auto-detection to state so UI dropdown matches
                        setAccountPortfolioMap(prev => ({ ...prev, [key]: futuresPortfolio.id }));
@@ -287,19 +295,19 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           // Fallback to default if still null
           if (!targetPid) targetPid = targetPortfolioId;
 
-          if (original) {
-              const groupKey = `${confId}|${targetPid}`;
-              if (!fetchGroups.has(groupKey)) {
-                  fetchGroups.set(groupKey, { 
-                      config: original, 
-                      codes: new Set(), 
-                      targetPid: targetPid,
-                      configId: original.id 
-                  });
-              }
-              if (code && code !== 'undefined') {
-                  fetchGroups.get(groupKey)!.codes.add(code);
-              }
+          // Group by config + targetPid + type (CRITICAL: type must be part of key)
+          const groupKey = `${confId}|${targetPid}|${type}`;
+          if (!fetchGroups.has(groupKey)) {
+              fetchGroups.set(groupKey, { 
+                  config: original, 
+                  codes: new Set(), 
+                  targetPid: targetPid,
+                  configId: original.id,
+                  type: type  // Store the determined type
+              });
+          }
+          if (code && code !== 'undefined') {
+              fetchGroups.get(groupKey)!.codes.add(code);
           }
       });
 
@@ -307,30 +315,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       
       // Iterate and fetch for each group
       for (const [key, group] of fetchGroups) {
-            const { config, codes, targetPid, configId } = group;
+            const { config, codes, targetPid, configId, type } = group;
             const filterCodeStr = Array.from(codes).join(',');
-            
-            // Infer Account Type for Backend Filtering
-            // CRITICAL FIX: Must check the SPECIFIC branch name corresponding to the filterCode
-            // Do NOT check the whole config.branch string, as it might contain mixed accounts
-            let type: 'S' | 'F' = 'S';
-            const allBranches = (config.branch || '').split(',');
-            const allCodes = (config.branchCode || '').split(',');
-            
-            // Find index of the current filter code
-            const codeIndex = allCodes.findIndex(c => c === filterCodeStr);
-            if (codeIndex !== -1) {
-                const specificBranchName = allBranches[codeIndex] || '';
-                if (specificBranchName.includes('期貨') || specificBranchName.includes('Futures')) {
-                    type = 'F';
-                }
-            } else {
-                // Fallback (should rarely happen if logic is correct)
-                if (config.branch && (config.branch.includes('期貨') || config.branch.includes('Futures'))) {
-                     // Only default to F if we can't match code but keyword exists (risky but fallback)
-                     // better to check if ALL branches are futures?
-                }
-            }
             
             console.log(`🌐 [DEBUG] Fetching for Config: ${config.id}, TargetPID: ${targetPid}, FilterCodes: ${filterCodeStr}, Type: ${type}`);
 
@@ -384,8 +370,25 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           ? `${yieldPct > 0 ? "+" : ""}${yieldPct}%`
           : "0%";
 
+        // 🔧 CRITICAL FIX: Generate STABLE ID based on transaction properties
+        // Instead of using Date.now() which changes every time
+        // Use combination of: orderNo (if available) + date + code + pnl
+        const stockCode = d.code.split(' ')[0]; // Extract pure stock/futures code
+        const orderNo = d.orderNo || '';
+        
+        let stableId: string;
+        if (orderNo && !orderNo.startsWith('unknown')) {
+          // Best case: Use orderNo as primary identifier
+          stableId = `${orderNo}-${d.date}-${stockCode}`;
+        } else {
+          // Fallback: Use content-based hash (date + code + pnl + quantity)
+          // This ensures same transaction always gets same ID
+          const contentKey = `${d.date}_${stockCode}_${d.pnl.toFixed(2)}_${d.quantity}_${d.price}`;
+          stableId = `tx-${contentKey}`;
+        }
+
         return {
-          id: `tx-${Date.now()}-${i}`,
+          id: stableId, // ✅ Now using stable ID
           date: d.date,
           orderNo: d.orderNo || `unknown-${i}`,
           code: d.code,
@@ -553,7 +556,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               size={14}
               className={status === "loading" ? "animate-spin" : ""}
             />
-            {step === 1 ? "匯入設定 (IMPORT SETUP)" : "交易檢核 (REVIEW)"}
+            {step === 1 ? "匯入設定" : "交易檢核"}
           </h3>
           <button
             onClick={onClose}
@@ -573,7 +576,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                   <div className="w-full flex justify-between items-center mb-1.5 px-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                       <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
-                      日期範圍 (DATE RANGE)
+                      日期範圍
                     </label>
                     <div className="flex gap-1">
                       {[5, 10, 20, 30].map((days) => {
@@ -634,7 +637,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                     <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
-                    選擇券商帳號 (SELECT ACCOUNT)
+                    選擇券商帳號
                   </label>
 
                   <button
@@ -659,10 +662,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
                     <span>
                       {backendStatus === "online"
-                        ? "已連線 (ONLINE)"
+                        ? "已連線"
                         : backendStatus === "checking"
                           ? "連線中..."
-                          : "喚醒後端 (WEAK UP)"}
+                          : "喚醒後端"}
                     </span>
                   </button>
                 </div>
@@ -696,7 +699,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                           key={uniqueKey}
                           onClick={() => toggleConfigSelection(config.id, bCode, subIdx)}
                           className={`
-                                    p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all cursor-pointer backdrop-blur-xl backdrop-saturate-150
+                                    relative p-4 rounded-xl border transition-all cursor-pointer backdrop-blur-xl backdrop-saturate-150 group select-none
                                     ${
                                       isSelected
                                         ? "bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05),inset_0_1px_1px_rgba(255,255,255,0.1)]"
@@ -704,71 +707,89 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                     }
                                 `}
                         >
-                           <div className="flex-1 flex flex-col gap-2">
-                               {/* Row 1: Header (Broker - Branch/Type - Name) */}
-                               <div className="flex items-center gap-2">
-                                    <span className={`text-[14px] font-bold tracking-wide ${isSelected ? 'text-white' : 'text-zinc-200'}`}>
-                                       {(() => {
-                                           // Logic: 永豐金 - {Branch or '期貨'} - {Name}
-                                           const brokerName = '永豐金';
-                                           const middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '');
-                                           const name = config.alias || config.brokerUsername || 'User';
-                                           const cleanName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
-                                           return `${brokerName}-${middle} | ${cleanName}`;
-                                       })()}
-                                    </span>
+                           <div className="flex items-center gap-4">
+                               {/* 1. Left Checkbox (New Position) */}
+                               <div 
+                                   className={`shrink-0 w-5 h-5 rounded-[6px] border transition-all flex items-center justify-center ${
+                                       isSelected 
+                                       ? "bg-[#C8B085] border-[#C8B085] shadow-[0_0_8px_rgba(200,176,133,0.4)]" 
+                                       : "bg-transparent border-white/20 group-hover:border-white/40"
+                                   }`}
+                               >
+                                   {isSelected && <Check size={12} className="text-[#14161B] stroke-[4]" />}
                                </div>
-                               {/* Row 2: Badge + Code/Account */}
-                               <div className="flex items-center gap-3">
-                                   {/* Type Badge */}
-                                   <span className={`px-3 py-0.5 rounded-full text-[10px] font-bold border ${typeColorClass} shadow-sm whitespace-nowrap w-[52px] flex items-center justify-center`}>
-                                       {typeLabel}
-                                   </span>
-                                   {/* Detail: Code - Account */}
-                                    <span className="text-[12px] font-bold text-zinc-500 font-mono tracking-wide">
-                                        {(() => {
-                                            const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
-                                            const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
-                                            
-                                            // Robust Fallback: if accounts is empty but branchCode looks like a 7-digit ID, use it.
-                                            const displayAcc = accList[subIdx] || (codeList[subIdx]?.length >= 7 ? codeList[subIdx] : '');
-                                            return displayAcc;
-                                        })()}
-                                    </span>
+
+                               {/* 2. Info Content */}
+                               <div className="flex-1 flex flex-col gap-1 min-w-0">
+                                   <div className="flex items-center gap-2">
+                                        <span className={`text-[12px] font-bold tracking-wide truncate ${isSelected ? 'text-white' : 'text-zinc-200'}`}>
+                                           {(() => {
+                                               const brokerName = '永豐金';
+                                               // 🔧 CRITICAL FIX: Strip redundant broker name from branch text to prevent "永豐金-永豐金-板新"
+                                               let middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '');
+                                               middle = middle.replace('永豐金-', '').replace('永豐金', '').trim();
+                                               
+                                               const name = config.alias || config.brokerUsername || 'User';
+                                               const cleanName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
+                                               return `${brokerName}-${middle} | ${cleanName}`;
+                                           })()}
+                                        </span>
+                                   </div>
+                                   <div className="flex items-center gap-1.5 flex-wrap">
+                                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${typeColorClass} shadow-sm whitespace-nowrap min-w-[48px] w-auto flex items-center justify-center`}>
+                                           {typeLabel}
+                                       </span>
+                                        <span className="text-[10px] font-bold text-zinc-500 font-mono tracking-wide whitespace-nowrap">
+                                            {(() => {
+                                                const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
+                                                const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
+                                                const displayAcc = accList[subIdx] || (codeList[subIdx]?.length >= 7 ? codeList[subIdx] : '');
+                                                return displayAcc;
+                                            })()}
+                                        </span>
+                                   </div>
                                </div>
+
+                               {/* 3. Desktop Dropdown (Right) */}
+                               {isSelected && (
+                                   <div 
+                                     className="hidden sm:block w-[130px] animate-in fade-in zoom-in-95 duration-200"
+                                     onClick={(e) => e.stopPropagation()} 
+                                   >
+                                       <GlassSelect
+                                           value={accountPortfolioMap[uniqueKey] || targetPortfolioId}
+                                           onChange={(val) => {
+                                               setAccountPortfolioMap(prev => ({ ...prev, [uniqueKey]: val }));
+                                           }}
+                                           options={portfolios.map(p => ({ value: p.id, label: p.name }))}
+                                           variant="capsule"
+                                           placeholder="匯入至..."
+                                           align="right"
+                                           className="text-[10px]"
+                                       />
+                                   </div>
+                               )}
                            </div>
 
-                           {/* Right Side Check (Matching Image 4) */}
-                           <div
-                             className={`w-6 h-6 rounded-full border-2 transition-all flex items-center justify-center shrink-0 ${isSelected ? "bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.4)]" : "bg-transparent border-white/10"}`}
-                           >
-                             {isSelected && (
-                               <Check
-                                 size={12}
-                                 className="text-black stroke-[4]"
-                                />
-                             )}
-                           </div>
-
-                          {/* Right Side: Destination Portfolio Selector */}
-                          {isSelected && (
-                              <div 
-                                className="w-full sm:w-[120px] animate-in fade-in slide-in-from-left-2 duration-300 pl-8 sm:pl-0"
-                                onClick={(e) => e.stopPropagation()} 
-                              >
-                                  <GlassSelect
-                                      value={accountPortfolioMap[uniqueKey] || targetPortfolioId}
-                                      onChange={(val) => {
-                                          setAccountPortfolioMap(prev => ({ ...prev, [uniqueKey]: val }));
-                                      }}
-                                      options={portfolios.map(p => ({ value: p.id, label: p.name }))}
-                                      variant="capsule"
-                                      placeholder="選擇匯入帳戶"
-                                      align="right"
-                                      className="text-[10px]"
-                                  />
-                              </div>
-                          )}
+                           {/* 4. Mobile Dropdown (Row 2) */}
+                           {isSelected && (
+                               <div 
+                                 className="sm:hidden mt-3 pt-3 border-t border-white/5 animate-in slide-in-from-top-1 duration-200"
+                                 onClick={(e) => e.stopPropagation()}
+                               >
+                                   <GlassSelect
+                                       value={accountPortfolioMap[uniqueKey] || targetPortfolioId}
+                                       onChange={(val) => {
+                                           setAccountPortfolioMap(prev => ({ ...prev, [uniqueKey]: val }));
+                                       }}
+                                       options={portfolios.map(p => ({ value: p.id, label: p.name }))}
+                                       variant="capsule"
+                                       placeholder="匯入至..."
+                                       align="left"
+                                       className="text-[11px] w-full"
+                                   />
+                               </div>
+                           )}
                       </div>
                       );
                   });
@@ -997,8 +1018,14 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                             <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg border border-white/10 shrink-0">
                               <span className="text-[10px] font-black text-white truncate max-w-[80px] tracking-tight">
                                 {(() => {
-                                    const parts = tx.code.split(" ");
-                                    return parts.length > 1 ? parts.slice(1).join(" ") : parts[0];
+                                    try {
+                                      const formattedCode = formatSymbolCode(tx.code);
+                                      const parts = formattedCode.split(" ");
+                                      return parts.length > 1 ? parts.slice(1).join(" ") : parts[0];
+                                    } catch (error) {
+                                      console.error('[SyncDateModal] formatSymbolCode error:', error);
+                                      return tx.code || 'Unknown';
+                                    }
                                 })()}
                               </span>
                               <div className="w-[1px] h-2.5 bg-white/10 shrink-0" />

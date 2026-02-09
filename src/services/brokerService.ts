@@ -103,17 +103,36 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 branchCode: payload.branchCode // ✅ 顯示分公司代碼
             });
 
+            // 創建 AbortController 以支援取消和超時
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                console.warn('⏱️ [TIMEOUT] 請求超時（120秒）');
+            }, 120000); // 120秒超時
+
             const fetchStartTime = performance.now();
             console.log('🌐 [PERF] 發送 PnL API 請求至:', `${API_BASE}/api/broker/pnl`);
             
-            const response = await fetch(`${API_BASE}/api/broker/pnl`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            const fetchElapsed = performance.now() - fetchStartTime;
-            console.log(`📡 [PERF] PnL API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
+            let response;
+            try {
+                response = await fetch(`${API_BASE}/api/broker/pnl`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal // 添加取消信號
+                });
+                
+                clearTimeout(timeoutId); // 清除超時計時器
+                
+                const fetchElapsed = performance.now() - fetchStartTime;
+                console.log(`📡 [PERF] PnL API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
+            } catch (fetchError: any) {
+                clearTimeout(timeoutId);
+                if (fetchError.name === 'AbortError') {
+                    throw new Error('請求已取消或超時（120秒），請稍後再試');
+                }
+                throw fetchError;
+            }
 
             const text = await response.text();
             let result: any;

@@ -107,6 +107,14 @@ export const useIndexedDBData = () => {
       }
     },
 
+    addPortfolio: async (p: Portfolio) => {
+      await db.portfolios.add(p);
+    },
+
+    deletePortfolio: async (id: string) => {
+      await db.portfolios.delete(id);
+    },
+
     addStrategy: async (s: string) => {
       try {
         await db.strategies.add({ name: s });

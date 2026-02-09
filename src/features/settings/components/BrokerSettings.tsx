@@ -264,11 +264,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     </div>
                                     
                                         {/* Row 2: Badge + Account Number */}
-                                    <div className="flex items-center gap-3">
-                                        <span className={`px-3 py-0.5 rounded-full text-[10px] font-bold border ${theme.fullClass} shadow-sm whitespace-nowrap w-[52px] flex items-center justify-center`}>
+                                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                                        <span className={`px-2 sm:px-3 py-0.5 rounded-full text-[10px] font-bold border ${theme.fullClass} shadow-sm whitespace-nowrap min-w-[52px] w-auto flex items-center justify-center`}>
                                             {typeLabel}
                                         </span>
-                                        <span className="text-[12px] font-bold text-zinc-500 font-mono tracking-wide">
+                                        <span className="text-[12px] font-bold text-zinc-500 font-mono tracking-wide whitespace-nowrap">
                                             {(() => {
                                                 const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -278,17 +278,16 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 return displayAcc;
                                             })()}
                                         </span>
+                                        {config.isConnected && (
+                                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#C8B085]/10 border border-[#C8B085]/20 text-[#C8B085] shadow-[0_0_5px_rgba(200,176,133,0.05)] ml-1">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[#C8B085] shadow-[0_0_5px_rgba(200,176,133,0.8)]" />
+                                                <span className="text-[9px] font-bold tracking-wide opacity-90">已連線</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
                                 <div className="flex items-center gap-4">
-                                    {/* Connection Status Icon (Matching Image 4 Right Side) */}
-                                    {config.isConnected && (
-                                        <div className="w-6 h-6 rounded-full bg-[#C8B085] flex items-center justify-center shadow-[0_0_10px_rgba(200,176,133,0.3)]">
-                                            <Check size={14} className="text-[#1C1E22] stroke-[4]" />
-                                        </div>
-                                    )}
-
                                     {/* Actions Reveal on Hover */}
                                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={() => handleStartEdit(config.id)} className="p-2.5 rounded-xl bg-white/5 text-slate-400 hover:text-white border border-white/5 hover:border-white/10 transition-all"><FileKey size={14}/></button>
@@ -652,12 +651,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         `}
                                     >
                                         <div className="flex flex-col items-start gap-2">
-                                             <span className={`text-[14px] font-bold tracking-wide transition-colors ${isSelected ? 'text-white' : 'text-zinc-300 group-hover:text-white'}`}>
+                                            <span className={`text-[14px] font-bold tracking-wide transition-colors ${isSelected ? 'text-white' : 'text-zinc-300 group-hover:text-white'}`}>
                                                 {(() => {
-                                                    const brokerName = '永豐金';
-                                                    const middle = acc.branch_name ? acc.branch_name.replace(/\(.*\)/, '').replace('分公司', '') : '期貨';
-                                                    const name = acc.username || '用戶';
-                                                    return `${brokerName}-${middle} | ${name}`;
+                                                    // Backend已經返回完整的分公司名稱 (例如：永豐金-板新 (Stock))
+                                                    // 只需移除括號內的帳戶類型部分
+                                                    const branchName = acc.branch_name ? acc.branch_name.replace(/\s*\(.*\)/, '').trim() : '分公司';
+                                                    const userName = acc.username || '用戶';
+                                                    return `${branchName} | ${userName}`;
                                                 })()}
                                              </span>
                                              
@@ -670,7 +670,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
  
                                                      // Enhanced Detection
                                                      const isFuture = type.includes('F') || type.includes('FUTURE') || branch.includes('期貨');
-                                                     const isSub = type.includes('H') || branch.includes('複委託') || (id.length !== 7 && !type.includes('F'));
+                                                     // Only mark as SubBrokerage if explicitly labeled or has 'H' type
+                                                     const isSub = type.includes('H') || type.includes('SUB') || branch.includes('複委託');
                                                      
                                                      const theme = isSub ? ACCOUNT_CATEGORY_THEMES.SUB : isFuture ? ACCOUNT_CATEGORY_THEMES.FUTURES : ACCOUNT_CATEGORY_THEMES.STOCK;
  
@@ -719,11 +720,15 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             branch: accountChoices
                                                 .filter(a => selectedIds.includes(a.account_id))
                                                 .map(a => {
-                                                    const shortBranch = a.branch_name.split('(')[0].replace('永豐金', '').trim();
-                                                    const type = String(a.account_type || '');
-                                                    const simpleType = (type.includes('S') || (!type && a.account_id.length === 7)) ? '台股' : '期貨'; 
-                                                    if (type.includes('H') || (!type && a.account_id.length !== 7)) return `${shortBranch}(複委託)`;
-                                                    return `${shortBranch}(${simpleType})`;
+                                                    // Use backend's full branch name, just remove the account type in parentheses
+                                                    // AND strip redundant broker name (e.g. "永豐金-板新" -> "板新")
+                                                    const branchOnly = a.branch_name.split('(')[0].replace('永豐金-', '').replace('永豐金', '').trim();
+                                                    const type = String(a.account_type || '').toUpperCase();
+                                                    
+                                                    // Determine account category
+                                                    if (type.includes('H') || type.includes('SUB')) return `${branchOnly}(複委託)`;
+                                                    if (type.includes('F') || type.includes('FUTURE') || branchOnly.includes('期貨')) return `${branchOnly}(期貨)`;
+                                                    return `${branchOnly}(台股)`;
                                                 })
                                                 .join(', ')
                                         };

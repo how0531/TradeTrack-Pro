@@ -16,7 +16,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         <div className="flex flex-col h-full w-full">
             <div className="px-5 pt-8 pb-4">
                 <h1 className="text-3xl font-bold text-[#C8B085] tracking-tight">{t.settings}</h1>
-                <p className="text-sm text-slate-500 mt-1">Customize your experience</p>
+                <p className="text-sm text-slate-500 mt-1">{lang === 'zh' ? '系統偏好與參數設定' : 'Customize your experience'}</p>
             </div>
             
             <div className="relative w-full bg-transparent flex-1">

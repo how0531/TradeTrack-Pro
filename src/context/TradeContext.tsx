@@ -140,24 +140,31 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Migration Logic
     useEffect(() => {
-        const legacy = localStorage.getItem('broker_config');
-        if (legacy && brokerConfigs.length === 0) {
-            try {
+        try {
+            const legacy = localStorage.getItem('broker_config');
+            const current = localStorage.getItem('broker_configs');
+            
+            // Only migrate if legacy exists AND current (new) config is missing
+            if (legacy && !current) {
+                console.log('🔄 Performing Broker Config Migration...');
                 const parsed = JSON.parse(legacy);
                 const initial: BrokerConfig = {
                     ...parsed,
                     id: parsed.id || Math.random().toString(36).substr(2, 9),
                     alias: parsed.alias || '',
-                    isConnected: false
+                    isConnected: false // Reset connection on migration
                 };
                 setBrokerConfigs([initial]);
                 setActiveBrokerId(initial.id);
+                // We keep the legacy key for backup safety, or rename it
+                localStorage.setItem('broker_config_backup', legacy);
                 localStorage.removeItem('broker_config');
-            } catch (e) {
-                console.error("Broker config migration error", e);
             }
+        } catch (e) {
+            console.error("Broker config migration error", e);
         }
-    }, [brokerConfigs, setBrokerConfigs, setActiveBrokerId, lang]);
+    }, []); // Run once on mount to avoid race conditions with state updates
+
 
     // Broker Config Actions
     const addBrokerConfig = useCallback((config: BrokerConfig) => {
@@ -387,13 +394,13 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteTrade: (id: string) => { localActions.deleteTrade(id); setTimeout(triggerCloudBackup, 0); },
         updatePortfolio: (id: string, k: any, v: any) => { localActions.updatePortfolio(id, k, v); setTimeout(triggerCloudBackup, 0); },
         addPortfolio: (p: Portfolio) => { 
-            setPortfolios(prev => [...prev, p]); 
+            localActions.addPortfolio(p); 
             // Optional: Auto-activate new portfolio
             setActivePortfolioIds(prev => [...prev, p.id]);
             setTimeout(triggerCloudBackup, 0); 
         },
         deletePortfolio: (id: string) => { 
-            setPortfolios(prev => prev.filter(p => p.id !== id));
+            localActions.deletePortfolio(id);
             setActivePortfolioIds(prev => prev.filter(pid => pid !== id));
             setTimeout(triggerCloudBackup, 0); 
         },

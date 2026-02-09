@@ -423,7 +423,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
             {/* BROKERAGE INTEGRATION */}
             <div className="space-y-2">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2">
-                    <CloudLightning size={12}/> {lang === 'zh' ? '同步券商 (BROKER SYNC)' : 'BROKER SYNC'}
+                    <CloudLightning size={12}/> {lang === 'zh' ? '同步券商' : 'BROKER SYNC'}
                 </h3>
                 <BrokerSettings
                     configs={brokerConfigs}
@@ -603,7 +603,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                         <div className="p-3 rounded-full bg-[#C8B085]/10 text-[#C8B085] group-hover:scale-110 transition-transform">
                             {isForcePulling ? <Loader2 size={20} className="animate-spin" /> : <CloudLightning size={20}/>}
                         </div>
-                        <span className="text-[10px] font-bold text-[#C8B085] tracking-wider text-center uppercase">雲端還原 (Pull)</span>
+                        <span className="text-[10px] font-bold text-[#C8B085] tracking-wider text-center uppercase">雲端還原</span>
                     </button>
 
                     <button 
@@ -614,7 +614,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                         <div className="p-3 rounded-full bg-[#5B9A8B]/10 text-[#5B9A8B] group-hover:scale-110 transition-transform">
                             {isForceBackingUp ? <Loader2 size={20} className="animate-spin" /> : <Cloud size={20}/>}
                         </div>
-                        <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">雲端備份 (Push)</span>
+                        <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">雲端備份</span>
                     </button>
                    </div>
 
