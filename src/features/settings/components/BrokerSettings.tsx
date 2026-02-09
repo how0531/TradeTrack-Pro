@@ -655,7 +655,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 {(() => {
                                                     // Backend已經返回完整的分公司名稱 (例如：永豐金-板新 (Stock))
                                                     // 只需移除括號內的帳戶類型部分
-                                                    const branchName = acc.branch_name ? acc.branch_name.replace(/\s*\(.*\)/, '').trim() : '分公司';
+                                                    const branchName = acc.branch_name 
+                                                        ? acc.branch_name
+                                                            .replace(/\s*\(.*\)/, '')
+                                                            .replace(/永豐金-永豐金/g, '永豐金') // Fix double SinoPac
+                                                            .trim() 
+                                                        : '分公司';
                                                     const userName = acc.username || '用戶';
                                                     return `${branchName} | ${userName}`;
                                                 })()}
