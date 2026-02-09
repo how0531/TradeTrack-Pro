@@ -254,7 +254,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                          <span className="text-[14px] font-bold tracking-wide text-zinc-100">
                                             {(() => {
                                                 const brokerName = '永豐金';
-                                                const middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '').replace('分公司', '');
+                                                // Fix: Strip '永豐金' from branch name if present to avoid duplication with brokerName
+                                                const middle = typeLabel === '期貨' 
+                                                    ? '期貨' 
+                                                    : bText.replace(/\(.*\)/, '')
+                                                           .replace('分公司', '')
+                                                           .replace(/^永豐金-?/, '') // Strip redundant prefix
+                                                           .trim();
+                                                
                                                 const name = config.alias || config.brokerUsername || 'User';
                                                 const cleanName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
                                                 // Removed brackets as per user request
