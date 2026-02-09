@@ -226,6 +226,13 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     const totalStartTime = performance.now();
     console.log("🚀 [PERF] ===== 開始擷取券商資料 =====");
     console.log("🕐 [PERF] 開始時間:", new Date().toISOString());
+    console.log(`📅 [DEBUG] 前端請求參數: Start=${startDate}, End=${endDate}`);
+    
+    // Validate Date (Prevent frontend state issues)
+    if (!startDate || !endDate) {
+        setResultMsg("日期範圍錯誤，請重新選擇");
+        return;
+    }
 
     if (selectedConfigIds.length === 0) {
       setResultMsg("請至少選擇一個券商帳號");
@@ -556,7 +563,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               size={14}
               className={status === "loading" ? "animate-spin" : ""}
             />
-            {step === 1 ? "匯入設定" : "交易檢核"}
+            {step === 1 ? "匯入設定" : <span className="flex items-center gap-2">交易檢核 <span className="text-[10px] font-mono text-zinc-500 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">{startDate.replace(/\d{4}\./, '')}-{endDate.replace(/\d{4}\./, '')}</span></span>}
           </h3>
           <button
             onClick={onClose}
@@ -998,7 +1005,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                     className="text-amber-500/70"
                                   />
                                   <span className="text-amber-500/70 text-[8px] font-bold tracking-tighter uppercase group-hover/tooltip:text-amber-500 transition-colors">
-                                    可能重複
+                                    已匯入 ({tx.duplicateReason || '重複'})
                                   </span>
 
                                   {/* Tooltip Content */}
