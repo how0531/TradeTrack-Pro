@@ -120,12 +120,20 @@ def login_and_fetch_pnl(
                     log(f"⚠️ [BRANCH_MAP] Unknown branch code: {bid} - Please update constants.py")
                     bname = f"未知分公司[{bid}] ({atype})"
 
+                # determine simplified category
+                category = "Stock"
+                if "FUTURE" in atype.upper() or "F" in atype.upper(): category = "Futures"
+                elif "SUB" in atype.upper() or "H" in atype.upper(): category = "SubBrokerage"
+                elif bid in ["F002", "9162"]: category = "Futures" # Fallback by known branch
+
                 choices.append({
                     "branch_code": str(bid),
                     "branch_name": str(bname),
                     "account_id": str(getattr(acc, "account_id", "")),
                     "account_type": str(atype),
+                    "category": category, # Explicit Category
                     "username": str(acc_name),
+                    "signed": bool(getattr(acc, "signed", False)), # New field
                     "environment": "simulation" if simulation else "production"
                 })
             
@@ -137,16 +145,20 @@ def login_and_fetch_pnl(
             }
 
         # 4. Fetch PnL (If logic reaches here, it means single account or filtered)
+        # 4. Fetch PnL Parallel Execution
         # Default dates
         if not start_date:
             start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         if not end_date:
             end_date = datetime.now().strftime("%Y-%m-%d")
 
-        total_pnl = 0
-        details = []
+        import concurrent.futures
         
-        for target_account in valid_accounts:
+        # Internal Worker Function (Closure to capture log/api context)
+        def fetch_worker(target_account):
+            acc_pnl = 0
+            acc_details = []
+            
             try:
                 acc_type_str = str(getattr(target_account, "account_type", "")).upper()
                 is_futures = "F" in acc_type_str or "FUTURE" in acc_type_str
@@ -154,72 +166,70 @@ def login_and_fetch_pnl(
                 
                 category = "期貨" if is_futures else ("複委託" if is_sub else "台股")
                 
-                log(f"Fetching PnL for {target_account.account_id} ({category})")
+                log(f"🚀 [Thread Start] Fetching {target_account.account_id} ({category})")
                 
-                # 🔧 RETRY LOGIC: Handle transient API failures
-                # 🔧 CONSENSUS STRATEGY: Fetch multiple times and pick the best result
-                # Shioaji API is known to return partial data under load.
-                # We fetch 2 times (or more if needed) and use the dataset with the MOST records.
-                
+                # 🔧 FIX [406] Sub-brokerage (H) is NOT supported by standard API
+                if is_sub:
+                     log(f"ℹ️ [Skip PnL] Skipping PnL for Sub-brokerage account {target_account.account_id} (API V1 does not support Foreign Stock PnL)")
+                     return 0, acc_details
+
+                # 🔧 FIX [406] Futures accounts (F) often return 406 on list_profit_loss
+                if is_futures:
+                     log(f"ℹ️ [Skip PnL] Skipping PnL for Futures account {target_account.account_id} (Avoid 406 Account Not Acceptable)")
+                     return 0, acc_details
+
                 candidates = []
                 max_attempts = 2  # Fetch at least twice to compare
-                log(f"🔄 [Consensus] Starting consensus fetch (attempts={max_attempts})...")
+                
+                # Small random delay to prevent exact-moment collisions
+                import random
+                time.sleep(random.uniform(0.1, 0.5))
 
                 for attempt in range(max_attempts):
                     try:
-                        current_pnl = api.list_profit_loss(target_account, start_date, end_date)
+                        # 🔧 HANDLE [406] Account Not Acceptable Gracefully
+                        try:
+                            # Note: api.list_profit_loss might block, assuming thread-safety or GIL release
+                            current_pnl = api.list_profit_loss(target_account, start_date, end_date)
+                        except Exception as api_e:
+                            err_str = str(api_e)
+                            # Log details for specific branch debugging (Wan Sheng 9A92)
+                            if "9A92" in str(target_account.broker_id):
+                                log(f"🐞 [DEBUG 9A92] Account: {target_account} Error: {err_str}")
+
+                            if "406" in err_str or "Account Not Acceptable" in err_str:
+                                log(f"ℹ️ [Skip 406] {target_account.account_id} ({getattr(target_account, 'account_type', '?')}) does not support PnL query.")
+                                current_pnl = []
+                            else:
+                                raise api_e 
+                        
                         count = len(current_pnl) if current_pnl else 0
+                        log(f"🔍 [API Fetch] {target_account.account_id} Attempt {attempt+1}/{max_attempts}: Found {count} records.")
                         
-                        log(f"🔍 [API Fetch] Attempt {attempt+1}/{max_attempts}: Found {count} records.")
-                        
-                        # Save valid result
                         if current_pnl and count > 0:
                             candidates.append(current_pnl)
                             
-                        # 🐞 RAW DATA DUMP FOR DEBUGGING
-                        try:
-                            # Only dump if count > 0 or it's the last attempt
-                            if count > 0 or attempt == max_attempts - 1:
-                                dump_file = os.path.join(os.path.expanduser("~"), f"debug_pnl_raw_{target_account.account_id}_att{attempt+1}.json")
-                                import json
-                                raw_list = []
-                                if current_pnl:
-                                    for item in current_pnl:
-                                        raw_list.append({k: str(v) for k, v in item.__dict__.items() if not k.startswith('_')})
-                                
-                                with open(dump_file, "w", encoding="utf-8") as f:
-                                    json.dump(raw_list, f, indent=2, ensure_ascii=False)
-                        except Exception as dump_e:
-                            log(f"⚠️ [DEBUG] Failed to dump raw data: {dump_e}")
-
                         if attempt < max_attempts - 1:
-                            time.sleep(0.8) # Short pause between fetches
+                            time.sleep(0.5) 
 
                     except Exception as e:
-                        log(f"❌ [API Error] Attempt {attempt+1}: {str(e)}")
-                        time.sleep(1)
+                        # If it's the 406 error that bubbled up (should be caught above), ignore it
+                        if "406" in str(e) or "Account Not Acceptable" in str(e):
+                             log(f"ℹ️ [Skip 406] {target_account.account_id} caught in outer loop.")
+                             break
+                        
+                        log(f"❌ [API Error] {target_account.account_id} Attempt {attempt+1}: {str(e)}")
+                        time.sleep(0.5)
 
                 # Decision Logic
-                pnl_data = [] # Default empty
-                if not candidates:
-                    log(f"❌ [API Failed] No data found after {max_attempts} attempts.")
-                else:
-                    # Sort candidates by length (descending)
+                pnl_data = [] 
+                if candidates:
                     candidates.sort(key=len, reverse=True)
                     pnl_data = candidates[0]
-                    
-                    # Check for inconsistency
-                    lengths = [len(c) for c in candidates]
-                    if len(set(lengths)) > 1:
-                         log(f"⚠️ [API Inconsistency] Detected different record counts: {lengths}. Selected best: {len(pnl_data)}")
-                    else:
-                         log(f"✅ [API Stability] All successful fetches returned {len(pnl_data)} records.")
-
                 
                 for item in pnl_data:
                     try:
                         code = getattr(item, "code", "Unknown")
-                        # 🔧 FLOAT PRECISION FIX: Round to 4 decimals
                         realized = round(float(getattr(item, "pnl", 0)), 4)
                         item_date = str(getattr(item, "date", ""))
                         if len(item_date) == 8:
@@ -230,7 +240,7 @@ def login_and_fetch_pnl(
                         buy_amt = round(float(getattr(item, "buy_amt", 0)), 4)
                         sell_amt = round(float(getattr(item, "sell_amt", 0)), 4)
                         
-                        # Share quantity correction for Stocks
+                        # Share quantity correction
                         if not is_futures and not is_sub:
                             cond_str = str(getattr(item, "cond", "")).upper()
                             is_margin = any(x in cond_str for x in ["MARGIN", "SHORT", "融資", "融券"])
@@ -238,109 +248,45 @@ def login_and_fetch_pnl(
                             elif price > 0 and raw_qty > 0 and (max(buy_amt, sell_amt)) >= 500:
                                  if ((max(buy_amt, sell_amt)) / price) > raw_qty * 800:
                                      raw_qty *= 1000
-    
+
                         pid = os.getpid()
-                        log(f"TX RAW [PID:{pid}]: code={code} is_futures={is_futures}")
-    
-                        # Sanity check: log Contracts state occasionally
-                        if code == "TXFB6" or "Unknown" in code:
-                            try:
-                                f_count = len(api.Contracts.Futures) if hasattr(api.Contracts.Futures, "__len__") else "Unknown"
-                                log(f"SDK STATE [PID:{pid}]: Futures Count={f_count}")
-                            except: pass
-    
-                        # Try to get Chinese Name (item_name/name are common in PnL objects)
+                        # Name Resolution Logic (Simplified for brevity inside worker)
                         name = getattr(item, "name", "")
                         if name is None: name = ""
                         name = str(name).strip()
                         
-                        # 🔧 CRITICAL: Normalize futures names FIRST before SDK lookup
-                        FUTURES_STANDARD_NAMES = {
+                        FUTURES_NAMES = {
                             'TXF': '台指期', 'MTX': '小台指', 'TE': '電子期', 'MTE': '小電子期',
                             'TF': '金融期', 'T5F': '櫃買期', 'UNF': '非金電期', 'GTF': '黃金期',
                             'XIF': '東證期', 'SP': 'S&P期', 'ND': '那斯達克期',
                         }
                         
-                        # For futures, try to find standard name first
-                        if is_futures and len(code) >= 3:
-                            prefix3 = code[:3].upper()
-                            prefix2 = code[:2].upper()
-                            
-                            if prefix3 in FUTURES_STANDARD_NAMES:
-                                name = FUTURES_STANDARD_NAMES[prefix3]
-                                log(f"✅ [Name Query] Using standard name: {code} ({prefix3}) -> {name}")
-                            elif prefix2 in FUTURES_STANDARD_NAMES:
-                                name = FUTURES_STANDARD_NAMES[prefix2]
-                                log(f"✅ [Name Query] Using standard name: {code} ({prefix2}) -> {name}")
+                        if is_futures and len(code) >= 2:
+                             prefix3 = code[:3].upper()
+                             prefix2 = code[:2].upper()
+                             if prefix3 in FUTURES_NAMES: name = FUTURES_NAMES[prefix3]
+                             elif prefix2 in FUTURES_NAMES: name = FUTURES_NAMES[prefix2]
                         
-                        # 🔧 EXTRA FIX: Handle Chinese variations
-                        if "臺股期" in name: 
-                            name = "台指期"
-                            log(f"✅ [Name Norm] Normalized Chinese name: {code} -> 台指期")
-                        elif "小型臺指" in name:
-                            name = "小台指"
-                            log(f"✅ [Name Norm] Normalized Chinese name: {code} -> 小台指")
-                        
-                        # Log query attempt
-                        # log(f"🔍 [Name Query] Code: {code}, Type: {'Futures' if is_futures else 'Stock'}, Initial name: '{name}'")
-                        
+                        if "臺股期" in name: name = "台指期"
+                        elif "小型臺指" in name: name = "小台指"
+
+                        # SDK Lookup Fallback (Thread-safety Warning: Accessing Contracts might be risky)
                         if not name or name == code:
                             try:
-                                # 1. Try Direct Indexing (Fastest)
-                                if is_futures:
-                                    try:
-                                        contract = api.Contracts.Futures[code]
-                                        if contract: name = getattr(contract, "name", "")
-                                    except: pass
-                                elif is_sub:
-                                    try:
-                                        contract = api.Contracts.SubBrokerage[code]
-                                        if contract: name = getattr(contract, "name", "")
-                                    except: pass
-                                else:
-                                    try:
-                                        contract = api.Contracts.Stocks[code]
-                                        if contract: name = getattr(contract, "name", "")
-                                    except: pass
-    
-                                # 2. Nested lookup if direct fails
-                                if not name or name == code:
-                                    root = None
-                                    if is_futures: root = api.Contracts.Futures
-                                    elif is_sub: root = api.Contracts.SubBrokerage
-                                    
-                                    if root:
-                                        # Fallback 2a: Try guessing category
-                                        if len(code) >= 3:
-                                            cat_guess = code[:3]
-                                            if hasattr(root, cat_guess):
-                                                cat_obj = getattr(root, cat_guess)
-                                                if hasattr(cat_obj, "__getitem__") and code in cat_obj:
-                                                    name = getattr(cat_obj[code], "name", "")
-    
-                                        # Fallback 2b: Exhaustive search
-                                        if not name or name == code:
-                                            for attr in dir(root):
-                                                if attr.startswith("_"): continue
-                                                cat_tree = getattr(root, attr)
-                                                if hasattr(cat_tree, "__getitem__") and code in cat_tree:
-                                                    name = getattr(cat_tree[code], "name", "")
-                                                    break
-                            except Exception as e:
-                                log(f"Lookup Error [PID:{pid}] for {code}: {str(e)}")
-    
-                        # If name found, append to code
+                                if is_futures: 
+                                    c = api.Contracts.Futures[code]
+                                    if c: name = c.name
+                                elif not is_sub:
+                                    c = api.Contracts.Stocks[code]
+                                    if c: name = c.name
+                            except: pass
+
                         if name and name != code:
-                            if code in name:
-                                display_code = name
-                            else:
-                                display_code = f"{code} {name}"
-                            log(f"✅ [Name Query] Success: {code} -> {name}")
+                            display_code = name if code in name else f"{code} {name}"
                         else:
                             display_code = code
-                            # log(f"⚠️ [Name Query] Failed for {code} - Will use code only")
                         
-                        details.append({
+                        acc_details.append({
                             "date": item_date, 
                             "code": display_code, 
                             "price": price, 
@@ -349,17 +295,45 @@ def login_and_fetch_pnl(
                             "orderNo": getattr(item, "dseq", ""),
                             "category": category,
                             "buyAmt": buy_amt,
-                            "sellAmt": sell_amt
+                            "sellAmt": sell_amt,
+                            "entryPrice": float(getattr(item, "entry_price", 0)),
+                            "exitPrice": float(getattr(item, "cover_price", 0)),
+                            "yield": float(getattr(item, "pr_ratio", 0)), # Extract PnL Ratio
+                            "accountId": target_account.account_id # Tag with account ID
                         })
-                        total_pnl += realized
+                        acc_pnl += realized
                     except Exception as item_e:
-                         log(f"❌ [Dropped Item] Critical error processing item {getattr(item, 'code', 'Unknown')}: {item_e}")
+                         log(f"❌ [Item Error] {getattr(item, 'code', '?')}: {item_e}")
                          continue
+                         
+                return acc_pnl, acc_details
+
             except Exception as e:
-                log(f"Error fetching pnl for {target_account.account_id}: {e}")
+                log(f"❌ [Worker Error] {target_account.account_id}: {e}")
+                import traceback
+                log(traceback.format_exc())
+                return 0, []
+
+        
+        total_pnl = 0
+        details = []
+
+        # EXECUTE IN PARALLEL
+        max_workers = min(len(valid_accounts), 5) if len(valid_accounts) > 0 else 1
+        log(f"🚀 Starting Parallel Execution with {max_workers} workers...")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_acc = {executor.submit(fetch_worker, acc): acc for acc in valid_accounts}
             
-            # Rate limit protection between accounts
-            time.sleep(1.0)
+            for future in concurrent.futures.as_completed(future_to_acc):
+                acc = future_to_acc[future]
+                try:
+                    pnl, items = future.result()
+                    total_pnl += pnl
+                    details.extend(items)
+                    log(f"✅ [Thread Done] {acc.account_id} finished via {acc.broker_id}")
+                except Exception as exc:
+                    log(f"❌ [Thread Exception] {acc.account_id} generated an exception: {exc}")
 
         if temp_ca_path and os.path.exists(temp_ca_path):
             try: os.unlink(temp_ca_path)
@@ -401,3 +375,119 @@ def login_and_fetch_pnl(
             "details": [],
             "environment": "simulation" if simulation else "production"
         }
+
+def verify_simulation_account(
+    api_key,
+    secret_key,
+    person_id,
+    ca_path,
+    ca_password,
+    account_id,
+    ca_content=None
+):
+    """
+    Performs a simulation order to satisfy Shioaji's "signed" requirement.
+    """
+    log_file = os.path.join(os.path.expanduser("~"), "debug_backend.log")
+    def log(msg):
+        try:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now()}] [VERIFY] {msg}\n")
+        except: pass
+        print(f"[VERIFY] {msg}", flush=True)
+
+    log(f"Starting verification for account: {account_id}")
+    
+    temp_ca_path = None
+    final_ca_path = ca_path
+
+    if ca_content:
+        try:
+            import base64
+            tf = tempfile.NamedTemporaryFile(delete=False, suffix=".pfx")
+            tf.write(base64.b64decode(ca_content))
+            tf.close()
+            temp_ca_path = tf.name
+            final_ca_path = temp_ca_path
+        except Exception as e:
+            return {"status": "error", "message": f"憑證處理失敗: {str(e)}"}
+
+    try:
+        manager = get_session_manager()
+        # MUST use simulation=True for verification tests
+        api = manager.get_api(
+            api_key, secret_key, person_id, final_ca_path, ca_password, simulation=True
+        )
+        
+        # 1. Activate CA (Required for ordering)
+        if not final_ca_path or not os.path.exists(final_ca_path):
+            log(f"CA File not found at: {final_ca_path}")
+            return {"status": "error", "message": f"找不到憑證檔案，請確認路徑或重新上傳憑證 (.pfx)。\n路徑: {final_ca_path}"}
+
+        try:
+            api.activate_ca(ca_path=final_ca_path, ca_passwd=ca_password, person_id=person_id)
+            log("CA activated successfully.")
+        except Exception as e:
+            log(f"CA activation failed: {e}")
+            return {"status": "error", "message": f"憑證啟動失敗: {str(e)}\n請確認憑證密碼是否正確。"}
+
+        # 2. Find target account
+        accounts = api.list_accounts()
+        target_acc = next((acc for acc in accounts if acc.account_id == account_id), None)
+        
+        if not target_acc:
+            log(f"Account {account_id} not found in simulation login.")
+            return {"status": "error", "message": "找不到該帳號，請確認帳號是否正確。"}
+
+        api.set_account(target_acc)
+        log(f"Target account set: {target_acc.account_id}")
+
+        # 3. Place Simulation Order
+        # Stock 2881 (Fubon Financial) is a common stable liquid stock for tests
+        contract = api.Contracts.Stocks["2881"]
+        if not contract:
+            # Fallback if 2881 is not available in sim
+            log("Contract 2881 not found, trying fallback 2890")
+            contract = api.Contracts.Stocks["2890"]
+        
+        if not contract:
+             return {"status": "error", "message": "無法取得測試商品資訊 (Contracts lookup failed)"}
+
+        order = api.Order(
+            price=10.0, 
+            quantity=1, 
+            action=sj.constant.Action.Buy, 
+            price_type=sj.constant.StockPriceType.LMT, 
+            order_type=sj.constant.OrderType.ROD, 
+            account=target_acc
+        )
+        
+        log(f"Placing simulation order for {contract.code}...")
+        trade = api.place_order(contract, order)
+        log(f"Order placed. Trade ID: {getattr(trade, 'order', {}).get('id', 'unknown')}")
+        
+        # Wait a bit for system to register
+        time.sleep(2)
+        
+        # 4. Check status again
+        accounts_after = api.list_accounts()
+        target_after = next((acc for acc in accounts_after if acc.account_id == account_id), None)
+        is_signed = getattr(target_after, "signed", False)
+        
+        if is_signed:
+            log("Verification SUCCESS: Account is now signed.")
+            return {"status": "success", "message": "驗證成功！該帳號已開通 API 權限。"}
+        else:
+            log("Order placed but status still NOT signed. (System might need more time)")
+            return {
+                "status": "pending", 
+                "message": "測試訂單已送出，但狀態尚未更新。請等待約 5 分鐘後重新檢查。"
+            }
+
+    except Exception as e:
+        log(f"Verification process failed: {str(e)}")
+        return {"status": "error", "message": f"驗證過程中出錯: {str(e)}"}
+    finally:
+        if temp_ca_path and os.path.exists(temp_ca_path):
+            try: os.unlink(temp_ca_path)
+            except: pass

@@ -190,6 +190,42 @@ def get_broker_pnl():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/broker/verify", methods=["POST"])
+def verify_broker_account():
+    """
+    執行模擬下單以開通 API 權限
+    """
+    try:
+        data = request.json
+        print(f"\n{'='*20} VERIFICATION REQUEST {'='*20}", flush=True)
+        print(f"Account: {data.get('accountId')}", flush=True)
+
+        required_fields = ["apiKey", "apiSecret", "personId", "caPath", "caPassword", "accountId"]
+        missing_fields = [field for field in required_fields if not data.get(field)]
+
+        if missing_fields:
+            return jsonify({"status": "error", "message": f"缺少必要欄位: {', '.join(missing_fields)}"}), 400
+
+        from core.pnl import verify_simulation_account
+        
+        result = verify_simulation_account(
+            api_key=data["apiKey"],
+            secret_key=data["apiSecret"],
+            person_id=data["personId"],
+            ca_path=data["caPath"],
+            ca_password=data["caPassword"],
+            ca_content=data.get("caContent"),
+            account_id=data["accountId"]
+        )
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"\n[EXCEPTION] Verification Error: {str(e)}", flush=True)
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("TradeTrack Pro - Backend Service (Cloud Ready)")

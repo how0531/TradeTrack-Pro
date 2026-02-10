@@ -18,6 +18,8 @@ export interface TransactionDetail {
     yield: number;      // 報酬率 (%)
     orderNo: string;    // 委託單號
     currency: string;   // 幣別
+    entryPrice?: number; // 原幣買進價
+    exitPrice?: number;  // 原幣賣出價
 }
 
 export interface BrokerSyncResult {
@@ -603,4 +605,34 @@ export const fetchBrokerProfile = async (
     }
 
     return {};
+};
+
+/**
+ * 執行模擬下單以開通 API 權限
+ */
+export const verifyBrokerAccount = async (config: BrokerConfig, accountId: string): Promise<{ status: string; message: string }> => {
+    console.log(`🚀 [VERIFY] Initiating verification for account: ${accountId}`);
+    try {
+        const payload = {
+            apiKey: config.apiKey,
+            apiSecret: config.apiSecret,
+            personId: config.personId,
+            caPath: config.caPath,
+            caPassword: config.caPassword,
+            caContent: config.caContent,
+            accountId: accountId
+        };
+
+        const response = await fetch(`${API_BASE}/api/broker/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        return result;
+    } catch (error: any) {
+        console.error('[VERIFY] Error:', error);
+        return { status: 'error', message: error.message || '連線後端失敗' };
+    }
 };
