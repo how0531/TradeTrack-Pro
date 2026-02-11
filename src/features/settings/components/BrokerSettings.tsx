@@ -27,6 +27,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const [deleteTarget, setDeleteTarget] = useState<{configId: string, accountIndex: number} | null>(null);
     const [isVerifying, setIsVerifying] = useState<string | null>(null); // New: track verification per accountId
     const [uploadConfigId, setUploadConfigId] = useState<string | null>(null); // Track which config for CA upload
+    const [errorConfigId, setErrorConfigId] = useState<string | null>(null); // Track which config caused the error
     
     // Derived state for button type
     const [errors, setErrors] = useState<Record<string, boolean>>({});
@@ -209,6 +210,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             
             // Clear error if it was a path error
             if (errorMsg?.includes('找不到憑證')) setErrorMsg(null);
+
+            // Auto-retry verification if this was a fix action
+            setProgressMsg('憑證上傳成功，正在重新嘗試驗證...');
+            setTimeout(() => {
+                handleVerifyAccount(updated, configId);
+            }, 800);
         };
         reader.readAsDataURL(file);
     };
@@ -233,10 +240,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 // Success message is handled by alerting or just clearing
             } else {
                 setErrorMsg(result.message || '驗證失敗');
+                setErrorConfigId(config.id);
                 setProgressMsg('');
             }
         } catch (err: any) {
             setErrorMsg(err.message || '連線錯誤');
+            setErrorConfigId(config.id);
             setProgressMsg('');
         } finally {
             setIsVerifying(null);
@@ -399,10 +408,15 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
                                     <span className="text-xs text-red-300 font-bold">{errorMsg}</span>
                                 </div>
-                                {errorMsg.includes('找不到憑證') && (
+                                {errorMsg.includes('找不到憑證') && errorConfigId && (
                                     <button 
-                                        onClick={() => document.getElementById('card-ca-upload-trigger')?.click()}
-                                        className="shrink-0 px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[10px] font-bold rounded-lg border border-amber-500/20 transition-all"
+                                        onClick={() => {
+                                            setUploadConfigId(errorConfigId);
+                                            setTimeout(() => {
+                                                document.getElementById('card-ca-upload-trigger')?.click();
+                                            }, 10);
+                                        }}
+                                        className="shrink-0 px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[10px] font-bold rounded-lg border border-amber-500/20 transition-all cursor-pointer"
                                     >
                                         立即修復
                                     </button>
@@ -420,6 +434,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 className="hidden"
                 onChange={(e) => {
                     if (uploadConfigId) handleCardCAUpload(e, uploadConfigId);
+                    e.target.value = ''; // Critical: Reset input so same file selection triggers change
                 }}
             />
 
@@ -478,18 +493,26 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 <div className="flex justify-between items-center w-full h-full relative">
                                     <div className="flex flex-col gap-1 w-full items-center justify-center">
                                          {/* Row 1: Broker - Branch (Large) */}
-                                         <h4 className="text-[13px] font-bold text-white/95 tracking-tight text-center">
-                                             {(() => {
-                                                 const brokerName = '永豐金';
-                                                 const middle = typeLabel === '期貨' 
-                                                     ? '期貨' 
-                                                     : bText.replace(/\(.*\)/, '')
-                                                            .replace('分公司', '')
-                                                            .replace(/^永豐金-?/, '')
-                                                            .trim();
-                                                 return `${brokerName} ${middle}`;
-                                             })()}
-                                         </h4>
+                                         <div className="flex items-center justify-center gap-2 w-full relative">
+                                             <h4 className="text-[13px] font-bold text-white/95 tracking-tight text-center">
+                                                 {(() => {
+                                                     const brokerName = '永豐金';
+                                                     const middle = typeLabel === '期貨' 
+                                                         ? '期貨' 
+                                                         : bText.replace(/\(.*\)/, '')
+                                                                .replace('分公司', '')
+                                                                .replace(/^永豐金-?/, '')
+                                                                .trim();
+                                                     return `${brokerName} ${middle}`;
+                                                 })()}
+                                             </h4>
+                                             {/* Unsupported Badge (Next to Title) */}
+                                             {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && isSub && (
+                                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-500/10 border border-zinc-500/20 cursor-not-allowed transform scale-90 origin-left" title="目前 API 尚未支援複委託驗證">
+                                                    <span className="text-[8px] font-bold text-zinc-500 uppercase whitespace-nowrap">尚未支援</span>
+                                                </div>
+                                             )}
+                                         </div>
 
                                          {/* Row 2: Category - Account - Name (Small) */}
                                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -513,19 +536,27 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 </div>
                                              )}
 
-                                             {/* Verification Status Tag */}
-                                             {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && (
-                                                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 mt-0.5">
-                                                     <AlertCircle size={8} className="text-amber-500" />
-                                                     <span className="text-[8px] font-bold text-amber-500 uppercase">未驗證</span>
-                                                 </div>
+                                             {/* Verification Status Tag (Interactive Only) */}
+                                             {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && !isSub && (
+                                                 <button
+                                                     onClick={(e) => {
+                                                         e.stopPropagation();
+                                                         handleVerifyAccount(config, accId);
+                                                     }}
+                                                     disabled={isVerifying === accId}
+                                                     className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 mt-0.5 hover:bg-amber-500/20 cursor-pointer transition-colors ${isVerifying === accId ? 'animate-pulse' : ''}`}
+                                                     title="點擊立即驗證"
+                                                 >
+                                                     {isVerifying === accId ? <Loader2 size={8} className="animate-spin text-amber-500" /> : <AlertCircle size={8} className="text-amber-500" />}
+                                                     <span className="text-[8px] font-bold text-amber-500 uppercase">{isVerifying === accId ? '驗證中...' : '未驗證'}</span>
+                                                 </button>
                                              )}
                                           </div>
                                     </div>
                                     
                                     {/* Action Buttons (Absolute Bottom Right on Hover, but slightly adjusted for centered layout) */}
                                      <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-md rounded-lg p-0.5 border border-white/10 z-50">
-                                        {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && (
+                                        {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && !isSub && (
                                             <>
                                                 <button 
                                                     disabled={isVerifying === accId}

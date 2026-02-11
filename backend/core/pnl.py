@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime, timedelta
 from .session import get_session_manager
 from .constants import BRANCH_MAP
+import shioaji as sj
 
 def login_and_fetch_pnl(
     api_key,
@@ -439,7 +440,6 @@ def verify_simulation_account(
             log(f"Account {account_id} not found in simulation login.")
             return {"status": "error", "message": "找不到該帳號，請確認帳號是否正確。"}
 
-        api.set_account(target_acc)
         log(f"Target account set: {target_acc.account_id}")
 
         # 3. Place Simulation Order
@@ -464,7 +464,11 @@ def verify_simulation_account(
         
         log(f"Placing simulation order for {contract.code}...")
         trade = api.place_order(contract, order)
-        log(f"Order placed. Trade ID: {getattr(trade, 'order', {}).get('id', 'unknown')}")
+        
+        # Safe access to order ID (Order is an object, not a dict)
+        current_ord = getattr(trade, 'order', None)
+        ord_id = getattr(current_ord, 'id', 'unknown') if current_ord else 'unknown'
+        log(f"Order placed. Trade ID: {ord_id}")
         
         # Wait a bit for system to register
         time.sleep(2)
