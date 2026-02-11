@@ -17,7 +17,7 @@ import {
   Power,
   ArrowRight,
 } from "lucide-react";
-import { Trade, BrokerConfig, Portfolio } from "../../types";
+import { Trade, BrokerConfig, Portfolio, AutoSyncParams } from "../../types";
 import {
   fetchBrokerPnl,
   fetchBrokerProfile,
@@ -41,6 +41,8 @@ interface SyncDateModalProps {
   onSuccess?: (trades: Trade[]) => void;
   lang?: "zh" | "en";
   existingTrades?: Trade[];
+  autoSyncParams?: AutoSyncParams | null;
+  onAutoSyncComplete?: () => void;
 }
 
 // --- Internal Component: GlassSelect Moved to common/GlassSelect.tsx ---
@@ -51,6 +53,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   onSuccess,
   lang = "zh",
   existingTrades = [],
+  autoSyncParams,
+  onAutoSyncComplete
 }) => {
   // --- Context ---
   const { availableStrategies, availableEmotions, portfolios } = useTradeContext();
@@ -107,7 +111,52 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       setStatus("idle");
       setTransactions([]);
     }
-  }, [isOpen, portfolios]); // Added portfolios dependency
+
+  }, [isOpen, portfolios]);
+  
+  // Auto-Sync Execution
+  useEffect(() => {
+    if (isOpen && autoSyncParams && !autoSyncParams.executed && configs.length > 0) {
+        console.log("🤖 [SyncModal] Auto-Sync Triggered", autoSyncParams);
+        
+        // 1. Map Accounts
+        const targetIds: string[] = [];
+        const targets = autoSyncParams.accounts;
+        
+        configs.forEach(c => {
+             const branches = (c.branch || '').split(',');
+             const codes = (c.branchCode || '').split(',');
+             branches.forEach((bRaw, idx) => {
+                 const bCode = codes[idx] || '';
+                 const uniqueKey = `${c.id}|${bCode}|${idx}`;
+                 
+                 // Smart Match: Check if target (F002, 9A9J) exists in branch string or code
+                 const isCodeMatch = targets.some(tgt => bCode.toUpperCase().includes(tgt.toUpperCase()));
+                 const isNameMatch = targets.some(tgt => bRaw.toUpperCase().includes(tgt.toUpperCase()));
+                 const isTypeMatch = (bRaw.includes('期貨') && targets.includes('F')) || (!bRaw.includes('期貨') && targets.includes('S'));
+                 
+                 if (isCodeMatch || isNameMatch || isTypeMatch) {
+                     targetIds.push(uniqueKey);
+                 }
+             });
+        });
+        
+        if (targetIds.length > 0) {
+            // 2. Update UI State (for visual feedback)
+            setStartDate(autoSyncParams.start);
+            setEndDate(autoSyncParams.end);
+            setSelectedConfigIds(targetIds);
+            
+            // 3. Force Execution immediately with explicit params
+            handleFetch(autoSyncParams.start, autoSyncParams.end, targetIds);
+            
+            // 4. Mark Complete to prevent loops
+            if (onAutoSyncComplete) onAutoSyncComplete();
+        } else {
+            console.warn("🤖 [SyncModal] No matching accounts found for auto-sync.");
+        }
+    }
+  }, [isOpen, configs, autoSyncParams]);
 
   // --- Handlers ---
   
@@ -222,19 +271,25 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     setLoadingMessage("");
   };
 
-  const handleFetch = async () => {
+  const handleFetch = async (overrideStart?: string, overrideEnd?: string, overrideIds?: string[]) => {
     const totalStartTime = performance.now();
+    
+    // Determine effective values (Override or State)
+    const effectiveStart = overrideStart || startDate;
+    const effectiveEnd = overrideEnd || endDate;
+    const effectiveIds = overrideIds || selectedConfigIds;
+    
     console.log("🚀 [PERF] ===== 開始擷取券商資料 =====");
     console.log("🕐 [PERF] 開始時間:", new Date().toISOString());
-    console.log(`📅 [DEBUG] 前端請求參數: Start=${startDate}, End=${endDate}`);
+    console.log(`📅 [DEBUG] 前端請求參數: Start=${effectiveStart}, End=${effectiveEnd}`);
     
     // Validate Date (Prevent frontend state issues)
-    if (!startDate || !endDate) {
+    if (!effectiveStart || !effectiveEnd) {
         setResultMsg("日期範圍錯誤，請重新選擇");
         return;
     }
 
-    if (selectedConfigIds.length === 0) {
+    if (effectiveIds.length === 0) {
       setResultMsg("請至少選擇一個券商帳號");
       return;
     }
@@ -247,7 +302,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
     try {
       const step1Start = performance.now();
-      if (selectedConfigIds.length === 0) throw new Error("請選擇帳號");
+      if (effectiveIds.length === 0) throw new Error("請選擇帳號");
       console.log(
         `✅ [PERF] 步驟1 - 帳號設定確認: ${(performance.now() - step1Start).toFixed(0)}ms`,
       );
@@ -255,19 +310,22 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       // 呼叫後端 (支援多帳號合併、篩選)
       console.log("📞 [PERF] 步驟2 - 準備呼叫後端 API...");
       const step2Start = performance.now();
-      const startD = new Date(startDate);
-      const endD = new Date(endDate);
+      const startD = new Date(effectiveStart);
+      const endD = new Date(effectiveEnd);
 
       // Group selections by (Config ID + Target Portfolio ID + Account Type)
       // Key: `configId|targetPortfolioId|type`
       // CRITICAL: Must separate Futures and Stock accounts even from same broker config
       const fetchGroups = new Map<string, { config: BrokerConfig, codes: Set<string>, targetPid: string, configId: string, type: 'S' | 'F' }>();
       
-      console.log('🔍 [DEBUG] Selected Config IDs:', selectedConfigIds);
+      console.log('🔍 [DEBUG] Selected Config IDs:', effectiveIds);
       console.log('🔍 [DEBUG] Account Portfolio Map:', accountPortfolioMap);
       console.log('🔍 [DEBUG] Default Target Portfolio:', targetPortfolioId);
 
-      selectedConfigIds.forEach(key => {
+      console.log('🔍 [DEBUG] Account Portfolio Map:', accountPortfolioMap);
+      console.log('🔍 [DEBUG] Default Target Portfolio:', targetPortfolioId);
+
+      effectiveIds.forEach(key => {
           const [confId, code, subIdxStr] = key.split('|');
           const subIdx = parseInt(subIdxStr || '0', 10);
           const original = configs.find(c => c.id === confId);
@@ -364,39 +422,63 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         const isFuture = d.category === '期貨';
         const unit = isFuture ? '口' : '張';
         const qtyValue = isFuture ? d.quantity : (d.quantity / 1000);
-        const sheets = qtyValue.toFixed(isFuture ? 0 : 0); // Both usually 0 decimals but keeping logic separate
+        const sheets = Math.abs(qtyValue).toFixed(0); 
         
-          
-          // Calculate dynamic yield if not provided but buyAmt exists
-          let yieldPct = d.yield || 0;
-          if (!yieldPct && d.buyAmt > 0) {
-              yieldPct = Number((d.pnl / d.buyAmt * 100).toFixed(2));
-          }
+        // Calculate dynamic yield if not provided but buyAmt exists
+        let yieldPct = d.yield || 0;
+        if (!yieldPct && d.buyAmt > 0) {
+            yieldPct = Number((d.pnl / d.buyAmt * 100).toFixed(2));
+        }
         
         const yieldStr = yieldPct !== 0
           ? `${yieldPct > 0 ? "+" : ""}${yieldPct}%`
           : "0%";
 
-        // 🔧 CRITICAL FIX: Generate STABLE ID based on transaction properties
-        // Instead of using Date.now() which changes every time
-        // Use combination of: orderNo (if available) + date + code + pnl
-        const stockCode = d.code.split(' ')[0]; // Extract pure stock/futures code
+        // 🔧 FIX: Better display for futures (Points instead of %)
+        let noteValue = yieldStr;
+        if (isFuture) {
+          const entry = d.entryPrice || 0;
+          const exit = d.exitPrice || 0;
+          if (entry > 0 && exit > 0) {
+            // Case 1: Exact Prices Known -> Show real points (Gross)
+            const pts = Number(Math.abs(exit - entry).toFixed(2));
+            noteValue = `${d.pnl >= 0 ? '+' : '-'}${pts} pts`;
+          } else if (d.yield && d.yield !== 0) {
+            // Case 2: Yield Known (from API) -> Show ROI %
+             const yieldVal = Number(d.yield);
+             const y = yieldVal.toFixed(2);
+             noteValue = `${yieldVal > 0 ? "+" : ""}${y}%`;
+          } else {
+            // Case 3: Fallback -> Derive points from PnL / (multiplier * quantity)
+            const code = d.code || '';
+            let multiplier = 200; // 台指期 default
+            if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
+            else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
+            else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
+            const absQty = Math.abs(d.quantity || 1) / 1; // futures qty is already in lots
+            const guessedPts = Math.abs(d.pnl) / multiplier / absQty;
+            if (guessedPts > 0) {
+              noteValue = `${d.pnl >= 0 ? '+' : '-'}${Number(guessedPts.toFixed(0))} pts`;
+            } else {
+              noteValue = '0 pts';
+            }
+          }
+        }
+
+        // 🔧 STABLE ID logic ...
+        const stockCode = d.code.split(' ')[0]; 
         const orderNo = d.orderNo || '';
         
         let stableId: string;
         if (orderNo && !orderNo.startsWith('unknown')) {
-          // Best case: Use orderNo as primary identifier
           stableId = `${orderNo}-${d.date}-${stockCode}`;
         } else {
-          // Fallback: Use content-based hash (date + code + pnl + quantity)
-          // This ensures same transaction always gets same ID
-          // 🔧 OPTIMIZATION: Use fixed precision for price to match backend (4 decimal places)
           const contentKey = `${d.date}_${stockCode}_${d.pnl.toFixed(2)}_${d.quantity}_${Number(d.price).toFixed(4)}`;
           stableId = `tx-${contentKey}`;
         }
 
         return {
-          id: stableId, // ✅ Now using stable ID
+          id: stableId,
           date: d.date,
           orderNo: d.orderNo || `unknown-${i}`,
           code: d.code,
@@ -410,12 +492,14 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           portfolioId: (d as any).portfolioId || targetPortfolioId, 
           strategy: "",
           emotion: "",
-          note: `${d.code} | ${yieldStr} | ${sheets}${unit}`.trim(),
+          note: `${d.code} | ${noteValue} | ${sheets}${unit}`.trim(),
           showNoteInput: false,
           raw_yield: yieldPct,
           category: d.category,
-          configId: (d as any).configId, // Preserve source config ID
-          sourceKey: (d as any).sourceKey // Preserve source key for precise mapping
+          configId: (d as any).configId,
+          sourceKey: (d as any).sourceKey,
+          entryPrice: d.entryPrice,
+          exitPrice: d.exitPrice
         };
       });
 
@@ -452,7 +536,17 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
             existing.quantity = totalQty;
             existing.price = avgPrice;
+            existing.quantity = totalQty;
+            existing.price = avgPrice;
             existing.pnl += trade.pnl;
+
+            // Update Entry/Exit Prices (Weighted Average)
+            if (existing.entryPrice && trade.entryPrice) {
+                existing.entryPrice = ((existing.entryPrice * existing.quantity) + (trade.entryPrice * trade.quantity)) / totalQty;
+            }
+            if (existing.exitPrice && trade.exitPrice) {
+                 existing.exitPrice = ((existing.exitPrice * existing.quantity) + (trade.exitPrice * trade.quantity)) / totalQty;
+            }
 
             // 更新備註中的張數/口數
             const isFuture = existing.category === '期貨';
@@ -1040,8 +1134,25 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                               <span
                                 className={`text-[10px] font-black font-barlow-numeric tracking-tight ${tx.pnl >= 0 ? "text-[#D05A5A]" : "text-[#5B9A8B]"}`}
                               >
-                                {tx.pnl >= 0 ? "+" : ""}
-                                {formatMoney(tx.pnl)}
+                                {(() => {
+                                    const isFuture = tx.category === '期貨' || tx.category === 'Option' || (tx.code && (tx.code.includes('期') || tx.code.includes('選')));
+                                    if (isFuture) {
+                                        const hasPrices = tx.entryPrice != null && tx.exitPrice != null && tx.entryPrice > 0 && tx.exitPrice > 0;
+                                        if (hasPrices) {
+                                            const pts = Number(Math.abs(tx.exitPrice! - tx.entryPrice!).toFixed(2));
+                                            return `${tx.pnl >= 0 ? '+' : '-'}${pts.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
+                                        } else if (tx.pnl !== 0) {
+                                            const code = tx.code.toUpperCase();
+                                            let multiplier = 200;
+                                            if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
+                                            else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
+                                            else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
+                                            const guessedPts = Number((Math.abs(tx.pnl) / multiplier / Math.abs(tx.quantity || 1)).toFixed(2));
+                                            if (guessedPts > 0) return `${tx.pnl >= 0 ? '+' : '-'}${guessedPts.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
+                                        }
+                                    }
+                                    return (tx.pnl >= 0 ? "+" : "") + formatMoney(tx.pnl);
+                                })()}
                               </span>
                             </div>
                           </div>
@@ -1221,7 +1332,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
             )}
 
             <button
-              onClick={step === 1 ? handleFetch : handleConfirmImport}
+              onClick={step === 1 ? () => handleFetch() : handleConfirmImport}
               disabled={status === "loading"}
               className={`relative overflow-hidden px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-3 shadow-lg active:scale-95 
                             ${

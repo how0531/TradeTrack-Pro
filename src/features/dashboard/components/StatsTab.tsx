@@ -587,16 +587,15 @@ export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, st
     return (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
              <div className="flex flex-col gap-2">
-                 <div className="grid grid-cols-3 gap-2">
+                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <StatCard hideAmounts={hideAmounts} label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate < 40 ? THEME.GREEN : THEME.RED} />
                     <StatCard hideAmounts={hideAmounts} label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
                     <StatCard hideAmounts={hideAmounts} label={t.sharpe} value={formatDecimal(metrics.sharpe)} valueColor={metrics.sharpe >= 1 ? THEME.RED : '#E0E0E0'} />
                  </div>
-                 <div className="grid grid-cols-4 gap-2">
+                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <StatCard hideAmounts={hideAmounts} label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
                     <StatCard hideAmounts={hideAmounts} label={t.riskReward} value={formatDecimal(metrics.riskReward)} valueColor="#E0E0E0" />
                     <StatCard hideAmounts={hideAmounts} label={t.daysSincePeak} value={metrics.maxStagnationDays} valueColor={metrics.maxStagnationDays > 30 ? THEME.GREEN : '#E0E0E0'} />
-                    <StatCard hideAmounts={hideAmounts} label={t.trades} value={metrics.totalTrades} valueColor="#E0E0E0" />
                  </div>
             </div>
 

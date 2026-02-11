@@ -169,58 +169,10 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
             throw new Error(result.message || '後端回應格式錯誤 (Invalid response)');
 
         } catch (fetchError: any) {
-            // 如果後端服務未啟動，退回到模擬模式
+            // Network errors: backend is unreachable - throw clear error instead of fake data
             if (fetchError.message?.includes('fetch') || fetchError.message?.includes('NetworkError')) {
-                console.warn('後端服務未回應，將使用模擬模式進行 P&L 展示');
-                console.log('Simulating P&L using credentials from config:', {
-                    apiKey: config.apiKey.substring(0, 10) + '...',
-                    personId: config.personId,
-                    dateRange: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`
-                });
-
-                // ===== 模擬資料 =====
-                const details: TransactionDetail[] = [
-                    { 
-                        date: "2026-01-16", category: "現股", code: "2890 永豐金", 
-                        quantity: 5000, price: 29.15, buyAmt: 142950, sellAmt: 145106, 
-                        pnl: 2156, yield: 1.51, orderNo: "X01YX", currency: "台幣" 
-                    },
-                    { 
-                        date: "2026-01-16", category: "現股", code: "2890 永豐金", 
-                        quantity: 5000, price: 29.25, buyAmt: 142950, sellAmt: 145604, 
-                        pnl: 2654, yield: 1.86, orderNo: "X0510", currency: "台幣" 
-                    },
-                    { 
-                        date: "2026-01-22", category: "現股", code: "5425 台半", 
-                        quantity: 1000, price: 72.00, buyAmt: 70099, sellAmt: 71682, 
-                        pnl: 1583, yield: 2.26, orderNo: "X02T4", currency: "台幣" 
-                    },
-                    { 
-                        date: "2026-01-23", category: "現股", code: "1609 大亞", 
-                        quantity: 2000, price: 48.30, buyAmt: 92530, sellAmt: 96174, 
-                        pnl: 3644, yield: 3.94, orderNo: "X01BW", currency: "台幣" 
-                    }
-                ];
-
-                // Filter based on requested range
-                const startStr = startDate.toISOString().split('T')[0];
-                const endStr = endDate.toISOString().split('T')[0];
-                
-                const filteredDetails = details.filter(d => d.date >= startStr && d.date <= endStr);
-                
-                // Aggregate
-                const dailyMap: Record<string, number> = {};
-                let total = 0;
-                filteredDetails.forEach(d => {
-                    dailyMap[d.date] = (dailyMap[d.date] || 0) + d.pnl;
-                    total += d.pnl;
-                });
-
-                return {
-                    totalPnl: total,
-                    dailyResults: Object.keys(dailyMap).map(k => ({ date: k, pnl: dailyMap[k] })),
-                    details: filteredDetails
-                };
+                console.error('❌ [PNL] 後端服務無法連線:', fetchError.message);
+                throw new Error('後端服務無法連線，請確認伺服器是否已啟動。 (Backend unreachable)');
             }
             throw fetchError;
         }

@@ -3,10 +3,10 @@ import React, { useState, useRef } from 'react';
 import { 
     Cloud, UserCircle, Check, LogOut, Shield, Settings as SettingsIcon, Languages, Palette, 
     HardDrive, Download, Upload, AlertOctagon, Target, Info, Layers, Plus as PlusIcon, 
-    X, Briefcase, Trash2, Pencil, Loader2, FileKey, ChevronRight, Eye, EyeOff, FolderOpen, Save, AlertCircle, User, CloudLightning, Copy 
+    X, Briefcase, Trash2, Pencil, Loader2, FileKey, ChevronRight, Eye, EyeOff, FolderOpen, Save, AlertCircle, User, CloudLightning, Copy, Edit2
 } from 'lucide-react';
 import { SettingsViewProps, Portfolio, Lang } from '../../types';
-import { THEME, I18N, DEFAULT_PALETTE, APP_VERSION } from '../../constants';
+import { THEME, I18N, DEFAULT_PALETTE, PROFIT_PALETTE, LOSS_PALETTE, APP_VERSION } from '../../constants';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { ImportConflictModal } from '../../components/modals/ImportConflictModal';
@@ -15,18 +15,24 @@ import { BrokerSettings } from './components/BrokerSettings';
 
 
 // --- INTERNAL COMPONENT: GlassCard (UPDATED TRANSPARENCY) ---
-const GlassCard = ({ children, className = '', onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => {
+const GlassCard = ({ children, className = '', onClick, overflowVisible = false }: { children: React.ReactNode; className?: string; onClick?: () => void; overflowVisible?: boolean }) => {
     return (
         <div 
             onClick={onClick}
             className={`
-                bg-[#1A1C20]/40 backdrop-blur-xl 
-                border border-white/5 
-                shadow-[0_8px_32px_rgba(0,0,0,0.3)]
-                rounded-xl
+                relative ${overflowVisible ? '' : 'overflow-hidden'}
+                bg-gradient-to-br from-white/[0.05] to-zinc-950/40
+                backdrop-blur-2xl 
+                border border-white/10 
+                shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_1px_0_rgba(255,255,255,0.15)]
+                rounded-2xl
+                transition-all duration-300
+                hover:bg-white/[0.08] hover:border-white/20
                 ${className}
             `}
         >
+            {/* Subtle Inner Glow Overlay */}
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent pointer-events-none"></div>
             {children}
         </div>
     );
@@ -44,13 +50,15 @@ const GemstoneLight = ({ color, onChange, label, align = 'left' }: { color: stri
             {label && <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">{label}</span>}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-5 h-5 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 relative group"
+                className="w-5 h-5 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 relative group overflow-hidden"
                 style={{
                     backgroundColor: color,
-                    boxShadow: `0 0 10px ${color}66, inset 0 2px 4px rgba(255,255,255,0.3)`
+                    boxShadow: `0 0 15px ${color}88, inset 0 2px 4px rgba(255,255,255,0.4), 0 0 30px ${color}44`
                 }}
             >
-                <div className="absolute inset-0 rounded-full border border-white/10"></div>
+                {/* Gemstone Shine Effect */}
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 translate-x-[-100%] group-hover:translate-x-[100%]"></div>
+                <div className="absolute inset-0 rounded-full border border-white/20"></div>
             </button>
 
             {isOpen && (
@@ -59,9 +67,11 @@ const GemstoneLight = ({ color, onChange, label, align = 'left' }: { color: stri
                         <button
                             key={c}
                             onClick={() => { onChange(c); setIsOpen(false); }}
-                            className={`w-5 h-5 rounded-full transition-all hover:scale-125 border border-white/5 ${color === c ? 'ring-1 ring-white' : ''}`}
+                            className={`w-5 h-5 rounded-full transition-all hover:scale-125 border border-white/5 relative flex items-center justify-center ${color === c ? 'ring-2 ring-white ring-offset-1 ring-offset-black scale-110' : ''}`}
                             style={{ backgroundColor: c, boxShadow: `0 0 8px ${c}44` }}
-                        />
+                        >
+                            {color === c && <div className="w-1.5 h-1.5 rounded-full bg-white shadow-sm" />}
+                        </button>
                     ))}
                     {/* Native Picker Integration */}
                     <div className="relative w-5 h-5 rounded-full overflow-hidden transition-all hover:scale-125 border border-white/5 group cursor-pointer" title="Custom Color">
@@ -83,100 +93,256 @@ const GemstoneLight = ({ color, onChange, label, align = 'left' }: { color: stri
     );
 };
 
+
+
+// --- INTERNAL COMPONENT: Glow Slider (Pro Max) ---
+const GlowSlider = ({ value, min, max, step, onChange, gradientColors }: { value: number, min: number, max: number, step: number, onChange: (val: number) => void, gradientColors: string[] }) => {
+    const percent = ((value - min) / (max - min)) * 100;
+    const activeColor = gradientColors[1] || gradientColors[0];
+    
+    return (
+        <div className="relative flex items-center h-6 group select-none w-full">
+            {/* Track Background */}
+            <div className="absolute w-full h-1.5 rounded-lg bg-white/5 overflow-hidden">
+                 <div 
+                    className="h-full transition-all duration-100 ease-out"
+                    style={{ 
+                        width: `${percent}%`,
+                        background: `linear-gradient(to right, ${gradientColors.join(', ')})` 
+                    }}
+                 />
+            </div>
+            
+            {/* Thumb with Glow & Shine */}
+            <div 
+                className="absolute h-5 w-5 rounded-full bg-white shadow-lg pointer-events-none transition-all duration-100 ease-out flex items-center justify-center z-10 overflow-hidden"
+                style={{ 
+                    left: `calc(${percent}% - 10px)`,
+                    boxShadow: `0 0 20px ${activeColor}AA`,
+                    border: `1.5px solid ${activeColor}`
+                }}
+            >
+                {/* Thumb Shine */}
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/60 to-transparent"></div>
+                <div className="w-2 h-2 rounded-full bg-black/10 relative z-10" />
+            </div>
+
+            {/* Hidden Input for Interaction */}
+            <input 
+                type="range" 
+                min={min} 
+                max={max} 
+                step={step} 
+                value={value} 
+                onChange={(e) => onChange(Number(e.target.value))} 
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+            />
+        </div>
+    );
+};
+// --- INTERNAL COMPONENT: Currency Input ---
+const CurrencyInput = ({ value, onChange, className }: { value: string, onChange: (val: string) => void, className?: string }) => {
+    const [isFocused, setIsFocused] = useState(false);
+    const displayValue = isFocused ? value : Number(value).toLocaleString();
+
+    return (
+        <input
+            type="text"
+            value={displayValue}
+            onChange={(e) => {
+                const val = e.target.value.replace(/,/g, '');
+                if (!isNaN(Number(val))) onChange(val);
+            }}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            className={className}
+        />
+    );
+};
+
+// --- INTERNAL COMPONENT: AccountThemeSelector (Pro Max) ---
+const AccountThemeSelector = ({ portfolio, onUpdate, globalLossColor }: { portfolio: Portfolio, onUpdate: (id: string, key: string, val: any) => void, globalLossColor: string }) => {
+    const [isOpen, setIsOpen] = useState<'profit' | 'loss' | null>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    useClickOutside(containerRef, () => setIsOpen(null));
+
+    const colors = {
+        profit: portfolio.profitColor,
+        loss: portfolio.lossColor || globalLossColor
+    };
+
+    // Determine active palette based on which button was clicked
+    const activePalette = isOpen === 'profit' ? PROFIT_PALETTE : LOSS_PALETTE;
+
+    return (
+        <div className="relative flex items-center" ref={containerRef}>
+            {/* Profit Trigger */}
+            <button 
+                onClick={() => setIsOpen(isOpen === 'profit' ? null : 'profit')}
+                className={`flex items-center gap-2 pl-3 pr-2 py-2 rounded-l-xl hover:bg-white/10 transition-all duration-300 group relative active:scale-95 border-y border-l border-white/5 ${isOpen === 'profit' ? 'bg-white/10' : 'bg-white/5'}`}
+                title="Edit Profit Color"
+            >
+                <span className="text-[10px] font-bold text-zinc-400 tracking-wider group-hover:text-zinc-200 transition-colors">PROFIT</span>
+                <div 
+                    className="w-5 h-5 rounded-full transition-all duration-500 group-hover:scale-110 relative opacity-90" 
+                    style={{ 
+                        backgroundColor: colors.profit, 
+                        boxShadow: `0 0 15px ${colors.profit}88, inset 0 0 8px rgba(255,255,255,0.4)` 
+                    }} 
+                >
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-black/20 to-white/30" />
+                </div>
+            </button>
+
+            {/* Separator */}
+            <div className="w-px h-6 bg-white/10"></div>
+
+            {/* Loss Trigger */}
+            <button 
+                onClick={() => setIsOpen(isOpen === 'loss' ? null : 'loss')}
+                className={`flex items-center gap-2 pl-2 pr-3 py-2 rounded-r-xl hover:bg-emerald-500/10 transition-all duration-300 group relative active:scale-95 border-y border-r border-white/5 ${isOpen === 'loss' ? 'bg-emerald-500/20' : 'bg-white/5'}`}
+                title="Edit Loss Color"
+            >
+                <div 
+                    className="w-5 h-5 rounded-full transition-all duration-500 group-hover:scale-110 relative opacity-90" 
+                    style={{ 
+                        backgroundColor: colors.loss, 
+                        boxShadow: `0 0 15px ${colors.loss}66, inset 0 0 8px rgba(255,255,255,0.3)` 
+                    }} 
+                >
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-black/20 to-white/20" />
+                </div>
+                <span className={`text-[10px] font-bold tracking-wider group-hover:text-emerald-300 transition-colors ${isOpen === 'loss' ? 'text-emerald-400' : 'text-zinc-400'}`}>LOSS</span>
+            </button>
+
+            {isOpen && (
+                <div className={`absolute top-full mt-2 bg-[#0A0A0A] border border-white/10 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.8)] z-[200] p-3 animate-in fade-in zoom-in-95 duration-300 backdrop-blur-3xl w-[230px] ${isOpen === 'profit' ? 'right-12' : 'right-0'}`}>
+                    <div className="flex flex-wrap gap-2 justify-center mb-1">
+                        {/* 9 Presets + 1 Custom = 10 items (5 per row) */}
+                        {activePalette.slice(0, 9).map(c => {
+                            const activeColor = isOpen === 'profit' ? colors.profit : colors.loss;
+                            const isSelected = activeColor === c;
+                            return (
+                                <button
+                                    key={c}
+                                    onClick={() => {
+                                        onUpdate(portfolio.id, isOpen === 'profit' ? 'profitColor' : 'lossColor', c);
+                                        setIsOpen(null);
+                                    }}
+                                    className={`w-8 h-8 rounded-full transition-all duration-300 hover:scale-110 border border-white/5 relative flex items-center justify-center ${isSelected ? 'ring-2 ring-[#C8B085] ring-offset-2 ring-offset-[#0A0A0A] scale-110 shadow-lg' : 'hover:ring-1 hover:ring-white/30'}`}
+                                    style={{ 
+                                        backgroundColor: c, 
+                                        boxShadow: isSelected ? `0 0 20px ${c}88` : `0 0 10px ${c}33` 
+                                    }}
+                                >
+                                    {isSelected && (
+                                        <div className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.8)] animate-pulse" />
+                                    )}
+                                </button>
+                            );
+                        })}
+                        
+                        {/* Custom Picker Tool (10th item) */}
+                        <div className="relative w-8 h-8 rounded-full overflow-hidden border border-white/10 group cursor-pointer transition-all hover:scale-125">
+                            <input 
+                                type="color" 
+                                value={isOpen === 'profit' ? colors.profit : colors.loss}
+                                onChange={(e) => {
+                                    onUpdate(portfolio.id, isOpen === 'profit' ? 'profitColor' : 'lossColor', e.target.value);
+                                    setIsOpen(null);
+                                }}
+                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                            />
+                            <div className="w-full h-full bg-[conic-gradient(at_center,_red,_orange,_yellow,_green,_blue,_indigo,_violet)] opacity-70 group-hover:opacity-100" />
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <PlusIcon size={14} className="text-white drop-shadow-md stroke-[3]" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // --- INTERNAL COMPONENT: Account Row ---
+// --- INTERNAL COMPONENT: Account Row (Refined for V2.4.4 - Ultra Compact) ---
 const AccountRow = ({ 
     portfolio, 
     actions, 
     isDeletable, 
-    globalLossColor 
+    globalLossColor,
+    t
 }: { 
     portfolio: Portfolio, 
     actions: any, 
     isDeletable: boolean, 
-    globalLossColor: string 
+    globalLossColor: string,
+    t: any
 }) => {
-    const [isEditingName, setIsEditingName] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
     const [tempName, setTempName] = useState(portfolio.name);
     const [tempCapital, setTempCapital] = useState(String(portfolio.initialCapital));
 
-    const handleSaveName = () => {
-        if (tempName.trim()) {
-            actions.updatePortfolio(portfolio.id, 'name', tempName.trim());
-        } else {
-            setTempName(portfolio.name);
-        }
-        setIsEditingName(false);
-    };
-
-    const handleSaveCapital = (val: string) => {
-        setTempCapital(val);
-        const num = parseFloat(val);
-        if (!isNaN(num)) {
-            actions.updatePortfolio(portfolio.id, 'initialCapital', num);
-        }
+    const handleSave = () => {
+        if (tempName.trim()) actions.updatePortfolio(portfolio.id, 'name', tempName.trim());
+        const cap = parseFloat(tempCapital);
+        if (!isNaN(cap)) actions.updatePortfolio(portfolio.id, 'initialCapital', cap);
+        setIsEditing(false);
     };
 
     return (
-        <div className="group flex items-center justify-between h-20 px-4 border-b border-zinc-900/50 hover:bg-zinc-900/20 transition-colors relative">
-            <div className="flex flex-col justify-center min-w-0 flex-1 pr-6">
-                <div className="flex items-center gap-2 mb-1">
-                    {isEditingName ? (
-                        <input
+        <div className="group flex items-center justify-between gap-3 px-4 py-3 border-b border-white/5 hover:bg-white/[0.04] transition-all duration-300 relative">
+            {/* Main Info (Left) */}
+            <div className="flex-1 min-w-0">
+                {isEditing ? (
+                    <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+                        <input 
                             autoFocus
-                            type="text"
+                            type="text" 
                             value={tempName}
                             onChange={(e) => setTempName(e.target.value)}
-                            onBlur={handleSaveName}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                            className="bg-transparent border-b border-zinc-500 text-lg font-bold text-white outline-none w-full max-w-[200px] p-0"
+                            className="flex-1 bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none focus:border-[#C8B085]/50 transition-colors"
+                            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                         />
-                    ) : (
-                        <h3 
-                            onClick={() => setIsEditingName(true)}
-                            className="text-lg font-bold text-zinc-200 cursor-pointer truncate flex items-center gap-2 hover:text-white transition-colors"
-                        >
-                            {portfolio.name}
-                            <Pencil size={10} className="text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </h3>
-                    )}
-                </div>
-                {/* REMOVED THE HARDCODED $ SYMBOL HERE */}
-                <div className="flex items-center gap-2 text-sm font-mono text-zinc-500">
-                    <input
-                        type="number"
-                        value={tempCapital}
-                        onChange={(e) => handleSaveCapital(e.target.value)}
-                        className="bg-transparent outline-none w-32 hover:text-zinc-300 focus:text-zinc-200 transition-colors"
-                    />
-                </div>
+                         <input 
+                            type="number"
+                            value={tempCapital}
+                            onChange={(e) => setTempCapital(e.target.value)}
+                            className="w-24 bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-white text-right outline-none focus:border-[#C8B085]/50 transition-colors font-mono"
+                            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+                        />
+                        <button onClick={handleSave} className="p-1.5 text-[#5B9A8B] hover:bg-[#5B9A8B]/10 rounded-lg transition-colors"><Check size={14}/></button>
+                    </div>
+                ) : (
+                    <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-2 group/edit cursor-pointer w-fit" onClick={() => setIsEditing(true)}>
+                            <span className="text-sm font-bold text-zinc-200 truncate group-hover/edit:text-[#C8B085] transition-colors">{portfolio.name}</span>
+                            <Edit2 size={10} className="opacity-0 group-hover/edit:opacity-100 text-[#C8B085]/70 transition-opacity"/>
+                        </div>
+                        <span className="text-xs text-zinc-500 font-mono tracking-tight mt-0.5">{Number(portfolio.initialCapital).toLocaleString()}</span>
+                    </div>
+                )}
             </div>
 
-            <div className="flex items-center gap-6">
-                <GemstoneLight 
-                    label="WIN" 
-                    color={portfolio.profitColor} 
-                    onChange={(c) => actions.updatePortfolio(portfolio.id, 'profitColor', c)} 
-                />
-                <div className="w-px h-8 bg-zinc-900 mx-1"></div>
-                <GemstoneLight 
-                    label="LOSS" 
-                    color={portfolio.lossColor || globalLossColor} 
-                    onChange={(c) => actions.updatePortfolio(portfolio.id, 'lossColor', c)} 
-                    align="right"
-                />
-                {isDeletable && (
-                    <button 
-                        onClick={(e) => {
-                            e.preventDefault();
-                            if(window.confirm('Delete this account?')) {
-                                const id = portfolio.id;
-                                actions.deletePortfolio(id);
-                            }
-                        }}
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-700 hover:text-red-500 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 ml-2"
+            {/* Actions & Theme Selector (Right) */}
+            <div className="flex items-center gap-3 shrink-0">
+                {!isEditing && isDeletable && (
+                     <button 
+                        onClick={() => { if(window.confirm(t.deleteConfirm)) actions.deletePortfolio(portfolio.id) }}
+                        className="opacity-0 group-hover:opacity-100 p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300"
                     >
-                        <Trash2 size={14} />
+                        <Trash2 size={14}/>
                     </button>
+                )}
+                
+                
+                {!isEditing && (
+                    <AccountThemeSelector 
+                        portfolio={portfolio} 
+                        onUpdate={actions.updatePortfolio} 
+                        globalLossColor={globalLossColor} 
+                    />
                 )}
             </div>
         </div>
@@ -217,16 +383,7 @@ export const AccountManager = ({
     };
 
     return (
-        <GlassCard className="bg-[#050505]/60 border-zinc-800/60">
-            <div className="px-5 py-3 border-b border-zinc-900 bg-[#080808]/40 flex justify-between items-center rounded-t-xl">
-                <div className="flex items-center gap-2 text-zinc-500">
-                    <Briefcase size={12} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">{t.managePortfolios}</span>
-                </div>
-                <div className="text-[10px] text-zinc-700 font-mono">
-                    {portfolios.length} ACTIVE
-                </div>
-            </div>
+        <GlassCard className="bg-[#050505]/60 border-zinc-800/60" overflowVisible={true}>
 
             <div className="flex flex-col">
                 {portfolios.map(p => (
@@ -236,6 +393,7 @@ export const AccountManager = ({
                         actions={actions}
                         isDeletable={portfolios.length > 1}
                         globalLossColor={globalLossColor}
+                        t={t}
                     />
                 ))}
             </div>
@@ -247,34 +405,83 @@ export const AccountManager = ({
                             <input 
                                 autoFocus
                                 type="text" 
-                                placeholder="Account Name" 
+                                placeholder={t.portfolioName} 
                                 value={newName}
                                 onChange={e => setNewName(e.target.value)}
                                 className="flex-1 bg-zinc-900/30 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-600 transition-colors"
                             />
                             <input 
                                 type="number" 
-                                placeholder="Capital" 
+                                placeholder={t.initialCapital} 
                                 value={newCapital}
                                 onChange={e => setNewCapital(e.target.value)}
-                                className="w-32 bg-zinc-900/30 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-600 font-mono transition-colors"
+                                className="w-32 bg-zinc-900/30 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-600 font-mono transition-colors text-right"
                             />
                         </div>
                         <div className="flex gap-2">
-                            <button type="submit" disabled={!newName || !newCapital} className="flex-1 bg-zinc-100 hover:bg-white text-black py-2 rounded-lg text-xs font-bold uppercase disabled:opacity-50 transition-colors">Confirm</button>
-                            <button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-zinc-500 hover:text-zinc-300 text-xs font-bold uppercase transition-colors">Cancel</button>
+                            <button type="submit" disabled={!newName || !newCapital} className="flex-1 bg-zinc-100 hover:bg-white text-black py-2 rounded-lg text-xs font-bold uppercase disabled:opacity-50 transition-colors">{t.confirm}</button>
+                            <button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-zinc-500 hover:text-zinc-300 text-xs font-bold uppercase transition-colors">{t.cancel}</button>
                         </div>
                     </form>
                 ) : (
                     <button 
-                        onClick={() => setIsAdding(true)}
-                        className="w-full py-3 rounded-xl border border-dashed border-zinc-800 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400 hover:bg-zinc-900/10 transition-all flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wide group"
+                        onClick={() => setIsAdding(true)} className="w-full py-3 rounded-xl border border-dashed border-zinc-800 text-zinc-600 hover:border-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30 transition-all duration-300 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wide group hover:scale-[1.01] active:scale-[0.99]"
                     >
-                        <PlusIcon size={14} className="group-hover:scale-110 transition-transform"/> {t.addPortfolio}
+                        <PlusIcon size={14} className="group-hover:scale-110 transition-transform duration-300"/> {t.addPortfolio}
                     </button>
                 )}
             </div>
         </GlassCard>
+    );
+};
+
+// --- INTERNAL COMPONENT: ResetConfirmPanel ---
+const ResetConfirmPanel = ({ lang, onConfirm, onCancel }: { lang: Lang; onConfirm: () => void; onCancel: () => void }) => {
+    const [countdown, setCountdown] = React.useState(3);
+
+    React.useEffect(() => {
+        if (countdown <= 0) return;
+        const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
+        return () => clearTimeout(timer);
+    }, [countdown]);
+
+    const isZh = lang === 'zh';
+
+    return (
+        <div className="flex flex-col gap-3 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-2 text-red-400">
+                <AlertOctagon size={16} />
+                <span className="text-xs font-bold">{isZh ? '⚠ 此操作不可復原！' : '⚠ This action is irreversible!'}</span>
+            </div>
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
+                {isZh
+                    ? '所有交易紀錄、帳戶設定、策略標籤將被永久刪除。'
+                    : 'All trades, account settings, and strategy tags will be permanently deleted.'}
+            </p>
+            <div className="flex gap-2">
+                <button
+                    type="button"
+                    disabled={countdown > 0}
+                    onClick={(e) => { e.preventDefault(); onConfirm(); }}
+                    className={`flex-[2] py-3 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all ${
+                        countdown > 0
+                            ? 'bg-zinc-800 border-zinc-700 text-zinc-600 cursor-not-allowed'
+                            : 'bg-red-500 border-red-600 text-white hover:bg-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)]'
+                    }`}
+                >
+                    {countdown > 0
+                        ? `${isZh ? '確認刪除' : 'Confirm Delete'} (${countdown}s)`
+                        : (isZh ? '確認刪除' : 'Confirm Delete')}
+                </button>
+                <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); onCancel(); }}
+                    className="flex-1 py-3 rounded-lg bg-white/5 border border-white/10 text-zinc-400 text-xs font-bold uppercase tracking-widest hover:bg-white/10 transition-all"
+                >
+                    {isZh ? '取消' : 'Cancel'}
+                </button>
+            </div>
+        </div>
     );
 };
 
@@ -300,6 +507,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const [showMindsetTip, setShowMindsetTip] = useState(false);
     const [isForceBackingUp, setIsForceBackingUp] = useState(false); // State for button loading
     const [isForcePulling, setIsForcePulling] = useState(false); // State for pull loading
+    const [showResetConfirm, setShowResetConfirm] = useState(false); // New state for two-step reset
     const jsonInputRef = useRef<HTMLInputElement>(null);
 
     
@@ -346,17 +554,17 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const streakPercent = ((maxLossStreak - 2) / (10 - 2)) * 100;
 
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-48 pt-4">
+        <div className="space-y-8 px-4 sm:px-0 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-48 pt-4 max-w-full overflow-x-hidden">
             {/* CLOUD SYNC */}
-            <div className="space-y-2">
-                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2"><Cloud size={12}/> {t.syncTitle}</h3>
-                 <div className={`rounded-3xl relative overflow-hidden border transition-all duration-500 ${currentUser ? 'bg-[#1C1E22] border-[#C8B085]/20 p-5' : 'bg-transparent border-white/5 p-6'}`}>
+            <div className="space-y-4">
+                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><Cloud size={12}/> Google 雲端備份</h3>
+                 <div className={`rounded-3xl relative overflow-hidden border transition-all duration-500 ${currentUser ? 'bg-[#1C1E22] border-[#C8B085]/20 p-5' : 'bg-transparent border-white/5 p-1'}`}>
                     {/* Background Decoration */}
                     <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none transform translate-x-1/3 -translate-y-1/3">
                         <UserCircle size={180} />
                     </div>
 
-                    {currentUser ? (
+                     {currentUser ? (
                         <div className="relative z-10">
                             <div className="flex items-start justify-between gap-4">
                                 {/* Left: Avatar & Info */}
@@ -376,7 +584,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                         <h2 className="text-base font-bold text-white tracking-tight truncate">
                                             {currentUser.displayName || 'Anonymous Trader'}
                                         </h2>
-                                        <p className="text-[10px] text-slate-500 font-mono truncate max-w-full opacity-80 mb-1.5">
+                                        <p className="text-[10px] text-zinc-500 font-mono truncate max-w-full opacity-80 mb-1.5">
                                             {currentUser.email}
                                         </p>
                                         
@@ -406,23 +614,30 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                             </div>
                         </div>
                     ) : (
-                        <div className="relative z-10 text-center py-1 space-y-4">
-                            <div className="w-12 h-12 mx-auto rounded-full bg-[#C8B085]/10 flex items-center justify-center border border-[#C8B085]/20 shadow-[0_0_20px_rgba(200,176,133,0.1)]"><Cloud size={24} className="text-[#C8B085]"/></div>
-                            <div>
-                                <h3 className="text-sm font-bold text-white mb-1">{t.syncTitle}</h3>
-                                <p className="text-[10px] text-slate-400 leading-relaxed px-2 opacity-80">{t.syncDesc}</p>
+                        <div 
+                            onClick={onLogin} 
+                            className="relative z-10 flex items-center gap-4 p-3 cursor-pointer group hover:bg-white/5 rounded-2xl transition-all border border-transparent hover:border-white/10"
+                        >
+                            <div className="w-10 h-10 shrink-0 rounded-full bg-[#C8B085]/10 flex items-center justify-center border border-[#C8B085]/20 group-hover:bg-[#C8B085] group-hover:text-black transition-all shadow-[0_0_10px_rgba(200,176,133,0.1)]">
+                                <Cloud size={18} className="text-[#C8B085] group-hover:text-black transition-colors"/>
                             </div>
-                            <button onClick={onLogin} className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#C8B085] to-[#A08C65] text-black font-bold uppercase tracking-widest text-[11px] shadow-lg shadow-[#C8B085]/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
-                                <UserCircle size={16} /> {t.loginWithGoogle}
-                            </button>
+                            <div className="flex flex-col flex-1 min-w-0">
+                                <h3 className="text-sm font-bold text-white group-hover:text-[#C8B085] transition-colors truncate">Google 登入</h3>
+                                <p className="text-[10px] text-zinc-500 truncate group-hover:text-zinc-400 transition-colors">
+                                    點擊登入即可啟用雲端備份與還原
+                                </p>
+                            </div>
+                            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-zinc-600 group-hover:bg-[#C8B085] group-hover:text-black transition-all">
+                                <ChevronRight size={14} strokeWidth={3} />
+                            </div>
                         </div>
                     )}
                  </div>
             </div>
 
             {/* BROKERAGE INTEGRATION */}
-            <div className="space-y-2">
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2">
+            <div className="space-y-4">
+                <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5">
                     <CloudLightning size={12}/> {lang === 'zh' ? '同步券商' : 'BROKER SYNC'}
                 </h3>
                 <BrokerSettings
@@ -436,51 +651,103 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
 
             {/* RISK MANAGEMENT */}
 
-            <div className="space-y-2">
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2"><Shield size={12}/> {t.riskSettings}</h3>
+            <div className="space-y-4">
+                <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><Shield size={12}/> {t.riskSettings}</h3>
                 <div className="p-4 rounded-xl border border-white/5 space-y-6">
                     <div className="space-y-2">
                          <div className="flex justify-between text-xs items-center">
-                             <span className="text-slate-300 font-bold">{t.ddThreshold}</span>
-                             <span className="px-2 py-0.5 rounded bg-[#2C5F54]/30 text-[#5B9A8B] font-bold font-barlow-numeric border border-[#2C5F54]/50">{ddThreshold}%</span>
+                             <span className="text-white/90 font-bold">{t.ddThreshold}</span>
+                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#2C5F54]/30 border border-[#2C5F54]/50">
+                                <input 
+                                    type="number"
+                                    value={ddThreshold}
+                                    min={5}
+                                    max={50}
+                                    onChange={(e) => {
+                                        const val = Math.min(50, Math.max(5, Number(e.target.value)));
+                                        setDdThreshold(val);
+                                    }}
+                                    className="bg-transparent border-none outline-none text-[#5B9A8B] font-bold font-barlow-numeric w-10 text-right text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <span className="text-[#5B9A8B] font-bold font-barlow-numeric text-xs">%</span>
+                             </div>
                          </div>
-                         <div className="relative flex items-center h-4">
-                             <input type="range" min="5" max="50" step="1" value={ddThreshold} onChange={(e) => setDdThreshold(Number(e.target.value))} className="w-full h-1.5 rounded-lg appearance-none cursor-pointer" style={{background: `linear-gradient(to right, ${THEME.GREEN_DARK} 0%, ${THEME.GREEN} ${ddPercent}%, rgba(255,255,255,0.1) ${ddPercent}%, rgba(255,255,255,0.1) 100%)`}} />
+                         <div className="relative flex items-center h-6 w-full">
+                              <GlowSlider 
+                                min={5} max={50} step={1} value={ddThreshold} onChange={setDdThreshold} 
+                                gradientColors={[THEME.GREEN_DARK, THEME.GREEN]} 
+                              />
                          </div>
-                         <p className="text-[10px] text-slate-500 leading-relaxed">{t.risk_dd_desc}</p>
+                         <p className="text-[10px] text-zinc-500 leading-relaxed">{t.risk_dd_desc}</p>
                     </div>
                     <div className="h-px bg-white/5" />
                     <div className="space-y-2">
                          <div className="flex justify-between text-xs items-center">
-                             <span className="text-slate-300 font-bold">{t.maxLossStreak}</span>
-                             <span className="px-2 py-0.5 rounded bg-[#C8B085]/10 text-[#C8B085] font-bold font-barlow-numeric border border-[#C8B085]/30">{maxLossStreak} Trades</span>
+                             <span className="text-white/90 font-bold">{t.maxLossStreak}</span>
+                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#C8B085]/10 border border-[#C8B085]/30">
+                                <input 
+                                    type="number"
+                                    value={maxLossStreak}
+                                    min={2}
+                                    max={10}
+                                    onChange={(e) => {
+                                        const val = Math.min(10, Math.max(2, Number(e.target.value)));
+                                        setMaxLossStreak(val);
+                                    }}
+                                    className="bg-transparent border-none outline-none text-[#C8B085] font-bold font-barlow-numeric w-8 text-right text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <span className="text-[#C8B085] font-bold font-barlow-numeric text-xs">次</span>
+                             </div>
                          </div>
-                         <div className="relative flex items-center h-4">
-                            <input type="range" min="2" max="10" step="1" value={maxLossStreak} onChange={(e) => setMaxLossStreak(Number(e.target.value))} className="w-full h-1.5 rounded-lg appearance-none cursor-pointer" style={{background: `linear-gradient(to right, #A08C65 0%, #C8B085 ${streakPercent}%, rgba(255,255,255,0.1) ${streakPercent}%, rgba(255,255,255,0.1) 100%)`}} />
+                         <div className="relative flex items-center h-6 w-full">
+                             <GlowSlider 
+                                min={2} max={10} step={1} value={maxLossStreak} onChange={setMaxLossStreak} 
+                                gradientColors={['#A08C65', '#C8B085']} 
+                              />
                          </div>
-                         <p className="text-[10px] text-slate-500 leading-relaxed">{t.risk_streak_desc}</p>
+                         <p className="text-[10px] text-zinc-500 leading-relaxed">{t.risk_streak_desc}</p>
                     </div>
                 </div>
             </div>
 
             {/* PREFERENCES */}
-            <div className="space-y-2">
-                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2"><SettingsIcon size={12}/> {t.preferences}</h3>
+            <div className="space-y-4">
+                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><SettingsIcon size={12}/> {t.preferences}</h3>
                  <div className="rounded-xl border border-white/5 divide-y divide-white/5 relative">
                      <div className="p-4 flex justify-between items-center hover:bg-white/[0.02] transition-colors first:rounded-t-xl relative">
                          <div className="flex items-center gap-3">
-                             <div className="p-2 rounded-lg bg-white/5 text-slate-400"><Languages size={16}/></div>
-                             <span className="text-sm font-medium text-slate-200">{t.language}</span>
+                             <div className="p-2 rounded-lg bg-white/5 text-zinc-600"><Languages size={16}/></div>
+                             <span className="text-sm font-medium text-white/90">{t.language}</span>
                          </div>
-                         <div className="flex bg-black p-1 rounded-lg border border-white/10">
-                             <button onClick={() => setLang('en')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold transition-all ${lang === 'en' ? 'bg-[#25282C] text-white shadow-sm border border-white/10' : 'text-slate-500'}`}>EN</button>
-                             <button onClick={() => setLang('zh')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold transition-all ${lang === 'zh' ? 'bg-[#25282C] text-white shadow-sm border border-white/10' : 'text-slate-500'}`}>中文</button>
+                         <div className="relative flex bg-black/40 p-1 rounded-lg border border-white/10 w-[140px] h-[36px]">
+                             {/* Sliding Background */}
+                             <div 
+                                 className="absolute top-1 bottom-1 rounded-md bg-[#25282C] border border-white/10 shadow-sm transition-all duration-300 ease-out"
+                                 style={{ 
+                                     left: lang === 'en' ? '4px' : '50%', 
+                                     width: 'calc(50% - 4px)',
+                                     transform: lang === 'zh' ? 'translateX(0)' : 'translateX(0)' 
+                                 }}
+                             />
+                             
+                             <button 
+                                 onClick={() => setLang('en')} 
+                                 className={`relative z-10 flex-1 text-[10px] font-bold transition-colors duration-300 ${lang === 'en' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                             >
+                                 EN
+                             </button>
+                             <button 
+                                 onClick={() => setLang('zh')} 
+                                 className={`relative z-10 flex-1 text-[10px] font-bold transition-colors duration-300 ${lang === 'zh' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                             >
+                                 中文
+                             </button>
                          </div>
                      </div>
                      <div className="p-4 flex justify-between items-center hover:bg-white/[0.02] transition-colors last:rounded-b-xl relative">
                          <div className="flex items-center gap-3">
-                             <div className="p-2 rounded-lg bg-white/5 text-slate-400"><Palette size={16}/></div>
-                             <span className="text-sm font-medium text-slate-200">{t.lossColor}</span>
+                             <div className="p-2 rounded-lg bg-white/5 text-zinc-600"><Palette size={16}/></div>
+                             <span className="text-sm font-medium text-white/90">{t.lossColor}</span>
                          </div>
                          <GemstoneLight 
                             color={lossColor} 
@@ -492,27 +759,28 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
             </div>
 
             {/* ACCOUNT MANAGEMENT */}
-            <div className="space-y-2">
-                <AccountManager 
-                    portfolios={portfolios} 
-                    actions={actions} 
-                    t={t} 
-                    globalLossColor={lossColor} 
-                />
+            <div className="space-y-4">
+                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><Briefcase size={12}/> {t.managePortfolios}</h3>
+                 <AccountManager 
+                     portfolios={portfolios} 
+                     actions={actions} 
+                     t={t} 
+                     globalLossColor={lossColor} 
+                 />
             </div>
 
             {/* TAG MANAGEMENT */}
-            <div className="space-y-2">
-                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2"><Target size={12}/> {t.tagManagement}</h3>
+            <div className="space-y-4">
+                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><Target size={12}/> {t.tagManagement}</h3>
                  <div className="rounded-xl border border-white/5 overflow-hidden">
                     <div className="p-4 border-b border-white/5">
                         <div className="flex items-center mb-3 gap-2">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
                                 <Target size={10}/> {t.strategyList}
                             </div>
                             <button 
                                 onClick={() => setShowStrategyTip(!showStrategyTip)}
-                                className={`w-4 h-4 rounded-full flex items-center justify-center transition-all ${showStrategyTip ? 'bg-white text-black' : 'bg-white/5 text-slate-500 hover:text-white'}`}
+                                className={`w-4 h-4 rounded-full flex items-center justify-center transition-all ${showStrategyTip ? 'bg-white text-black' : 'bg-white/5 text-zinc-600 hover:text-white'}`}
                             >
                                 <Info size={10} strokeWidth={2.5} />
                             </button>
@@ -523,7 +791,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                  <div className="absolute top-0 left-0 w-1 h-full bg-[#C8B085]"></div>
                                  <div className="flex gap-3">
                                      <div className="mt-0.5 shrink-0 text-[#C8B085]"><Info size={16} /></div>
-                                     <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                                     <p className="text-xs text-zinc-400 leading-relaxed font-medium">
                                         {t.strategyTip}
                                      </p>
                                  </div>
@@ -537,23 +805,23 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                 const sub = parts.slice(1).join('_');
                                 return (
                                     <div key={s} className="group relative flex items-center">
-                                        <span className="px-2.5 py-1 rounded bg-[#25282C] border border-white/5 text-[11px] text-slate-300 font-medium group-hover:bg-[#2A2D32] transition-colors pr-2 flex items-baseline">
+                                        <span className="px-2.5 py-1 rounded bg-[#25282C] border border-white/5 text-[11px] text-zinc-400 font-medium group-hover:bg-[#2A2D32] transition-colors pr-2 flex items-baseline">
                                             {main}
-                                            {sub && <span className="text-[9px] text-zinc-500 ml-1 opacity-50">_{sub}</span>}
+                                            {sub && <span className="text-[9px] text-zinc-600 ml-1 opacity-50">_{sub}</span>}
                                         </span>
                                         <button onClick={() => actions.deleteStrategy(s)} className="w-4 h-4 ml-[-6px] rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10 scale-90 hover:scale-100"><X size={8} strokeWidth={3}/></button>
                                     </div>
                                 );
                             })}
                         </div>
-                        <form onSubmit={handleAddStrategy} className="relative"><input type="text" value={newStrat} onChange={(e) => setNewStrat(e.target.value)} placeholder={t.addStrategy} className="w-full bg-[#0B0C10] border border-white/5 rounded pl-3 pr-8 py-2 text-xs text-white placeholder-slate-600 outline-none focus:border-white/20 transition-colors" /><button type="submit" disabled={!newStrat} className="absolute right-1 top-1 p-1 rounded bg-white/5 text-white hover:bg-white/20 transition-all disabled:opacity-0"><PlusIcon size={12}/></button></form>
+                        <form onSubmit={handleAddStrategy} className="relative"><input type="text" value={newStrat} onChange={(e) => setNewStrat(e.target.value)} placeholder={t.addStrategy} className="w-full bg-[#0B0C10] border border-white/5 rounded pl-3 pr-8 py-2 text-xs text-white placeholder-zinc-700 outline-none focus:border-white/20 transition-colors" /><button type="submit" disabled={!newStrat} className="absolute right-1 top-1 p-1 rounded bg-white/5 text-white hover:bg-white/20 transition-all disabled:opacity-0"><PlusIcon size={12}/></button></form>
                     </div>
                     <div className="p-4">
                         <div className="flex items-center mb-3 gap-2">
-                             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5"><Layers size={10}/> {t.mindsetList}</div>
+                             <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5"><Layers size={10}/> {t.mindsetList}</div>
                              <button 
                                 onClick={() => setShowMindsetTip(!showMindsetTip)}
-                                className={`w-4 h-4 rounded-full flex items-center justify-center transition-all ${showMindsetTip ? 'bg-white text-black' : 'bg-white/5 text-slate-500 hover:text-white'}`}
+                                className={`w-4 h-4 rounded-full flex items-center justify-center transition-all ${showMindsetTip ? 'bg-white text-black' : 'bg-white/5 text-zinc-600 hover:text-white'}`}
                             >
                                 <Info size={10} strokeWidth={2.5} />
                             </button>
@@ -564,37 +832,26 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                  <div className="absolute top-0 left-0 w-1 h-full bg-[#C8B085]"></div>
                                  <div className="flex gap-3">
                                      <div className="mt-0.5 shrink-0 text-[#C8B085]"><Info size={16} /></div>
-                                     <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                                     <p className="text-xs text-zinc-400 leading-relaxed font-medium">
                                         {t.mindsetTip}
                                      </p>
                                  </div>
                             </div>
                         )}
 
-                        <div className="flex flex-wrap gap-2 mb-3 min-h-[30px]">{emotions.map(e => (<div key={e} className="group relative flex items-center"><span className="px-2.5 py-1 rounded bg-[#25282C] border border-white/5 text-[11px] text-slate-300 font-medium group-hover:bg-[#2A2D32] transition-colors pr-2">{e}</span><button onClick={() => actions.deleteEmotion(e)} className="w-4 h-4 ml-[-6px] rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10 scale-90 hover:scale-100"><X size={8} strokeWidth={3}/></button></div>))}</div>
-                        <form onSubmit={handleAddEmotion} className="relative"><input type="text" value={newEmo} onChange={(e) => setNewEmo(e.target.value)} placeholder={t.addMindset} className="w-full bg-[#0B0C10] border border-white/5 rounded pl-3 pr-8 py-2 text-xs text-white placeholder-slate-600 outline-none focus:border-white/20 transition-colors" /><button type="submit" disabled={!newEmo} className="absolute right-1 top-1 p-1 rounded bg-white/5 text-white hover:bg-white/20 transition-all disabled:opacity-0"><PlusIcon size={12}/></button></form>
+                        <div className="flex flex-wrap gap-2 mb-3 min-h-[30px]">{emotions.map(e => (<div key={e} className="group relative flex items-center"><span className="px-2.5 py-1 rounded bg-[#25282C] border border-white/5 text-[11px] text-zinc-400 font-medium group-hover:bg-[#2A2D32] transition-colors pr-2">{e}</span><button onClick={() => actions.deleteEmotion(e)} className="w-4 h-4 ml-[-6px] rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10 scale-90 hover:scale-100"><X size={8} strokeWidth={3}/></button></div>))}</div>
+                        <form onSubmit={handleAddEmotion} className="relative"><input type="text" value={newEmo} onChange={(e) => setNewEmo(e.target.value)} placeholder={t.addMindset} className="w-full bg-[#0B0C10] border border-white/5 rounded pl-3 pr-8 py-2 text-xs text-white placeholder-zinc-700 outline-none focus:border-white/20 transition-colors" /><button type="submit" disabled={!newEmo} className="absolute right-1 top-1 p-1 rounded bg-white/5 text-white hover:bg-white/20 transition-all disabled:opacity-0"><PlusIcon size={12}/></button></form>
                     </div>
                  </div>
             </div>
 
-            {/* DATA MANAGEMENT */}
-            <div className="space-y-2">
-                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2"><HardDrive size={12}/> {t.dataManagement}</h3>
+                     {/* DATA MANAGEMENT */}
+            <div className="space-y-4">
+                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><HardDrive size={12}/> {t.dataManagement}</h3>
                  
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* LOCAL ACTIONS */}
-                    <button onClick={() => actions.downloadBackup()} className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-white/5 active:scale-[0.98]">
-                        <div className="p-3 rounded-full bg-white/5 text-slate-400 group-hover:scale-110 transition-transform"><Upload size={20}/></div>
-                        <span className="text-[10px] font-bold text-slate-300 tracking-wider text-center uppercase">{t.backupDownload}</span>
-                    </button>
+                  <div className="grid grid-cols-1 gap-3">
+                    {/* CLOUD ACTIONS ONLY - Removed Local Backup as per user request */}
                     
-                    <button onClick={() => jsonInputRef.current?.click()} className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-white/5 hover:border-white/10 transition-all gap-2 bg-white/5 active:scale-[0.98]">
-                        <div className="p-3 rounded-full bg-white/5 text-slate-400 group-hover:scale-110 transition-transform"><Download size={20}/></div>
-                        <span className="text-[10px] font-bold text-slate-300 tracking-wider text-center uppercase">{t.backupImport}</span>
-                        <input type="file" ref={jsonInputRef} onChange={(e) => actions.handleImportJSON(e, t)} className="hidden" accept=".json" />
-                    </button>
-
-                    {/* CLOUD ACTIONS */}
                     <button 
                         onClick={handleForcePull} 
                         disabled={isForcePulling}
@@ -617,8 +874,6 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                         <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">雲端備份</span>
                     </button>
                    </div>
-
-
              </div>
 
 
@@ -626,7 +881,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
 
             {/* SYSTEM DIAGNOSIS & REPAIR */}
             <div className="space-y-4">
-                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2 flex items-center gap-2">系統診斷與修復</h3>
+                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5">系統診斷與修復</h3>
                  
                  <div className="p-5 rounded-2xl bg-black/20 border border-white/5 space-y-4">
                      {/* SYNC STATUS DASHBOARD */}
@@ -637,7 +892,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                  {syncStatus === 'synced' ? '雲端連線正常' : syncStatus === 'error' ? '連線異常 / 權限受限' : '正在通訊...'}
                              </div>
                              {syncError && (
-                                 <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] text-red-400 font-mono leading-relaxed mt-2 overflow-auto max-h-24">
+                                 <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] font-mono leading-relaxed mt-2 overflow-auto max-h-24 text-zinc-500">
                                      ERROR: {syncError}
                                  </div>
                              )}
@@ -648,7 +903,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
 
                      {/* REPAIR TOOLS */}
                      <div className="space-y-3">
-                         <p className="text-[10px] text-slate-500 leading-relaxed uppercase tracking-tighter">
+                         <p className="text-[10px] leading-relaxed uppercase tracking-tighter text-zinc-600">
                             如果遇到「Unexpected state」或「權限不足」，請嘗試下方的修復工具或檢查雲端規則。
                          </p>
                          <button 
@@ -670,14 +925,31 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                  <div className="rounded-xl border border-red-500/10 overflow-hidden relative group">
                      <div className="absolute inset-0 bg-red-500/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
                      <div className="p-5">
-                         <div className="flex items-center gap-3 mb-2"><AlertOctagon size={18} className="text-red-400"/><h3 className="text-sm font-bold text-red-400 uppercase tracking-widest">{t.dangerZone}</h3></div>
-                         <p className="text-xs text-slate-500 leading-relaxed mb-4 pl-8">{t.resetDesc}</p>
-                         <button onClick={() => actions.resetAllData(t)} className="w-full py-3 rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500 hover:text-black hover:border-red-500 text-red-400 text-xs font-bold uppercase tracking-widest transition-all">{t.resetAll}</button>
+                         <div className="flex items-center gap-3 mb-2"><AlertOctagon size={18} className="text-red-400"/><h3 className="text-[10px] font-bold text-red-400/80 uppercase tracking-[0.2em]">{t.dangerZone}</h3></div>
+                         <p className="text-xs text-zinc-600 leading-relaxed mb-4 pl-8">{t.resetDesc}</p>
+                         
+                          <div className="relative">
+                            {!showResetConfirm ? (
+                                <button 
+                                    type="button" 
+                                    onClick={(e) => { e.preventDefault(); setShowResetConfirm(true); }}
+                                    className="w-full py-3 rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-xs font-bold uppercase tracking-widest transition-all"
+                                >
+                                    {t.resetAll}
+                                </button>
+                            ) : (
+                                <ResetConfirmPanel 
+                                    lang={lang} 
+                                    onConfirm={() => { actions.resetAllData(t); setShowResetConfirm(false); }} 
+                                    onCancel={() => setShowResetConfirm(false)} 
+                                />
+                            )}
+                         </div>
                      </div>
                  </div>
             </div>
             
-            <div className="text-center text-[10px] text-zinc-700 font-mono pb-4 pt-2 underline decoration-red-500/50">TradeTrack Pro {APP_VERSION}</div>
+            <div className="text-center text-[10px] text-zinc-800 font-mono pb-4 pt-2 underline decoration-red-500/20">TradeTrack Pro {APP_VERSION}</div>
             
             {showLogoutConfirm && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
