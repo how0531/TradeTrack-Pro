@@ -117,15 +117,14 @@ export const calculateMetrics = (
     const netProfit = gProfit - gLoss;
     const netProfitPct = safeCapital > 0 ? (netProfit / safeCapital) * 100 : 0;
 
-    // --- NEW: Calculate Max Stagnation Days (Weekdays Only) ---
-    // This is calculated based on daily intervals regardless of the requested chart frequency
+    // --- NEW: Calculate Max Stagnation Days & Daily Returns for Sharpe ---
     let maxStagnationDays = 0;
     let currentStagnationStreak = 0;
     let dailyEquity = safeCapital;
     let dailyPeak = safeCapital;
+    const dailyReturns: number[] = [];
     
     if (sortedTrades.length > 0) {
-        // Map trades to dates for fast lookup
         const dailyPnlMap = new Map<string, number>();
         sortedTrades.forEach(t => {
             const dStr = toLocalISO(new Date(t.date));
@@ -133,40 +132,59 @@ export const calculateMetrics = (
         });
 
         const dCursor = new Date(sortedTrades[0].date);
-        const dEnd = new Date(); // Today
-        // Set to start of day to avoid time issues
+        const dEnd = new Date();
         dCursor.setHours(0,0,0,0);
         dEnd.setHours(0,0,0,0);
 
-        // Limit iteration to avoid infinite loops in edge cases (max 30 years)
         let safeCounter = 0;
+        let prevEquity = safeCapital;
+
         while(dCursor <= dEnd && safeCounter < 11000) {
             const dStr = toLocalISO(dCursor);
             const dayPnl = dailyPnlMap.get(dStr) || 0;
-            dailyEquity += dayPnl;
+            
+            // Collect daily return for Sharpe (only on active days or every day?)
+            // Standard approach is to include every day to capture "risk" of flat days
+            // but we'll only calculate return if equity > 0
+            if (prevEquity > 0) {
+                const dailyRet = dayPnl / prevEquity;
+                dailyReturns.push(dailyRet);
+            }
 
-            // Check Peak
+            dailyEquity += dayPnl;
+            prevEquity = dailyEquity;
+
             if (dailyEquity > dailyPeak) {
-                // New High Achieved
                 dailyPeak = dailyEquity;
-                // Reset streak
                 currentStagnationStreak = 0;
             } else {
-                // Currently Underwater or at Peak (but trade might have happened)
-                // Logic: Only count weekdays (Mon=1 ... Fri=5)
                 const dayOfWeek = dCursor.getDay();
                 if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                     currentStagnationStreak++;
                 }
             }
 
-            // Update Max
             if (currentStagnationStreak > maxStagnationDays) {
                 maxStagnationDays = currentStagnationStreak;
             }
 
             dCursor.setDate(dCursor.getDate() + 1);
             safeCounter++;
+        }
+    }
+
+    // Calculate Sharpe Ratio
+    let sharpe = 0;
+    if (dailyReturns.length > 1) {
+        const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+        const variance = dailyReturns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (dailyReturns.length - 1);
+        const stdDev = Math.sqrt(variance);
+        
+        if (stdDev > 0) {
+            // Annualize (sqrt(252) for trading days, but since we collected calendar days 
+            // including weekends as 0 returns, sqrt(365) might be more consistent?
+            // Most traders prefer 252. Let's stick to 252 for standard benchmark feel.)
+            sharpe = (mean / stdDev) * Math.sqrt(252);
         }
     }
 
@@ -321,7 +339,7 @@ export const calculateMetrics = (
         riskReward: (losses > 0 && gLoss > 0) ? (gProfit/wins) / (gLoss/losses) : (wins > 0 ? Infinity : 0), 
         stratStats, 
         isPeak: currentEq >= peak - 0.01, 
-        sharpe: 0, 
+        sharpe, 
         avgWin: wins > 0 ? gProfit/wins : 0, 
         avgLoss: losses > 0 ? gLoss/losses : 0, 
         totalTrades: sortedTrades.length,
