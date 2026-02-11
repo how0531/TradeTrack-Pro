@@ -1,6 +1,6 @@
 
 // [Manage] Last Updated: 2026-01-30
-export const APP_VERSION = 'V2.2.4';
+export const APP_VERSION = 'V2.4.0';
 export const THEME = {
     GOLD: '#C8B085',       
     GOLD_BG: '#2A2824',    
@@ -44,10 +44,33 @@ export const ACCOUNT_CATEGORY_THEMES = {
     }
 } as const;
 
-export const DEFAULT_PALETTE = [
-    '#C8B085', '#526D82', '#D05A5A', '#8884d8', '#c97e59', '#1F618D', '#5DADE2', '#a3526d', '#E74C3C',
-    '#5B9A8B', '#2C5F54', '#28573f' // Added Greens for selection
+// 9 High-light Morandi Colors for Profit (Updated for higher contrast on dark bg)
+export const PROFIT_PALETTE = [
+    '#F0D080', // Champagne Gold (Brighter)
+    '#FFB7B2', // Salmon Pink (More vibrant)
+    '#E0C3FC', // Bright Lavender
+    '#AED9E0', // Cyan Blue (Clearer)
+    '#B5EAD7', // Mint Green (Pop)
+    '#FFF59D', // Lemon Yellow
+    '#FFCCBC', // Bright Peach
+    '#FFAB91', // Vivid Orange
+    '#E0E0E0'  // Bright Grey
 ];
+
+// 9 Low-key Colors for Loss
+export const LOSS_PALETTE = [
+    '#2E4053', // Dark Blue Gray
+    '#566573', // Iron Gray
+    '#1C2833', // Midnight
+    '#145A32', // Dark Emerald
+    '#1B4F72', // Deep Navy
+    '#641E16', // Dark Maroon
+    '#4A235A', // Deep Purple
+    '#424949', // Charcoal
+    '#7B7D7D'  // Medium Gray
+];
+
+export const DEFAULT_PALETTE = PROFIT_PALETTE; // Fallback
 
 export const TIME_RANGES = ['ALL', '1M', '3M', 'YTD', 'CUSTOM'] as const;
 export const FREQUENCIES = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'] as const;
@@ -60,7 +83,7 @@ export const I18N = {
         riskReward: '賺賠比', avgWin: '平均獲利', avgLoss: '平均虧損', maxDD: '最大回撤',
         sharpe: '夏普比率', strategies: '策略績效', strategyList: '策略標籤', mindsetList: '交易類型',
         addStrategy: '新增策略...', addMindset: '新增類型...', noData: '尚無數據', monthlyPnl: '本月損益',
-        trades: '筆', totalTrades: '交易筆數', addTrade: '新增交易', editTrade: '編輯交易', profit: '獲利', loss: '虧損',
+        trades: '次', totalTrades: '交易筆數', addTrade: '新增交易', editTrade: '編輯交易', profit: '獲利', loss: '虧損',
         save: '儲存', update: '更新', notePlaceholder: '交易筆記 / 檢討...', uncategorized: '未分類',
         language: '語言 / Language', deleteTitle: '刪除交易', deleteConfirm: '確定要刪除這筆交易紀錄嗎？此動作無法復原。',
         cancel: '取消', delete: '刪除', allStrategies: '全部策略', allEmotions: '全部類型', selected: '已選',
@@ -78,7 +101,7 @@ export const I18N = {
         freq_daily: '日 (Daily)', freq_weekly: '周 (Weekly)', freq_monthly: '月 (Monthly)',
         freq_quarterly: '季 (Quarterly)', freq_yearly: '年 (Yearly)',
         status_newHigh: '創新高', status_safe: '安全', status_warning: '需注意', status_broken: '破MDD',
-        portfolio: '歸屬帳戶', switchPortfolio: '切換帳戶', addPortfolio: '新增帳戶', managePortfolios: '管理帳戶',
+        portfolio: '歸屬帳戶', switchPortfolio: '切換帳戶', addPortfolio: '新增帳戶', managePortfolios: '帳戶設定',
         portfolioName: '帳戶名稱', selectAll: '全選', add: '新增',
         short_daily: '日', short_weekly: '周', short_monthly: '月', short_quarterly: '季', short_yearly: '年',
         preferences: '偏好設定', lossColor: '預設虧損色',
