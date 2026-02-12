@@ -1,0 +1,41 @@
+name: Update Stock List
+
+on:
+  schedule:
+    # 每月 1 號凌晨 0 點執行 (UTC)
+    - cron: "0 0 1 * *"
+  workflow_dispatch: # 支援手動觸發
+
+jobs:
+  update-stocks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run Crawler
+        run: python scripts/fetchStockList.py
+
+      - name: Check for Changes
+        id: git-check
+        run: |
+          git diff --exit-code || echo "changes=true" >> $GITHUB_OUTPUT
+
+      - name: Commit and Push Changes
+        if: steps.git-check.outputs.changes == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add scripts/stockList.json src/utils/stockMap.ts
+          git commit -m "chore: auto-update stock list $(date +'%Y-%m-%d')"
+          git push

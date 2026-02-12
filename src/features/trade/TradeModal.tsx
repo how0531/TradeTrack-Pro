@@ -14,10 +14,97 @@ type DisplayMode = 'amount' | 'percent' | 'hidden';
 
 import { useTradeContext } from '../../context/TradeContext';
 
+import { lookupStockName, lookupStockCode } from '../../services/stockService';
+
 export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing }: TradeModalProps) => {
     if (!isOpen) return null;
     const { strategies, emotions, portfolios, lang, metrics } = useTradeContext();
     const t = I18N[lang] || I18N['zh'];
+    
+    // Real-time Stock Lookup (3-Tier: Local → Cache → TWSE)
+    // 🆕 BIDIRECTIONAL: Code → Name OR Name → Code
+    const [isLookingUp, setIsLookingUp] = React.useState(false);
+    
+    React.useEffect(() => {
+        if (!isOpen) return;
+        
+        const input = form.code || '';
+        
+        // Case 1: Pure digits (4-6) → Lookup Name (Code → Name)
+        if (/^\d{4,6}$/.test(input)) {
+            setIsLookingUp(true);
+            const timer = setTimeout(async () => {
+                try {
+                    const name = await lookupStockName(input);
+                    if (name) {
+                         setForm((prev: Trade) => {
+                             if (prev.code === input) {
+                                 return { ...prev, code: `${input} ${name}` };
+                             }
+                             return prev;
+                         });
+                    }
+                } catch {
+                    // silent fail
+                } finally {
+                    setIsLookingUp(false);
+                }
+            }, 300);
+            return () => { clearTimeout(timer); setIsLookingUp(false); };
+        }
+        
+        // Case 2: Chinese characters (Name → Code)
+        // Skip if already has format "CODE NAME"
+        if (/[\u4e00-\u9fa5]/.test(input) && !/^\d{4,6}\s/.test(input)) {
+            setIsLookingUp(true);
+            const timer = setTimeout(() => {
+                try {
+                    const code = lookupStockCode(input);
+                    if (code) {
+                         setForm((prev: Trade) => {
+                             if (prev.code === input) {
+                                 return { ...prev, code: `${code} ${input}` };
+                             }
+                             return prev;
+                         });
+                    }
+                } catch {
+                    // silent fail
+                } finally {
+                    setIsLookingUp(false);
+                }
+            }, 300);
+            return () => { clearTimeout(timer); setIsLookingUp(false); };
+        }
+    }, [form.code, isOpen]);
+
+    // PnL Unit State (Default to %)
+    const [pnlUnit, setPnlUnit] = useState<'%' | 'pts'>('%');
+
+    // Sync PnL Unit when loading a trade
+    React.useEffect(() => {
+        if (isOpen) {
+            if (form.points?.includes('%')) {
+                setPnlUnit('%');
+            } else if (form.points && form.points.length > 0) {
+                setPnlUnit('pts');
+            } else {
+                setPnlUnit('%'); // Default for new trades
+            }
+        }
+    }, [isOpen, form.id]); // Only run when opening or switching trades
+
+    // Helper to toggle unit and update form value
+    const togglePnlUnit = () => {
+        const newUnit = pnlUnit === '%' ? 'pts' : '%';
+        setPnlUnit(newUnit);
+        
+        // Update existing value format
+        if (form.points) {
+            const rawVal = form.points.replace('%', '');
+            updateForm('points', rawVal + (newUnit === '%' ? '%' : ''));
+        }
+    };
     
     // Share State
     const [showSharePreview, setShowSharePreview] = useState(false);
@@ -33,6 +120,48 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
     if (!form.portfolioId && portfolios.length > 0) {
         updateForm('portfolioId', portfolios[0].id);
     }
+
+    // --- LEGACY MIGRATION LOGIC (Phase 11) ---
+    // Auto-parse "Code | Pts | Qty" from Note if fields are empty
+    React.useEffect(() => {
+        if (!isOpen) return;
+
+        // Only parse if we have a note but NO structural data (legacy state)
+        if (form.note && !form.code && !form.points && !form.quantity) {
+             const parts = form.note.split('|');
+             if (parts.length >= 3) {
+                 // Check heuristics: Short enough to be info?
+                 const p0 = parts[0].trim();
+                 const p1 = parts[1].trim();
+                 const p2 = parts[2].trim();
+                 
+                 if (p0.length < 20 && p1.length < 20 && p2.length < 10) {
+                     // Detected Legacy Format! -> Migrate to fields
+                     console.log("Creating independent inventory data from legacy note...");
+                     
+                     const newCode = p0; // "TXFB6 台指期02"
+                     const newPoints = p1; // "+150 pts"
+                     // Parse quantity string "1口" -> 1
+                     const newQty = parseInt(p2.replace(/[^0-9]/g, '')) || 1;
+                     
+                     // Extract user note (rest of the string)
+                     const userNote = parts.slice(3).join('|').trim();
+                     
+                     // Update Form (Batch update)
+                     setForm({
+                         ...form,
+                         code: newCode,
+                         points: newPoints,
+                         quantity: newQty,
+                         note: userNote // Clean note!
+                     });
+                 }
+             }
+             
+             // Case 2: Just "Code | Pts" (Old old format)
+             // ... maybe skip to avoid false positives. 3 parts is safer.
+        }
+    }, [isOpen, form]); // Run checks when form updates (guarded by conditions)
 
     // --- SHARE CARD LOGIC ---
     const handleSaveImage = async () => {
@@ -299,6 +428,68 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                             <input type="number" step="0.1" inputMode="decimal" required value={form.amount} onChange={e => updateForm('amount', e.target.value)} className="w-full h-[40px] px-2 text-2xl font-barlow-numeric font-bold bg-transparent border-none text-white placeholder-slate-600 outline-none text-right" placeholder="0.0" autoFocus />
                         </div>
 
+                        {/* --- INVENTORY SECTION (Simplified / Pro Max) --- */}
+                <div className="space-y-3 mb-6 animate-in slide-in-from-bottom-3 duration-500 delay-100">
+                    {/* Row 1: Code */}
+                    <div className="relative group">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-[#C8B085] transition-colors font-bold text-xs">
+                             {t.trade_label_code}
+                        </div>
+                        {isLookingUp && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                <Loader2 size={14} className="animate-spin text-[#C8B085]/60" />
+                            </div>
+                        )}
+                        <input
+                            type="text"
+                            value={form.code || ''}
+                            onChange={(e) => updateForm('code', e.target.value)}
+                            placeholder={t.trade_code_ph || "Product Code"}
+                            className="w-full bg-[#050505] border border-white/10 rounded-xl py-3 pl-12 pr-10 text-sm text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-[#C8B085]/50 focus:ring-1 focus:ring-[#C8B085]/20 transition-all font-barlow-numeric"
+                        />
+                    </div>
+
+                    {/* Row 2: Pts & Qty - Equal Width */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="relative group">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] sm:text-xs font-bold text-zinc-600 tracking-wider group-focus-within:text-[#C8B085] transition-colors">
+                                {t.trade_label_pnl}
+                            </span>
+                            <input
+                                type="number"
+                                step="any"
+                                value={form.points?.replace('%', '').replace('pts', '') || ''}
+                                onChange={(e) => updateForm('points', e.target.value + (pnlUnit === '%' ? '%' : ''))}
+                                placeholder={t.trade_pnl_ph || "+/- Pts"}
+                                className="w-full bg-[#050505] border border-white/10 rounded-xl py-3 pl-12 pr-12 text-sm text-center text-zinc-300 placeholder:text-zinc-800 focus:outline-none focus:border-[#C8B085]/50 focus:ring-1 focus:ring-[#C8B085]/20 transition-all font-barlow-numeric appearance-none"
+                            />
+                            {/* PnL Unit Toggle */}
+                            <button
+                                type="button"
+                                onClick={togglePnlUnit}
+                                className={`absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                                    pnlUnit === '%' 
+                                        ? 'bg-[#C8B085]/20 text-[#C8B085] border-[#C8B085]/30 hover:bg-[#C8B085]/30' 
+                                        : 'bg-white/5 text-zinc-500 border-white/10 hover:text-zinc-300'
+                                }`}
+                            >
+                                {pnlUnit === '%' ? '%' : 'pts'}
+                            </button>
+                        </div>
+                        <div className="relative group">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] sm:text-xs font-bold text-zinc-600 tracking-wider group-focus-within:text-[#C8B085] transition-colors">
+                                {t.trade_label_qty}
+                            </span>
+                            <input
+                                type="number"
+                                value={form.quantity || ''}
+                                onChange={(e) => updateForm('quantity', Number(e.target.value))}
+                                placeholder={t.trade_qty_ph || "1"}
+                                className="w-full bg-[#050505] border border-white/10 rounded-xl py-3 pl-12 pr-3 text-sm text-center text-zinc-300 placeholder:text-zinc-800 focus:outline-none focus:border-[#C8B085]/50 focus:ring-1 focus:ring-[#C8B085]/20 transition-all font-barlow-numeric"
+                            />
+                        </div>
+                    </div>
+                </div>
                         <div>
                             <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">{t.strategyList}</label>
                             <StrategyChipsInput strategies={strategies} value={form.strategy || ''} onChange={(val) => updateForm('strategy', val)} lang={lang} />
@@ -307,13 +498,18 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                             <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">{t.mindsetList}</label>
                             <EmotionChipsInput emotions={emotions} value={form.emotion || ''} onChange={(val) => updateForm('emotion', val)} lang={lang} />
                         </div>
-                        <textarea 
-                            rows={3} 
-                            value={form.note || ''} 
-                            onChange={e => updateForm('note', e.target.value)} 
-                            className="w-full p-3 rounded-xl text-xs bg-white/5 border border-white/10 text-slate-300 placeholder-slate-600 outline-none focus:border-white/20 focus:bg-white/10 resize-y min-h-[60px] leading-relaxed backdrop-blur-sm" 
-                            placeholder={t.notePlaceholder} 
-                        />
+                        
+                        {/* Note Section */}
+                        <div>
+                             <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block ml-1">筆記 (User Note)</label>
+                             <textarea 
+                                rows={3} 
+                                value={form.note || ''} 
+                                onChange={e => updateForm('note', e.target.value)} 
+                                className="w-full p-3 rounded-xl text-xs bg-white/5 border border-white/10 text-slate-300 placeholder-slate-600 outline-none focus:border-white/20 focus:bg-white/10 resize-y min-h-[60px] leading-relaxed backdrop-blur-sm" 
+                                placeholder={t.notePlaceholder} 
+                            />
+                        </div>
                         
                         {/* GLASS BUTTON: SUBMIT */}
                         <button type="submit" onClick={() => vibrate('success')} className={`w-full py-3.5 rounded-xl font-bold uppercase tracking-widest text-xs shadow-lg transition-all active:scale-[0.98] backdrop-blur-md border ${form.type === 'profit' ? 'bg-[#D05A5A]/20 text-[#D05A5A] border-[#D05A5A]/50 shadow-[0_0_20px_rgba(208,90,90,0.15)] hover:bg-[#D05A5A]/30' : 'bg-[#5B9A8B]/20 text-[#5B9A8B] border-[#5B9A8B]/50 shadow-[0_0_20px_rgba(91,154,139,0.15)] hover:bg-[#5B9A8B]/30'}`}>

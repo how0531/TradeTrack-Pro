@@ -1,6 +1,6 @@
 
-// [Manage] Last Updated: 2026-01-30
-export const APP_VERSION = 'V2.4.0';
+// [Manage] Last Updated: 2026-02-12
+export const APP_VERSION = 'V2.4.2';
 export const THEME = {
     GOLD: '#C8B085',       
     GOLD_BG: '#2A2824',    
@@ -81,11 +81,18 @@ export const I18N = {
         initialCapital: '初始資金', currentEquity: '總權益', newPeak: '創歷史新高',
         drawdown: '回撤', currentDD: '當前回撤', winRate: '勝率', profitFactor: '獲利因子',
         riskReward: '賺賠比', avgWin: '平均獲利', avgLoss: '平均虧損', maxDD: '最大回撤',
-        sharpe: '夏普比率', strategies: '策略績效', strategyList: '策略標籤', mindsetList: '交易類型',
+        sharpe: '夏普比率', expectancy: '期望值', strategies: '策略績效', strategyList: '策略標籤', mindsetList: '交易類型',
         addStrategy: '新增策略...', addMindset: '新增類型...', noData: '尚無數據', monthlyPnl: '本月損益',
         trades: '次', totalTrades: '交易筆數', addTrade: '新增交易', editTrade: '編輯交易', profit: '獲利', loss: '虧損',
         save: '儲存', update: '更新', notePlaceholder: '交易筆記 / 檢討...', uncategorized: '未分類',
         language: '語言 / Language', deleteTitle: '刪除交易', deleteConfirm: '確定要刪除這筆交易紀錄嗎？此動作無法復原。',
+        trade_code_placeholder: '商品代號 (e.g. TXFB6)',
+        trade_code_ph: '商品名稱或股號',
+        trade_pnl_ph: '損益%數/點數',
+        trade_qty_ph: '部位大小',
+        trade_label_code: '商品',
+        trade_label_pnl: '損益',
+        trade_label_qty: '部位',
         cancel: '取消', delete: '刪除', allStrategies: '全部策略', allEmotions: '全部類型', selected: '已選',
         filterByStrategy: '策略篩選', selectStrategy: '選擇策略', strategyAnalysis: '策略分析', riskSettings: '風險管理',
         ddThreshold: '最大回撤閥值', ddWarning: '警戒區：閥值前 5%', danger: '危險', warning: '警戒',
@@ -176,11 +183,18 @@ export const I18N = {
         initialCapital: 'Initial Capital', currentEquity: 'Total Equity', newPeak: 'New High',
         drawdown: 'Drawdown', currentDD: 'Current DD', winRate: 'Win Rate', profitFactor: 'Profit Factor',
         riskReward: 'Risk/Reward', avgWin: 'Avg Win', avgLoss: 'Avg Loss', maxDD: 'Max Drawdown',
-        sharpe: 'Sharpe Ratio', strategies: 'Strategy Performance', strategyList: 'Strategies', mindsetList: 'Trade Types',
+        sharpe: 'Sharpe Ratio', expectancy: 'Expectancy', strategies: 'Strategy Performance', strategyList: 'Strategies', mindsetList: 'Trade Types',
         addStrategy: 'Add Strategy...', addMindset: 'Add Type...', noData: 'No Data', monthlyPnl: 'Monthly PnL',
         trades: 'T', totalTrades: 'Total Trades', addTrade: 'Add Trade', editTrade: 'Edit Trade', profit: 'Profit', loss: 'Loss',
         save: 'Save', update: 'Update', notePlaceholder: 'Notes...', uncategorized: 'Uncategorized',
         language: 'Language', deleteTitle: 'Delete Trade', deleteConfirm: 'Are you sure you want to delete this trade? This cannot be undone.',
+        trade_code_placeholder: 'Product Code (e.g. TXFB6)',
+        trade_code_ph: 'Symbol / Code',
+        trade_pnl_ph: 'PnL % / Pts',
+        trade_qty_ph: 'Size',
+        trade_label_code: 'Symbol',
+        trade_label_pnl: 'PnL',
+        trade_label_qty: 'Size',
         cancel: 'Cancel', delete: 'Delete', allStrategies: 'All Strategies', allEmotions: 'All Types', selected: 'Selected',
         filterByStrategy: 'Filter by Strategy', selectStrategy: 'Select Strategy', strategyAnalysis: 'Strategy Analysis', riskSettings: 'Risk Management',
         ddThreshold: 'Max Drawdown Threshold', ddWarning: 'Warning Zone: 5% left', danger: 'Danger', warning: 'Warning',
