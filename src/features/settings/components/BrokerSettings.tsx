@@ -669,23 +669,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 </div>
                             )}
 
-                            {/* STEP 1: 簽署同意書 */}
+
+
+                            {/* STEP 1: 取得 API Key */}
                             <div className="relative pl-10">
                                 <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/10 to-transparent opacity-50 select-none pointer-events-none font-sans">1</div>
-                                <div className="relative z-10 pt-1">
-                                    <button
-                                        onClick={() => window.open('https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/', '_blank')}
-                                        className="w-full px-4 py-3 rounded-xl bg-black/20 border border-white/5 hover:border-white/10 hover:bg-black/40 transition-all text-left group flex items-center justify-between"
-                                    >
-                                        <span className="text-[11px] font-bold text-zinc-400">前往簽署 API 風險預告同意書</span>
-                                        <ChevronRight size={14} className="text-zinc-600 group-hover:text-white group-hover:translate-x-1 transition-all" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* STEP 2: 取得 API Key */}
-                            <div className="relative pl-10">
-                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/10 to-transparent opacity-50 select-none pointer-events-none font-sans">2</div>
                                 <div className="relative z-10 pt-1">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
                                         <div className="flex items-start gap-2.5">
@@ -704,9 +692,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 </div>
                             </div>
 
-                            {/* STEP 3: 輸入 API 資訊 */}
+                            {/* STEP 2: 輸入 API 資訊 */}
                             <div className="relative pl-10">
-                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/10 to-transparent opacity-50 select-none pointer-events-none font-sans">3</div>
+                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/10 to-transparent opacity-50 select-none pointer-events-none font-sans">2</div>
                                 <div className="relative z-10 pt-1">
                                     <h5 className="text-[10px] font-bold text-zinc-500 mb-3 uppercase tracking-[0.2em] pl-1">輸入用戶資訊</h5>
                                     <div className="space-y-4">
