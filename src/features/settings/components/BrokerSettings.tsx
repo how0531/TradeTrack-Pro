@@ -772,31 +772,49 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     憑證檔案 (.pfx)
                                                 </label>
                                             </div>
+                                            <div className="flex items-center gap-2">
+                                                <label
+                                                    htmlFor="ca-upload"
+                                                    className="cursor-pointer px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-zinc-400 hover:text-white transition-all flex items-center gap-2"
+                                                >
+                                                    <FileKey size={14} />
+                                                    {lang === 'zh' ? '選擇 .pfx 檔案' : 'Select .pfx File'}
+                                                </label>
+                                                <span className="text-[10px] text-zinc-500 font-mono truncate max-w-[150px]">
+                                                    {localConfig?.caPath || (lang === 'zh' ? '尚未選擇' : 'No file selected')}
+                                                </span>
+                                            </div>
+
+                                            {/* Certificate Status Indicator */}
+                                            <div className="flex items-center gap-2 mt-2 px-2 py-1 bg-black/20 rounded border border-white/5">
+                                                <div className={`w-2 h-2 rounded-full ${localConfig?.caContent ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500/50'}`} />
+                                                <span className={`text-[10px] ${localConfig?.caContent ? 'text-emerald-500' : 'text-zinc-600'}`}>
+                                                    {localConfig?.caContent
+                                                        ? `${lang === 'zh' ? '憑證已載入' : 'Certificate Loaded'} (${(localConfig.caContent.length / 1024).toFixed(1)} KB)`
+                                                        : (lang === 'zh' ? '憑證內容為空' : 'Certificate Content Missing')}
+                                                </span>
+                                            </div>
+
                                             <input
+                                                id="ca-upload"
                                                 type="file"
                                                 accept=".pfx"
-                                                onChange={async (e) => {
+                                                className="hidden"
+                                                onChange={(e) => {
                                                     const file = e.target.files?.[0];
                                                     if (file) {
                                                         const reader = new FileReader();
                                                         reader.onload = (ev) => {
-                                                            // Safari Mobile Fix: Ensure no newlines/spaces in base64
                                                             const raw = (ev.target?.result as string).split(',')[1];
                                                             const cleanB64 = raw.replace(/\s/g, '');
-
-                                                            // Use functional update to ensure atomic update of both fields
-                                                            setLocalConfig(prev => prev ? ({
-                                                                ...prev,
-                                                                caContent: cleanB64,
-                                                                caPath: file.name
-                                                            }) : null);
+                                                            setLocalConfig(prev => prev ? ({ ...prev, caContent: cleanB64, caPath: file.name }) : null);
                                                         };
                                                         reader.readAsDataURL(file);
                                                     }
+                                                    e.target.value = '';
                                                 }}
-                                                className="hidden"
-                                                id="pfx-settings"
                                             />
+
                                             {/* DUAL MODE PFX INPUT */}
                                             {!localConfig.caContent ? (
                                                 <div className="relative group">
@@ -813,7 +831,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     />
                                                     <div className="absolute right-2 top-1/2 -translate-y-1/2">
                                                         <label
-                                                            htmlFor="pfx-settings"
+                                                            htmlFor="ca-upload"
                                                             className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer border border-white/5 transition-all flex items-center gap-1 group/btn"
                                                             title={lang === 'zh' ? "選取檔案" : "Select File"}
                                                         >
@@ -1058,10 +1076,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                                         {/* Right Side Check or Status */}
                                         <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${isConnected
-                                                ? 'bg-zinc-800 border-zinc-700'
-                                                : isSelected
-                                                    ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)] border-2'
-                                                    : 'border-2 border-zinc-700 group-hover:border-zinc-500'
+                                            ? 'bg-zinc-800 border-zinc-700'
+                                            : isSelected
+                                                ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)] border-2'
+                                                : 'border-2 border-zinc-700 group-hover:border-zinc-500'
                                             }`}>
                                             {isConnected ? (
                                                 <span className="text-[9px] font-bold text-zinc-500">已加</span>

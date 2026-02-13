@@ -102,7 +102,9 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 url: `${API_BASE}/api/broker/pnl`,
                 dateRange: `${payload.startDate} to ${payload.endDate}`,
                 personId: payload.personId,
-                branchCode: payload.branchCode // ✅ 顯示分公司代碼
+                branchCode: payload.branchCode, // ✅ 顯示分公司代碼
+                hasCA: !!config.caContent,
+                caLength: config.caContent ? config.caContent.length : 0
             });
 
             // 創建 AbortController 以支援取消和超時
@@ -467,7 +469,10 @@ export const fetchBrokerProfile = async (
                 if (onProgress) onProgress('正在連接券商 API...');
 
                 const fetchStartTime = performance.now();
-                console.log('🌐 [PERF] 發送 Profile API 請求至:', `${API_BASE}/api/broker/profile`);
+                console.log('🌐 [PERF] 發送 Profile API 請求至:', `${API_BASE}/api/broker/profile`, {
+                    hasCA: !!payload.caContent,
+                    caLength: payload.caContent ? payload.caContent.length : 0
+                });
 
                 const response = await fetch(`${API_BASE}/api/broker/profile`, {
                     method: 'POST',
