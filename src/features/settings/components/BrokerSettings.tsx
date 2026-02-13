@@ -737,6 +737,22 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
                                         </div>
 
+                                        {/* API Risk Disclosure Link */}
+                                        <a
+                                            href="https://www.sinotrade.com.tw/CS/CS_03/CS_03_06"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="group w-full bg-zinc-900/30 hover:bg-zinc-800/50 border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-300 -mt-1"
+                                        >
+                                            <span className="text-xs font-bold text-zinc-400 group-hover:text-zinc-200 transition-colors flex items-center gap-2">
+                                                前往簽署 API 風險預告同意書
+                                                <span className="text-[10px] font-medium text-zinc-600 group-hover:text-zinc-500 transition-colors hidden sm:inline-block">
+                                                    (若已簽署可忽略)
+                                                </span>
+                                            </span>
+                                            <ChevronRight size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors group-hover:translate-x-0.5 duration-300" />
+                                        </a>
+
                                         <div className="flex flex-col gap-2">
                                             <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">連線環境</label>
                                             <div className="flex gap-2 p-1 bg-black/40 border border-white/5 rounded-xl">
