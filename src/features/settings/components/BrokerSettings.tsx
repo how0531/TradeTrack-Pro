@@ -238,6 +238,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     };
 
     const handleVerifyAccount = async (config: BrokerConfig, accountId: string) => {
+        // [Safety Check] Automated verification is only for Simulation accounts
+        if (config.environment === 'production') {
+            setErrorMsg('正式環境請直接使用「同步券商」功能，或前往永豐金網站簽署 API 同意書即可，無需模擬驗證。');
+            setTimeout(() => setErrorMsg(null), 5000);
+            return;
+        }
+
         setIsVerifying(accountId);
         setErrorMsg(null);
         setProgressMsg('正在執行模擬下單驗證 API 權限...');
@@ -710,7 +717,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     type="text"
                                                     placeholder="A123456789"
                                                     value={localConfig.personId}
-                                                    onChange={(e) => handleChange('personId', e.target.value)}
+                                                    onChange={(e) => handleChange('personId', e.target.value.trim().toUpperCase())}
                                                     className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                                 />
                                             </div>
@@ -721,7 +728,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             <input
                                                 type={showSecrets ? "text" : "password"}
                                                 value={localConfig.apiKey}
-                                                onChange={(e) => handleChange('apiKey', e.target.value)}
+                                                onChange={(e) => handleChange('apiKey', e.target.value.trim())}
                                                 className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                             />
                                         </div>
@@ -731,7 +738,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             <input
                                                 type={showSecrets ? "text" : "password"}
                                                 value={localConfig.apiSecret}
-                                                onChange={(e) => handleChange('apiSecret', e.target.value)}
+                                                onChange={(e) => handleChange('apiSecret', e.target.value.trim())}
                                                 className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiSecret ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                             />
                                             <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
