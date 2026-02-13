@@ -748,25 +748,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             <ChevronRight size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors group-hover:translate-x-0.5 duration-300" />
                                         </a>
 
-                                        <div className="flex flex-col gap-2">
-                                            <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">連線環境</label>
-                                            <div className="flex gap-2 p-1 bg-black/40 border border-white/5 rounded-xl">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleChange('environment', 'production')}
-                                                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${localConfig.environment !== 'simulation' ? 'bg-[#C8B085] text-black shadow-lg' : 'text-zinc-600 hover:text-white'}`}
-                                                >
-                                                    正式環境
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleChange('environment', 'simulation')}
-                                                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${localConfig.environment === 'simulation' ? 'bg-[#C8B085] text-black shadow-lg' : 'text-zinc-600 hover:text-white'}`}
-                                                >
-                                                    測試環境
-                                                </button>
-                                            </div>
-                                        </div>
+
                                     </div>
                                 </div>
                             </div>
@@ -868,25 +850,25 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             )}
                                         </div>
                                         <div className="flex flex-col gap-2">
-                                            <div className="flex justify-between items-center h-[15px]">
-                                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">憑證密碼</label>
+                                            <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">憑證密碼</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showSecrets ? "text" : "password"}
+                                                    value={localConfig.caPassword}
+                                                    placeholder="預設為身分證字號"
+                                                    onChange={(e) => handleChange('caPassword', e.target.value)}
+                                                    className={`w-full bg-black/40 border rounded-xl pl-4 pr-20 py-3 text-sm text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPassword ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                />
                                                 <button
                                                     type="button"
                                                     onClick={() => handleChange('caPassword', localConfig.personId)}
-                                                    className="text-[9px] text-[#C8B085] hover:text-[#E0C8A0] transition-colors flex items-center gap-1 cursor-pointer font-bold uppercase"
+                                                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/5 hover:bg-white/10 text-[#C8B085] hover:text-[#E0C8A0] text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1 backdrop-blur-sm border border-white/5"
                                                     title={lang === 'zh' ? "使用身分證字號自動帶入" : "Auto-fill with Person ID"}
                                                 >
                                                     <ArrowDown size={10} />
                                                     {lang === 'zh' ? "ID 帶入" : "Use ID"}
                                                 </button>
                                             </div>
-                                            <input
-                                                type={showSecrets ? "text" : "password"}
-                                                value={localConfig.caPassword}
-                                                placeholder="預設為身分證字號"
-                                                onChange={(e) => handleChange('caPassword', e.target.value)}
-                                                className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPassword ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
-                                            />
                                         </div>
                                     </div>
                                 </div>
