@@ -678,7 +678,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
                                         <div className="flex items-start gap-2.5">
                                             <div className="flex flex-col gap-0.5 min-w-0">
-                                                <span className="text-[10px] font-bold text-amber-500/80 uppercase">取得 API 金鑰與憑證</span>
+                                                <span className="text-sm font-bold text-[#C8B085] uppercase">取得 API 金鑰與憑證</span>
                                                 <span className="text-[9px] text-amber-500/50 break-words font-medium">請保存好，下一步需要這些資訊</span>
                                             </div>
                                         </div>
@@ -696,7 +696,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             <div className="relative pl-10">
                                 <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">2</div>
                                 <div className="relative z-10 pt-1">
-                                    <h5 className="text-[10px] font-bold text-zinc-500 mb-3 uppercase tracking-[0.2em] pl-1">輸入用戶資訊</h5>
+                                    <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">輸入用戶資訊</h5>
                                     <div className="space-y-4">
                                         <div className="grid grid-cols-1 gap-4">
                                             <div className="flex flex-col gap-2">
@@ -775,7 +775,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             <div className="relative pl-10">
                                 <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">3</div>
                                 <div className="relative z-10 pt-1">
-                                    <h5 className="text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-[0.2em] pl-1">匯入憑證</h5>
+                                    <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">匯入憑證</h5>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="flex flex-col gap-2">
                                             <div className="flex justify-between items-center h-[15px]">
