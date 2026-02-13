@@ -27,7 +27,8 @@ except ImportError as e:
         raise
 
 app = Flask(__name__)
-CORS(app)  # 允許跨域請求 (Cloud 佈署必備)
+# Explicitly allow all origins for debugging, or specify frontend URL
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 
 @app.route("/", methods=["GET"])

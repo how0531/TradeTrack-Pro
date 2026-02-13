@@ -20,15 +20,15 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [showSecrets, setShowSecrets] = useState(false);
     const [accountChoices, setAccountChoices] = useState<any[]>([]);
-    
+
     // New state for backend health check
     const [backendStatus, setBackendStatus] = useState<'ready' | 'server_only' | 'offline' | 'checking' | 'sleeping'>('checking');
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    const [deleteTarget, setDeleteTarget] = useState<{configId: string, accountIndex: number} | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<{ configId: string, accountIndex: number } | null>(null);
     const [isVerifying, setIsVerifying] = useState<string | null>(null); // New: track verification per accountId
     const [uploadConfigId, setUploadConfigId] = useState<string | null>(null); // Track which config for CA upload
     const [errorConfigId, setErrorConfigId] = useState<string | null>(null); // Track which config caused the error
-    
+
     // Derived state for button type
     const [errors, setErrors] = useState<Record<string, boolean>>({});
     const [progressMsg, setProgressMsg] = useState<string>(''); // Track login progress
@@ -135,7 +135,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             // Step 1: Wake up backend if needed
             setProgressMsg('正在喚醒後端伺服器 (Waking up backend)...');
             setErrorMsg(null);
-            
+
             const wakeResult = await wakeUpBackend();
             if (!wakeResult.success) {
                 const specificError = wakeResult.error || 'Unknown Error';
@@ -145,16 +145,16 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 setProgressMsg('');
                 return;
             }
-            
+
             // Step 2: Attempt login with progress callback
             setProgressMsg('正在連接券商 API...');
             const result = await fetchBrokerProfile(localConfig, (msg) => {
                 setProgressMsg(msg);
             });
-            
+
             if (result.status === 'multiple_accounts' && result.accounts) {
                 setAccountChoices(result.accounts);
-                
+
                 // Track which ones are signed
                 const signedIds = result.accounts.filter((a: any) => a.signed).map((a: any) => a.account_id).join(',');
                 if (localConfig) setLocalConfig({ ...localConfig, signedAccounts: signedIds });
@@ -182,11 +182,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             if (result.signedAccounts && result.signedAccounts.length > 0) {
                 updated.signedAccounts = result.signedAccounts.join(',');
             }
-            
+
             setLocalConfig(updated);
             if (isEditing === 'new') onAdd(updated);
             else onUpdate(localConfig.id, updated);
-            
+
             setIsEditing(null);
             setIsTesting(false);
             setAccountChoices([]);
@@ -194,8 +194,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         } catch (error: any) {
             let msg = error?.message || '連線失敗 (Connection failed)';
             if (msg.includes('Failed to fetch')) {
-                msg = lang === 'zh' 
-                    ? "連線失敗：後端服務可能正在啟動中，請稍候 30 秒再試一次。" 
+                msg = lang === 'zh'
+                    ? "連線失敗：後端服務可能正在啟動中，請稍候 30 秒再試一次。"
                     : "連線失敗：後端服務可能正在啟動中，請稍候 30 秒再試一次。 (Connection failed: Backend starting)";
                 // 再次嘗試 ping 以確保喚醒
                 pingBackend();
@@ -217,14 +217,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         reader.onload = (ev) => {
             const raw = (ev.target?.result as string).split(',')[1];
             const cleanB64 = raw.replace(/\s/g, '');
-            const updated = { 
-                ...config, 
-                caContent: cleanB64, 
-                caPath: file.name 
+            const updated = {
+                ...config,
+                caContent: cleanB64,
+                caPath: file.name
             };
             onUpdate(configId, updated);
             if (localConfig?.id === configId) setLocalConfig(updated);
-            
+
             // Clear error if it was a path error
             if (errorMsg?.includes('找不到憑證')) setErrorMsg(null);
 
@@ -285,7 +285,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                     if (aLen > bLen) hasGhost = true;
                     // Check Duplicates Within (Same ID twice in one config)
                     const accs = (c.accounts || '').split(',').filter(s => s.trim());
-                    if (new Set(accs).size !== accs.length) hasGhost = true; 
+                    if (new Set(accs).size !== accs.length) hasGhost = true;
 
                     // Check Duplicate Configs
                     if (c.personId) {
@@ -309,7 +309,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     {lang === 'zh' ? '偵測到設定檔異常' : 'Configuration Issues Detected'}
                                 </span>
                                 <span className="text-[10px] text-amber-500/60">
-                                    {hasDuplicates 
+                                    {hasDuplicates
                                         ? (lang === 'zh' ? '發現重複的設定檔 (同一身分證)，建議合併。' : 'Duplicate configs found.')
                                         : (lang === 'zh' ? '部分帳號未正確連結 (幽靈帳號)。' : 'Ghost accounts detected.')}
                                 </span>
@@ -340,17 +340,17 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             if (!cfg) return;
                                             const accs = (cfg.accounts || cfg.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
                                             const brs = (cfg.branch || '').split(',').map(s => s.trim());
-                                            
+
                                             accs.forEach((accId, idx) => {
                                                 allAccounts.add(accId);
                                                 if (brs[idx]) allBranches.set(accId, brs[idx]);
                                             });
-                                            
+
                                             // Merge signed status
                                             (cfg.signedAccounts || '').split(',').forEach(s => {
                                                 if (s.trim()) allSigned.add(s.trim());
                                             });
-                                            
+
                                             // Delete the duplicates (except master)
                                             if (id !== masterId) onDelete(id);
                                         });
@@ -358,7 +358,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         // Update Master
                                         const uniqueAccList = Array.from(allAccounts);
                                         const uniqueBranchList = uniqueAccList.map(uid => allBranches.get(uid) || 'Unknown Branch');
-                                        
+
                                         onUpdate(masterId, {
                                             ...masterConfig,
                                             accounts: uniqueAccList.join(','),
@@ -375,17 +375,17 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 // Re-reading configs from prop might be stale if we just called onDelete?
                                 // Actually, we should probably rely on the user clicking "Fix" again if state updates rely on parent.
                                 // But let's try to fix "in-place" for the ones we touched.
-                                
+
                                 configs.forEach(c => {
                                     // Skip if likely deleted (checked via personIdMap logic above)
                                     // Just perform local cleanup
                                     const branches = (c.branch || '').split(',');
                                     const accounts = (c.accounts || '').split(',');
-                                    
+
                                     // Dedup within single config
                                     const uniqueMap = new Map<string, string>(); // id -> branch
                                     let changed = false;
-                                    
+
                                     accounts.forEach((acc, idx) => {
                                         const trimmed = acc.trim();
                                         if (!trimmed) return;
@@ -400,7 +400,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                                     // Check Length Mismatch
                                     if (accounts.length > branches.length) changed = true;
-                                    
+
                                     if (changed) {
                                         const newAccs = Array.from(uniqueMap.keys());
                                         const newBras = Array.from(uniqueMap.values());
@@ -438,7 +438,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     <span className="text-xs text-red-300 font-bold">{errorMsg}</span>
                                 </div>
                                 {errorMsg.includes('找不到憑證') && errorConfigId && (
-                                    <button 
+                                    <button
                                         onClick={() => {
                                             setUploadConfigId(errorConfigId);
                                             setTimeout(() => {
@@ -456,8 +456,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 </div>
             )}
 
-            <input 
-                type="file" 
+            <input
+                type="file"
                 id="card-ca-upload-trigger"
                 accept=".pfx"
                 className="hidden"
@@ -472,30 +472,30 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                     const branches = (config.branch || 'Unknown').split(',');
                     const codes = (config.branchCode || '').split(',');
                     const accounts = (config.accounts || config.branchCode || '').split(',');
-                    
+
                     // Use the longest array to ensure we show all entries (revealing ghosts)
                     const maxLength = Math.max(branches.length, codes.length, accounts.length);
-                    
+
                     return Array.from({ length: maxLength }).map((_, idx) => {
                         const bRaw = branches[idx] || 'Unknown Branch';
                         const bText = bRaw.trim();
                         const accId = accounts[idx] ? accounts[idx].trim() : (codes[idx] || 'Unknown');
-                        
+
                         // --- ROBUST IDENTIFICATION LOGIC (Dev Refactor) ---
                         // ... use accId or bText ...
-                        
-                         // --- ROBUST IDENTIFICATION LOGIC (Dev Refactor) ---
-                         const isFuture = bText.includes('期貨') || bText.includes('Futures');
-                         const isSub = bText.includes('複委託') || bText.includes('Sub') || bText.includes('H-');
-                         
-                         const theme = isFuture 
-                            ? ACCOUNT_CATEGORY_THEMES.FUTURES 
-                            : isSub 
-                                ? ACCOUNT_CATEGORY_THEMES.SUB 
+
+                        // --- ROBUST IDENTIFICATION LOGIC (Dev Refactor) ---
+                        const isFuture = bText.includes('期貨') || bText.includes('Futures');
+                        const isSub = bText.includes('複委託') || bText.includes('Sub') || bText.includes('H-');
+
+                        const theme = isFuture
+                            ? ACCOUNT_CATEGORY_THEMES.FUTURES
+                            : isSub
+                                ? ACCOUNT_CATEGORY_THEMES.SUB
                                 : ACCOUNT_CATEGORY_THEMES.STOCK; // Default Fallback to Red (Stock)
 
-                         const typeLabel = theme.label;
-                         const themeClass = theme.fullClass;
+                        const typeLabel = theme.label;
+                        const themeClass = theme.fullClass;
 
                         // Specific Delete Handler
                         const handleDeleteAccount = (e?: React.MouseEvent) => {
@@ -504,11 +504,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                         };
 
                         return (
-                            <div 
+                            <div
                                 key={`${config.id}-${idx}`}
                                 className={`
                                     group relative p-3.5 rounded-2xl border transition-all flex flex-col justify-center gap-2 overflow-hidden min-h-[80px]
-                                    ${config.isConnected 
+                                    ${config.isConnected
                                         ? isFuture
                                             ? 'bg-gradient-to-br from-[#1E40AF]/20 to-zinc-950/50 border-[#1E40AF]/40 shadow-[0_4px_16px_rgba(30,64,175,0.15),inset_0_1px_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl'
                                             : isSub
@@ -522,33 +522,33 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 {config.isConnected && (
                                     <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent pointer-events-none"></div>
                                 )}
-                                
+
                                 <div className="flex justify-between items-center w-full h-full relative">
                                     <div className="flex flex-col gap-1 w-full items-center justify-center">
-                                         {/* Row 1: Broker - Branch (Large) */}
-                                         <div className="flex items-center justify-center gap-1 w-full relative">
-                                             <h4 className="text-[13px] font-bold text-white/95 tracking-tight text-center">
-                                                 {(() => {
-                                                     const brokerName = '永豐金';
-                                                     const middle = typeLabel === '期貨' 
-                                                         ? '期貨' 
-                                                         : bText.replace(/\(.*\)/, '')
-                                                                .replace('分公司', '')
-                                                                .replace(/^永豐金-?/, '')
-                                                                .trim();
-                                                     return `${brokerName} ${middle}`;
-                                                 })()}
-                                             </h4>
-                                             {/* Unsupported Badge (Next to Title) - Always show for Sub-brokerage */}
-                                             {isSub && (
+                                        {/* Row 1: Broker - Branch (Large) */}
+                                        <div className="flex items-center justify-center gap-1 w-full relative">
+                                            <h4 className="text-[13px] font-bold text-white/95 tracking-tight text-center">
+                                                {(() => {
+                                                    const brokerName = '永豐金';
+                                                    const middle = typeLabel === '期貨'
+                                                        ? '期貨'
+                                                        : bText.replace(/\(.*\)/, '')
+                                                            .replace('分公司', '')
+                                                            .replace(/^永豐金-?/, '')
+                                                            .trim();
+                                                    return `${brokerName} ${middle}`;
+                                                })()}
+                                            </h4>
+                                            {/* Unsupported Badge (Next to Title) - Always show for Sub-brokerage */}
+                                            {isSub && (
                                                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-500/10 border border-zinc-500/20 cursor-not-allowed">
                                                     <span className="text-[9px] font-bold text-zinc-500 uppercase whitespace-nowrap">尚未支援</span>
                                                 </div>
-                                             )}
-                                         </div>
+                                            )}
+                                        </div>
 
-                                         {/* Row 2: Category - Account - Name (Small) */}
-                                         <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                        {/* Row 2: Category - Account - Name (Small) */}
+                                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
                                             <span className={`px-1.5 rounded-[4px] text-[9px] font-bold border shadow-sm whitespace-nowrap h-[16px] flex items-center justify-center min-w-[32px] ${isSub ? 'border-zinc-700 text-zinc-600 bg-zinc-800/30' : theme.fullClass}`}>
                                                 {typeLabel}
                                             </span>
@@ -562,69 +562,69 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     return cleanName.replace(/【|】/g, '');
                                                 })()}
                                             </span>
-                                            
-                                             {config.isConnected && (
-                                                <div className="flex items-center gap-1 ml-1">
-                                                     <div className="w-1 h-1 rounded-full bg-[#C8B085] shadow-[0_0_5px_rgba(200,176,133,0.8)]" />
-                                                </div>
-                                             )}
 
-                                             {/* Verification Status Tag (Interactive Only) */}
-                                             {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && !isSub && (
-                                                 <button
-                                                     onClick={(e) => {
-                                                         e.stopPropagation();
-                                                         handleVerifyAccount(config, accId);
-                                                     }}
-                                                     disabled={isVerifying === accId}
-                                                     className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 mt-0.5 hover:bg-amber-500/20 cursor-pointer transition-colors ${isVerifying === accId ? 'animate-pulse' : ''}`}
-                                                     title={`點擊立即驗證 (ID: ${accId} | Signed: ${config.signedAccounts || 'None'})`}
-                                                 >
-                                                     {isVerifying === accId ? <Loader2 size={8} className="animate-spin text-amber-500" /> : <AlertCircle size={8} className="text-amber-500" />}
-                                                     <span className="text-[8px] font-bold text-amber-500 uppercase">{isVerifying === accId ? '驗證中...' : '未驗證'}</span>
-                                                 </button>
-                                             )}
-                                          </div>
+                                            {config.isConnected && (
+                                                <div className="flex items-center gap-1 ml-1">
+                                                    <div className="w-1 h-1 rounded-full bg-[#C8B085] shadow-[0_0_5px_rgba(200,176,133,0.8)]" />
+                                                </div>
+                                            )}
+
+                                            {/* Verification Status Tag (Interactive Only) */}
+                                            {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && !isSub && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleVerifyAccount(config, accId);
+                                                    }}
+                                                    disabled={isVerifying === accId}
+                                                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 mt-0.5 hover:bg-amber-500/20 cursor-pointer transition-colors ${isVerifying === accId ? 'animate-pulse' : ''}`}
+                                                    title={`點擊立即驗證 (ID: ${accId} | Signed: ${config.signedAccounts || 'None'})`}
+                                                >
+                                                    {isVerifying === accId ? <Loader2 size={8} className="animate-spin text-amber-500" /> : <AlertCircle size={8} className="text-amber-500" />}
+                                                    <span className="text-[8px] font-bold text-amber-500 uppercase">{isVerifying === accId ? '驗證中...' : '未驗證'}</span>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
-                                    
+
                                     {/* Action Buttons (Absolute Bottom Right on Hover, but slightly adjusted for centered layout) */}
-                                     <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-md rounded-lg p-0.5 border border-white/10 z-50">
+                                    <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-md rounded-lg p-0.5 border border-white/10 z-50">
                                         {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && !isSub && (
                                             <>
-                                                <button 
+                                                <button
                                                     disabled={isVerifying === accId}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         handleVerifyAccount(config, accId);
-                                                    }} 
+                                                    }}
                                                     className={`p-1.5 rounded-md text-amber-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all flex items-center gap-1 ${isVerifying === accId ? 'animate-pulse' : ''}`}
                                                     title="需要驗證 API 權限 (點擊執行模擬下單)"
                                                 >
-                                                    {isVerifying === accId ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12}/>}
+                                                    {isVerifying === accId ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
                                                     <span className="text-[9px] font-bold">驗證</span>
                                                 </button>
                                                 {!config.caContent && (
-                                                    <button 
+                                                    <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             setUploadConfigId(config.id);
                                                             setTimeout(() => {
                                                                 document.getElementById('card-ca-upload-trigger')?.click();
                                                             }, 10);
-                                                        }} 
+                                                        }}
                                                         className="p-1.5 rounded-md text-zinc-400 hover:text-amber-500 hover:bg-amber-500/10 transition-all flex items-center gap-1"
                                                         title="上傳憑證修復路徑錯誤"
                                                     >
-                                                        <FolderOpen size={12}/>
+                                                        <FolderOpen size={12} />
                                                     </button>
                                                 )}
                                             </>
                                         )}
-                                        <button onClick={() => handleStartEdit(config.id)} className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-all"><FileKey size={12}/></button>
-                                        <button onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            handleDeleteAccount(e); 
-                                        }} className="p-1.5 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all"><Trash2 size={12}/></button>
+                                        <button onClick={() => handleStartEdit(config.id)} className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-all"><FileKey size={12} /></button>
+                                        <button onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteAccount(e);
+                                        }} className="p-1.5 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all"><Trash2 size={12} /></button>
                                     </div>
                                 </div>
                             </div>
@@ -632,13 +632,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                     });
                 })}
 
-                <button 
+                <button
                     onClick={() => handleStartEdit('new')}
                     className="group border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center gap-2 min-h-[70px] hover:border-[#C8B085]/40 hover:bg-[#C8B085]/5 transition-all border-dashed"
                 >
                     <div className="flex items-center gap-2">
                         <div className="w-5 h-5 rounded-full bg-white/5 group-hover:bg-[#C8B085]/20 flex items-center justify-center transition-colors">
-                            <Plus size={10} className="text-zinc-500 group-hover:text-[#C8B085] transition-colors"/>
+                            <Plus size={10} className="text-zinc-500 group-hover:text-[#C8B085] transition-colors" />
                         </div>
                         <span className="text-[10px] font-bold text-zinc-500 group-hover:text-[#C8B085] uppercase tracking-widest transition-colors">{lang === 'zh' ? '新增帳務帳號' : 'Add Account'}</span>
                     </div>
@@ -652,13 +652,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             <h4 className="text-sm font-bold text-white uppercase tracking-wider">
                                 {isEditing === 'new' ? '新增券商帳號' : '編輯帳號資訊'}
                             </h4>
-                            <button onClick={() => setIsEditing(null)} className="p-2 rounded-xl bg-white/5 text-zinc-600 hover:text-white transition-colors"><X size={20}/></button>
+                            <button onClick={() => setIsEditing(null)} className="p-2 rounded-xl bg-white/5 text-zinc-600 hover:text-white transition-colors"><X size={20} /></button>
                         </div>
 
                         <div className="p-5 space-y-6 overflow-y-auto custom-scrollbar">
                             {errorMsg && (
                                 <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-3 text-red-400 text-[11px] font-bold">
-                                    <AlertCircle size={14}/> {errorMsg}
+                                    <AlertCircle size={14} /> {errorMsg}
                                 </div>
                             )}
 
@@ -671,7 +671,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         className="w-full px-4 py-3 rounded-xl bg-black/20 border border-white/5 hover:border-white/10 hover:bg-black/40 transition-all text-left group flex items-center justify-between"
                                     >
                                         <span className="text-[11px] font-bold text-zinc-400">前往簽署 API 風險預告同意書</span>
-                                        <ChevronRight size={14} className="text-zinc-600 group-hover:text-white group-hover:translate-x-1 transition-all"/>
+                                        <ChevronRight size={14} className="text-zinc-600 group-hover:text-white group-hover:translate-x-1 transition-all" />
                                     </button>
                                 </div>
                             </div>
@@ -691,7 +691,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
                                             className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
                                         >
-                                            管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform"/>
+                                            管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
                                         </button>
                                     </div>
                                 </div>
@@ -706,32 +706,32 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         <div className="grid grid-cols-1 gap-4">
                                             <div className="flex flex-col gap-2">
                                                 <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">身分證字號 (Person ID)</label>
-                                                <input 
-                                                    type="text" 
+                                                <input
+                                                    type="text"
                                                     placeholder="A123456789"
-                                                    value={localConfig.personId} 
-                                                    onChange={(e) => handleChange('personId', e.target.value)} 
-                                                    className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`} 
+                                                    value={localConfig.personId}
+                                                    onChange={(e) => handleChange('personId', e.target.value)}
+                                                    className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                                 />
                                             </div>
                                         </div>
 
                                         <div className="flex flex-col gap-2">
                                             <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">API Key</label>
-                                            <input 
-                                                type={showSecrets ? "text" : "password"} 
-                                                value={localConfig.apiKey} 
-                                                onChange={(e) => handleChange('apiKey', e.target.value)} 
-                                                className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`} 
+                                            <input
+                                                type={showSecrets ? "text" : "password"}
+                                                value={localConfig.apiKey}
+                                                onChange={(e) => handleChange('apiKey', e.target.value)}
+                                                className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                             />
                                         </div>
 
                                         <div className="flex flex-col gap-2 relative">
                                             <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">Secret Key</label>
-                                            <input 
-                                                type={showSecrets ? "text" : "password"} 
-                                                value={localConfig.apiSecret} 
-                                                onChange={(e) => handleChange('apiSecret', e.target.value)} 
+                                            <input
+                                                type={showSecrets ? "text" : "password"}
+                                                value={localConfig.apiSecret}
+                                                onChange={(e) => handleChange('apiSecret', e.target.value)}
                                                 className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiSecret ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                             />
                                             <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
@@ -740,14 +740,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         <div className="flex flex-col gap-2">
                                             <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">連線環境</label>
                                             <div className="flex gap-2 p-1 bg-black/40 border border-white/5 rounded-xl">
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={() => handleChange('environment', 'production')}
                                                     className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${localConfig.environment !== 'simulation' ? 'bg-[#C8B085] text-black shadow-lg' : 'text-zinc-600 hover:text-white'}`}
                                                 >
                                                     正式環境
                                                 </button>
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={() => handleChange('environment', 'simulation')}
                                                     className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all ${localConfig.environment === 'simulation' ? 'bg-[#C8B085] text-black shadow-lg' : 'text-zinc-600 hover:text-white'}`}
@@ -772,8 +772,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     憑證檔案 (.pfx)
                                                 </label>
                                             </div>
-                                            <input 
-                                                type="file" 
+                                            <input
+                                                type="file"
                                                 accept=".pfx"
                                                 onChange={async (e) => {
                                                     const file = e.target.files?.[0];
@@ -783,8 +783,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                             // Safari Mobile Fix: Ensure no newlines/spaces in base64
                                                             const raw = (ev.target?.result as string).split(',')[1];
                                                             const cleanB64 = raw.replace(/\s/g, '');
-                                                            handleChange('caContent', cleanB64);
-                                                            handleChange('caPath', file.name);
+
+                                                            // Use functional update to ensure atomic update of both fields
+                                                            setLocalConfig(prev => prev ? ({
+                                                                ...prev,
+                                                                caContent: cleanB64,
+                                                                caPath: file.name
+                                                            }) : null);
                                                         };
                                                         reader.readAsDataURL(file);
                                                     }
@@ -807,8 +812,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                         className={`w-full bg-black/40 border rounded-xl px-4 py-3 pl-10 text-[10px] font-mono text-zinc-400 focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPath ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                                     />
                                                     <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                                                        <label 
-                                                            htmlFor="pfx-settings" 
+                                                        <label
+                                                            htmlFor="pfx-settings"
                                                             className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer border border-white/5 transition-all flex items-center gap-1 group/btn"
                                                             title={lang === 'zh' ? "選取檔案" : "Select File"}
                                                         >
@@ -823,7 +828,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                             <Check size={14} />
                                                             <span className="truncate">{localConfig.caPath}</span>
                                                         </div>
-                                                        <button 
+                                                        <button
                                                             type="button"
                                                             onClick={() => {
                                                                 handleChange('caPath', '');
@@ -841,7 +846,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         <div className="flex flex-col gap-2">
                                             <div className="flex justify-between items-center">
                                                 <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">憑證密碼</label>
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={() => handleChange('caPassword', localConfig.personId)}
                                                     className="text-[9px] text-[#C8B085] hover:text-[#E0C8A0] transition-colors flex items-center gap-1 cursor-pointer font-bold uppercase"
@@ -851,12 +856,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     {lang === 'zh' ? "ID 帶入" : "Use ID"}
                                                 </button>
                                             </div>
-                                            <input 
-                                                type={showSecrets ? "text" : "password"} 
-                                                value={localConfig.caPassword} 
+                                            <input
+                                                type={showSecrets ? "text" : "password"}
+                                                value={localConfig.caPassword}
                                                 placeholder="預設為身分證字號"
-                                                onChange={(e) => handleChange('caPassword', e.target.value)} 
-                                                className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPassword ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`} 
+                                                onChange={(e) => handleChange('caPassword', e.target.value)}
+                                                className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPassword ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                             />
                                         </div>
                                     </div>
@@ -865,63 +870,63 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                         </div>
 
                         <div className="px-6 pb-2 flex items-center justify-between text-[10px] font-mono">
-                             <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2">
                                 <span className="text-zinc-600 uppercase tracking-tighter font-bold">後端狀態:</span>
                                 {backendStatus === 'checking' && (
                                     <div className="flex items-center gap-1.5 text-zinc-500">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-pulse"/>
+                                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-pulse" />
                                         <span className="uppercase tracking-tighter">連線中...</span>
                                     </div>
                                 )}
                                 {backendStatus === 'sleeping' && (
                                     <div className="flex items-center gap-1.5 text-amber-400">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.5)]"/>
+                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
                                         <span>喚醒伺服器中... ⏳</span>
                                     </div>
                                 )}
                                 {backendStatus === 'ready' && (
                                     <div className="flex items-center gap-1.5 text-emerald-500">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"/>
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
                                         <span>已連線</span>
                                     </div>
                                 )}
                                 {backendStatus === 'server_only' && (
                                     <div className="flex items-center gap-1.5 text-amber-500">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"/>
+                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
                                         <span>API 異常</span>
                                     </div>
                                 )}
                                 {backendStatus === 'offline' && (
                                     <div className="flex items-center gap-1.5 text-red-500">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500"/>
+                                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
                                         <span>無法連線</span>
                                     </div>
                                 )}
-                                <button 
-                                    onClick={handleManualPing} 
+                                <button
+                                    onClick={handleManualPing}
                                     disabled={backendStatus === 'checking'}
                                     className="p-1 rounded-full hover:bg-white/10 text-slate-500 hover:text-white transition-colors disabled:opacity-50"
                                     title="手動喚醒"
                                 >
-                                    <RefreshCw size={10} className={backendStatus === 'checking' ? 'animate-spin' : ''}/>
+                                    <RefreshCw size={10} className={backendStatus === 'checking' ? 'animate-spin' : ''} />
                                 </button>
-                             </div>
+                            </div>
                         </div>
 
                         <div className="p-6 border-t border-white/5 flex flex-col sm:flex-row items-center gap-3 bg-black/20 font-bold uppercase tracking-tight text-[10px]">
                             <button onClick={handleSave} className="w-full sm:w-auto flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10 order-2 sm:order-1">僅儲存</button>
                             {accountChoices.length === 0 && (
-                                <button 
+                                <button
                                     disabled={isTesting}
                                     onClick={handleTestConnection}
                                     className="w-full sm:w-auto flex-[2] py-4 px-8 rounded-2xl bg-[#C8B085] text-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 order-1 sm:order-2"
                                 >
-                                    {isTesting ? <Loader2 className="animate-spin" size={16}/> : <Check size={16}/>}
+                                    {isTesting ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
                                     <span>{isTesting ? '驗證中...' : '同步券商'}</span>
                                 </button>
                             )}
                         </div>
-                        
+
                         {/* Progress & Error Messages */}
                         {(progressMsg || errorMsg) && (
                             <div className="px-6 pb-4 pt-2">
@@ -950,14 +955,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                     <div className="w-full max-w-sm bg-[#1C1E22] rounded-3xl border border-[#C8B085]/30 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
                         <div className="p-5 border-b border-white/5 flex justify-between items-center bg-[#C8B085]/5">
                             <div className="flex items-center gap-2 text-[#C8B085]">
-                                <BrainCircuit size={18}/>
+                                <BrainCircuit size={18} />
                                 <h4 className="text-sm font-bold uppercase tracking-widest">請選擇連線帳號</h4>
                             </div>
-                            <button 
+                            <button
                                 onClick={() => setAccountChoices([])}
                                 className="p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
                             >
-                                <X size={18}/>
+                                <X size={18} />
                             </button>
                         </div>
 
@@ -965,7 +970,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             <p className="text-xs text-zinc-400 mb-2 leading-relaxed">
                                 您的憑證包含多個帳號，請選擇您希望同步的帳號(可多選)。
                             </p>
-                            
+
                             {accountChoices.map(acc => {
                                 // 1. Check if this account is already connected
                                 // We check against all existing configs to see if this account ID is present
@@ -977,7 +982,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 });
 
                                 const isSelected = selectedIds.includes(acc.account_id);
-                                
+
                                 const toggleLogic = () => {
                                     if (isConnected) return; // Prevent toggling if already connected
 
@@ -996,10 +1001,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         onClick={toggleLogic}
                                         className={`
                                             w-full p-4 rounded-3xl border flex items-center justify-between transition-all cursor-pointer group 
-                                            ${isConnected 
-                                                ? 'bg-zinc-900/50 border-white/5 opacity-60 cursor-not-allowed' 
-                                                : isSelected 
-                                                    ? 'bg-[#1C1E22] border-[#C8B085] shadow-[0_0_20px_rgba(200,176,133,0.1)]' 
+                                            ${isConnected
+                                                ? 'bg-zinc-900/50 border-white/5 opacity-60 cursor-not-allowed'
+                                                : isSelected
+                                                    ? 'bg-[#1C1E22] border-[#C8B085] shadow-[0_0_20px_rgba(200,176,133,0.1)]'
                                                     : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}
                                         `}
                                     >
@@ -1008,57 +1013,56 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 {(() => {
                                                     // Backend已經返回完整的分公司名稱 (例如：永豐金-板新 (Stock))
                                                     // 只需移除括號內的帳戶類型部分
-                                                    const branchName = acc.branch_name 
+                                                    const branchName = acc.branch_name
                                                         ? acc.branch_name
                                                             .replace(/\s*\(.*\)/, '')
                                                             .replace(/永豐金-永豐金/g, '永豐金') // Fix double SinoPac
-                                                            .trim() 
+                                                            .trim()
                                                         : '分公司';
                                                     const userName = acc.username || '用戶';
                                                     return `${branchName} | ${userName}`;
                                                 })()}
-                                             </span>
-                                             
-                                             {/* Verification Status */}
-                                             {acc.signed === false && (
-                                                 <div className="flex items-center gap-1.5 text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-                                                     <ShieldCheck size={12}/>
-                                                     <span className="text-[10px] font-bold">需要模擬下單驗證</span>
-                                                 </div>
-                                             )}
-                                            
-                                             {/* Row 2: Details */}
-                                             <div className="flex items-center gap-3">
-                                                 {(() => {
-                                                     const type = String(acc.account_type || '').toUpperCase();
-                                                     const branch = String(acc.branch_name || '');
-                                                     const desc = (acc as any).category; // New Backend Field
+                                            </span>
 
-                                                     // Priority: Explicit Category > Type String > Branch Name
-                                                     if (desc === 'SubBrokerage') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.SUB.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.SUB.label}</span>;
-                                                     if (desc === 'Futures') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.FUTURES.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.FUTURES.label}</span>;
-                                                     if (desc === 'Stock') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.STOCK.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.STOCK.label}</span>;
+                                            {/* Verification Status */}
+                                            {acc.signed === false && (
+                                                <div className="flex items-center gap-1.5 text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                                                    <ShieldCheck size={12} />
+                                                    <span className="text-[10px] font-bold">需要模擬下單驗證</span>
+                                                </div>
+                                            )}
 
-                                                     // Fallback Detection
-                                                     const isFuture = type.includes('F') || type.includes('FUTURE') || branch.includes('期貨');
-                                                     const isSub = type.includes('H') || type.includes('SUB') || branch.includes('複委託');
-                                                     
-                                                     const theme = isSub ? ACCOUNT_CATEGORY_THEMES.SUB : isFuture ? ACCOUNT_CATEGORY_THEMES.FUTURES : ACCOUNT_CATEGORY_THEMES.STOCK;
+                                            {/* Row 2: Details */}
+                                            <div className="flex items-center gap-3">
+                                                {(() => {
+                                                    const type = String(acc.account_type || '').toUpperCase();
+                                                    const branch = String(acc.branch_name || '');
+                                                    const desc = (acc as any).category; // New Backend Field
 
-                                                     return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${theme.fullClass}`}>{theme.label}</span>;
-                                                 })()}
-                                                 <span className="text-[12px] font-mono font-bold text-zinc-500">{acc.account_id}</span>
-                                             </div>
+                                                    // Priority: Explicit Category > Type String > Branch Name
+                                                    if (desc === 'SubBrokerage') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.SUB.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.SUB.label}</span>;
+                                                    if (desc === 'Futures') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.FUTURES.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.FUTURES.label}</span>;
+                                                    if (desc === 'Stock') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.STOCK.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.STOCK.label}</span>;
+
+                                                    // Fallback Detection
+                                                    const isFuture = type.includes('F') || type.includes('FUTURE') || branch.includes('期貨');
+                                                    const isSub = type.includes('H') || type.includes('SUB') || branch.includes('複委託');
+
+                                                    const theme = isSub ? ACCOUNT_CATEGORY_THEMES.SUB : isFuture ? ACCOUNT_CATEGORY_THEMES.FUTURES : ACCOUNT_CATEGORY_THEMES.STOCK;
+
+                                                    return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${theme.fullClass}`}>{theme.label}</span>;
+                                                })()}
+                                                <span className="text-[12px] font-mono font-bold text-zinc-500">{acc.account_id}</span>
+                                            </div>
                                         </div>
-                                        
+
                                         {/* Right Side Check or Status */}
-                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-                                            isConnected 
-                                                ? 'bg-zinc-800 border-zinc-700' 
-                                                : isSelected 
-                                                    ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)] border-2' 
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${isConnected
+                                                ? 'bg-zinc-800 border-zinc-700'
+                                                : isSelected
+                                                    ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)] border-2'
                                                     : 'border-2 border-zinc-700 group-hover:border-zinc-500'
-                                        }`}>
+                                            }`}>
                                             {isConnected ? (
                                                 <span className="text-[9px] font-bold text-zinc-500">已加</span>
                                             ) : (
@@ -1093,9 +1097,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             .map(a => a.account_id || a.branch_code)
                                             .join(',');
 
-                                         const updatedConfig: BrokerConfig = {
+                                        const updatedConfig: BrokerConfig = {
                                             ...localConfig,
-                                            branchCode: idString, 
+                                            branchCode: idString,
                                             accounts: idString, // Populating accounts field correctly
                                             branch: accountChoices
                                                 .filter(a => selectedIds.includes(a.account_id))
@@ -1106,7 +1110,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     // Robust Category Logic
                                                     const cat = (a as any).category; // New field from backend
                                                     const type = String(a.account_type || '').toUpperCase();
-                                                    
+
                                                     // Priority: Explicit Category > Type String > Branch Name
                                                     if (cat === 'SubBrokerage') return `${branchOnly}(複委託)`;
                                                     if (cat === 'Futures') return `${branchOnly}(期貨)`;
@@ -1119,9 +1123,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 })
                                                 .join(', ')
                                         };
-                                        
+
                                         const result: any = await fetchBrokerProfile(updatedConfig);
-                                        
+
                                         if (result.status === 'error') throw new Error(result.message || result.error);
 
                                         if (result.environment !== 'production') {
@@ -1132,9 +1136,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             ...updatedConfig,
                                             isConnected: true,
                                             environment: result.environment,
-                                            brokerUsername: result.username 
+                                            brokerUsername: result.username
                                         };
-                                        
+
                                         // Clear cache to ensure SyncDateModal picks up new config immediately
                                         try {
                                             // Simple way to clear cache if function not imported, or relying on invalidation from parent
@@ -1143,21 +1147,21 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         } catch (e) { console.warn('Cache clear failed', e); }
 
                                         setLocalConfig(finalConfig);
-                                        
+
                                         if (isEditing === 'new') {
                                             // [Smart Merge Logic]
                                             // Check if we already have a config for this personId to avoid duplicates
                                             const existingConfig = configs.find(c => c.personId === finalConfig.personId);
-                                            
+
                                             if (existingConfig) {
                                                 // MERGE: Update existing config with new accounts
                                                 const existAccs = (existingConfig.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 const existBranches = (existingConfig.branch || '').split(',').map(s => s.trim());
-                                                
+
                                                 // New data
                                                 const newAccs = (finalConfig.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 const newBranches = (finalConfig.branch || '').split(',').map(s => s.trim());
-                                                
+
                                                 // Append only unique accounts
                                                 newAccs.forEach((accId, idx) => {
                                                     if (!existAccs.includes(accId)) {
@@ -1166,7 +1170,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                         existBranches.push(newBranches[idx] || 'Unknown');
                                                     }
                                                 });
-                                                
+
                                                 const mergedConfig = {
                                                     ...existingConfig,
                                                     ...finalConfig,     // Update credentials with latest successful ones
@@ -1174,9 +1178,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     accounts: existAccs.join(','),
                                                     branch: existBranches.join(','),
                                                     // branchCode is often unused or mirrors accounts, merge strictly if present
-                                                    branchCode: existAccs.join(',') 
+                                                    branchCode: existAccs.join(',')
                                                 };
-                                                
+
                                                 onUpdate(existingConfig.id, mergedConfig);
                                             } else {
                                                 // No existing config -> Create new
@@ -1184,7 +1188,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             }
                                         }
                                         else onUpdate(localConfig.id, finalConfig);
-                                        
+
                                         setIsEditing(null);
                                         setIsTesting(false);
                                         setAccountChoices([]);
@@ -1195,7 +1199,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 }}
                                 className="flex-[2] py-3 rounded-xl bg-[#C8B085] hover:bg-[#E0C8A0] text-black font-bold text-sm shadow-[0_0_20px_rgba(200,176,133,0.2)] disabled:opacity-50 disabled:shadow-none transition-all flex items-center justify-center gap-2"
                             >
-                                {isTesting ? <Loader2 size={16} className="animate-spin"/> : <Check size={16}/>}
+                                {isTesting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
                                 確認同步已選帳號 ({selectedIds.length})
                             </button>
                         </div>
@@ -1210,18 +1214,18 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-2">
                                 <AlertCircle size={32} className="text-red-500" />
                             </div>
-                            
+
                             <h4 className="text-lg font-bold text-white">
                                 {lang === 'zh' ? '確定要刪除此帳號？' : 'Delete Account?'}
                             </h4>
-                            
+
                             <p className="text-sm text-zinc-400 leading-relaxed">
-                                {lang === 'zh' 
-                                    ? '此動作無法復原。刪除後您將無法查閱此帳號的歷史交易紀錄。' 
+                                {lang === 'zh'
+                                    ? '此動作無法復原。刪除後您將無法查閱此帳號的歷史交易紀錄。'
                                     : 'This action cannot be undone. You will lose access to historical data for this account.'}
                             </p>
                         </div>
-                        
+
                         <div className="p-4 border-t border-white/5 bg-zinc-900/50 flex gap-3">
                             <button
                                 onClick={() => setDeleteTarget(null)}
@@ -1233,11 +1237,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 onClick={() => {
                                     const { configId, accountIndex } = deleteTarget;
                                     const config = configs.find(c => c.id === configId);
-                                    
+
                                     if (config) {
                                         const currentBranches = (config.branch || '').split(',');
-                                        const currentCodes = (config.branchCode || '').split(','); 
-                                        
+                                        const currentCodes = (config.branchCode || '').split(',');
+
                                         // If this is the only account, delete the whole config
                                         if (currentBranches.length <= 1) {
                                             onDelete(configId);
@@ -1246,29 +1250,29 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             // Robustly handle all arrays (branch, branchCode, accounts)
                                             // to ensure we delete the correct index across all fields
                                             const currentAccounts = (config.accounts || config.branchCode || '').split(',');
-                                            
+
                                             // Helper to filter safely
                                             const filterAt = (arr: string[]) => arr.filter((_, i) => i !== accountIndex).join(',');
-                                            
+
                                             // Handle potential length mismatches by padding before filtering? 
                                             // No, just filter what exists. If index is out of bounds for one array, it's fine.
                                             const newBranches = filterAt(currentBranches);
-                                            
+
                                             // Code might be optional/shorter, but we attempt to filter it
                                             const newCodes = filterAt(currentCodes);
-                                            
+
                                             // Accounts is the critical one for "Ghost" accounts
                                             const newAccounts = filterAt(currentAccounts);
 
                                             // Construct updated config
                                             const { ...rest } = config;
-                                            const updatedConfig = { 
-                                                ...rest, 
-                                                branch: newBranches, 
+                                            const updatedConfig = {
+                                                ...rest,
+                                                branch: newBranches,
                                                 branchCode: newCodes,
-                                                accounts: newAccounts 
+                                                accounts: newAccounts
                                             };
-                                            
+
                                             // Call onUpdate to save the new account list
                                             onUpdate(configId, updatedConfig);
                                         }
@@ -1291,5 +1295,5 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
 // Simple Shield icon fallback as it might be missing from some lucide versions
 const Shield = ({ size }: { size: number }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
 );

@@ -43,24 +43,24 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
         while (curr <= endDate) {
             const dateStr = curr.toISOString().split('T')[0];
             if (Math.random() > 0.3) {
-                 const pnl = Math.floor(Math.random() * 20000) - 5000;
-                 details.push({
-                     date: dateStr,
-                     category: '現股',
-                     code: '2330 台積電',
-                     quantity: 1000,
-                     price: 600,
-                     buyAmt: 600000,
-                     sellAmt: 600000 + pnl,
-                     pnl: pnl,
-                     yield: Number((pnl / 600000 * 100).toFixed(2)),
-                     orderNo: 'M' + Math.random().toString(36).substring(7).toUpperCase(),
-                     currency: '台幣'
-                 });
+                const pnl = Math.floor(Math.random() * 20000) - 5000;
+                details.push({
+                    date: dateStr,
+                    category: '現股',
+                    code: '2330 台積電',
+                    quantity: 1000,
+                    price: 600,
+                    buyAmt: 600000,
+                    sellAmt: 600000 + pnl,
+                    pnl: pnl,
+                    yield: Number((pnl / 600000 * 100).toFixed(2)),
+                    orderNo: 'M' + Math.random().toString(36).substring(7).toUpperCase(),
+                    currency: '台幣'
+                });
             }
             curr.setDate(curr.getDate() + 1);
         }
-        
+
         // Aggregation Logic (Mock)
         const dailyMap: Record<string, number> = {};
         let total = 0;
@@ -74,8 +74,8 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
             dailyResults: Object.keys(dailyMap).map(k => ({ date: k, pnl: dailyMap[k] })),
             details
         };
-    } 
-    
+    }
+
     if (config.provider === 'shioaji') {
         // ===== 實際使用 config 中的憑證 =====
         // 驗證必要欄位是否已填寫
@@ -114,7 +114,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
 
             const fetchStartTime = performance.now();
             console.log('🌐 [PERF] 發送 PnL API 請求至:', `${API_BASE}/api/broker/pnl`);
-            
+
             let response;
             try {
                 response = await fetch(`${API_BASE}/api/broker/pnl`, {
@@ -123,9 +123,9 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                     body: JSON.stringify(payload),
                     signal: controller.signal // 添加取消信號
                 });
-                
+
                 clearTimeout(timeoutId); // 清除超時計時器
-                
+
                 const fetchElapsed = performance.now() - fetchStartTime;
                 console.log(`📡 [PERF] PnL API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
             } catch (fetchError: any) {
@@ -160,7 +160,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
             const totalElapsed = performance.now() - startTime;
             console.log(`✅ [PERF] fetchBrokerPnl 完成: ${totalElapsed.toFixed(0)}ms`);
             console.log(`📊 [PERF] 擷取交易筆數: ${result.details?.length || 0}`);
-            
+
             // 將 Python 後端返回的資料轉換為前端格式
             if (result.status === 'success' && result.details) {
                 return {
@@ -169,7 +169,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                     details: result.details || []
                 };
             }
-            
+
             throw new Error(result.message || '後端回應格式錯誤 (Invalid response)');
 
         } catch (fetchError: any) {
@@ -280,38 +280,39 @@ export interface BrokerProfile {
 export const validateBackendStatus = async (): Promise<'ready' | 'server_only' | 'offline' | 'sleeping'> => {
     const startTime = performance.now();
     console.log('🔍 [BACKEND_CHECK] Starting comprehensive validation:', new Date().toISOString());
-    
+
     try {
         // Step 1: Check if server is alive
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s for Render cold boot
-        
+
         const healthResponse = await fetch(`${API_BASE}/health`, { signal: controller.signal });
         clearTimeout(timeoutId);
-        
+
         if (!healthResponse.ok) {
             console.warn(`❌ [BACKEND_CHECK] Health check failed with status ${healthResponse.status}`);
             return 'offline';
         }
-        
+
         console.log(`✅ [BACKEND_CHECK] Server is alive (${(performance.now() - startTime).toFixed(0)}ms)`);
-        
+
         // Step 2: Test if API endpoint structure is available
         const apiCheckTime = performance.now();
         const apiController = new AbortController();
-        const apiTimeoutId = setTimeout(() => apiController.abort(), 3000);
-        
+        const apiTimeoutId = setTimeout(() => apiController.abort(), 5000); // 5s timeout for API check
+
         // Send an intentionally invalid request to check if the endpoint exists
         // We expect a 400 (bad request) response, not 404 (not found)
+        console.log('🔍 [BACKEND_CHECK] Probing API endpoint accessibility...');
         const apiResponse = await fetch(`${API_BASE}/api/broker/profile`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}), // Empty payload to trigger validation error
             signal: apiController.signal
         });
-        
+
         clearTimeout(apiTimeoutId);
-        
+
         // If we get 400, it means the endpoint exists and is validating input (good!)
         // If we get 404, the API route doesn't exist
         // If we get 500, there might be a configuration issue
@@ -319,37 +320,41 @@ export const validateBackendStatus = async (): Promise<'ready' | 'server_only' |
             console.warn(`⚠️ [BACKEND_CHECK] API endpoint not found - deployment might be incomplete`);
             return 'server_only';
         }
-        
+
         if (apiResponse.status === 400) {
             console.log(`✅ [BACKEND_CHECK] API is functional (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
             return 'ready';
         }
-        
+
         // Try to read the response to get more details
         const text = await apiResponse.text();
         let parsed: any = {};
         try {
             parsed = text ? JSON.parse(text) : {};
-        } catch(e) {
+        } catch (e) {
             console.warn(`⚠️ [BACKEND_CHECK] Non-JSON response from API: ${text.substring(0, 100)}`);
         }
-        
+
         // If we get a proper error response with message, API is working
         if (parsed.message || parsed.error) {
             console.log(`✅ [BACKEND_CHECK] API is responding (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
             return 'ready';
         }
-        
+
         console.warn(`⚠️ [BACKEND_CHECK] Unexpected API response: ${apiResponse.status}`);
         return 'server_only';
-        
+
     } catch (e: any) {
         const elapsed = performance.now() - startTime;
         if (e.name === 'AbortError') {
             console.warn(`😴 [BACKEND_CHECK] Timeout after ${elapsed.toFixed(0)}ms — server likely sleeping`);
             return 'sleeping';
         } else {
+            console.error(`❌ [BACKEND_CHECK] Network Error Details:`, e);
             console.warn(`❌ [BACKEND_CHECK] Failed: ${e.message} (${elapsed.toFixed(0)}ms)`);
+            if (e.message?.includes('Failed to fetch')) {
+                console.warn('💡 Hint: This is often caused by CORS issues or the server being down.');
+            }
         }
         return 'offline';
     }
@@ -376,13 +381,13 @@ export const wakeUpBackend = async (): Promise<{ success: boolean; error?: strin
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for wake-up
-        
-        const response = await fetch(`${API_BASE}/health`, { 
+
+        const response = await fetch(`${API_BASE}/health`, {
             signal: controller.signal,
             cache: 'no-cache'
         });
         clearTimeout(timeoutId);
-        
+
         if (response.ok) {
             console.log('✅ [WAKE] Backend is awake');
             return { success: true };
@@ -409,19 +414,19 @@ const retryWithBackoff = async <T>(
     onProgress?: (attempt: number, maxRetries: number) => void
 ): Promise<T> => {
     let lastError: any;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             if (onProgress) onProgress(attempt, maxRetries);
             return await fn();
         } catch (error: any) {
             lastError = error;
-            
+
             // Don't retry on validation errors (400)
             if (error.message?.includes('缺少必要') || error.message?.includes('Missing')) {
                 throw error;
             }
-            
+
             if (attempt < maxRetries) {
                 const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5s
                 console.log(`⏳ [RETRY] Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`);
@@ -429,7 +434,7 @@ const retryWithBackoff = async <T>(
             }
         }
     }
-    
+
     throw lastError;
 };
 
@@ -439,7 +444,7 @@ export const fetchBrokerProfile = async (
 ): Promise<BrokerProfile> => {
     const startTime = performance.now();
     console.log('🔍 [PERF] fetchBrokerProfile 開始:', new Date().toISOString());
-    
+
     if (config.provider === 'shioaji') {
         if (!config.apiKey || !config.apiSecret || !config.personId || !config.caPath) {
             throw new Error("登入失敗：缺少必要憑證資訊 (Missing credentials)");
@@ -460,16 +465,16 @@ export const fetchBrokerProfile = async (
             // Wrap the fetch call with retry logic
             const result = await retryWithBackoff(async () => {
                 if (onProgress) onProgress('正在連接券商 API...');
-                
+
                 const fetchStartTime = performance.now();
                 console.log('🌐 [PERF] 發送 Profile API 請求至:', `${API_BASE}/api/broker/profile`);
-                
+
                 const response = await fetch(`${API_BASE}/api/broker/profile`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                
+
                 const fetchElapsed = performance.now() - fetchStartTime;
                 console.log(`📡 [PERF] Profile API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
 
@@ -484,22 +489,22 @@ export const fetchBrokerProfile = async (
 
                 if (!response.ok) {
                     let errMsg = result.message || result.error || `後端錯誤 (${response.status}): ${text.substring(0, 100)}`;
-                    
+
                     // Improve error message for known Shioaji errors
                     if (typeof errMsg === 'string') {
                         if (errMsg.includes('key:') && errMsg.includes('not exist')) {
-                             errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                            errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
                         } else if (errMsg.includes('Account Not Acceptable')) {
-                             errMsg = '帳號授權失敗，請確認該帳號是否有效 (Account Not Acceptable)';
+                            errMsg = '帳號授權失敗，請確認該帳號是否有效 (Account Not Acceptable)';
                         } else if (errMsg.includes('缺少必要欄位')) {
-                             // Validation error - don't retry
-                             throw new Error(errMsg);
+                            // Validation error - don't retry
+                            throw new Error(errMsg);
                         }
                     }
-                    
+
                     throw new Error(errMsg);
                 }
-                
+
                 return result;
             }, 3, (attempt, max) => {
                 if (onProgress) onProgress(`連接中 (嘗試 ${attempt}/${max})...`);
@@ -507,7 +512,7 @@ export const fetchBrokerProfile = async (
 
             const totalElapsed = performance.now() - startTime;
             console.log(`✅ [PERF] fetchBrokerProfile 完成: ${totalElapsed.toFixed(0)}ms`);
-            
+
             if (result.status === 'error') {
                 throw new Error(result.message || result.error || '後端回報錯誤 (Backend reported an error)');
             }
@@ -524,13 +529,13 @@ export const fetchBrokerProfile = async (
             if (!result.branchCode || !result.username) {
                 throw new Error("登入失敗：缺少帳號資訊 (Missing account info)");
             }
-            
+
             const rawCode = String(result.branchCode || '').trim();
             const codes = rawCode.split(',').map(c => c.trim()).filter(Boolean);
             const branchName = codes.length > 0
                 ? codes.map(c => BRANCH_MAP[c] || c).join(', ')
                 : (BRANCH_MAP[rawCode] || '永豐金 - ' + rawCode);
-            
+
             return {
                 status: 'success',
                 branchCode: rawCode,
@@ -552,7 +557,7 @@ export const fetchBrokerProfile = async (
             throw fetchError;
         }
     }
-    
+
     if (config.provider === 'mock') {
         return {
             status: 'success',
