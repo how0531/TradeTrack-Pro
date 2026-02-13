@@ -6,12 +6,12 @@ import { THEME } from '../constants';
 import { useLocalStorage } from './useLocalStorage';
 import { migrateFromLocalStorage, needsMigration } from '../utils/migration';
 
-const INITIAL_PORTFOLIO: Portfolio = { 
-  id: 'main', 
-  name: 'Main Account', 
-  initialCapital: 100000, 
-  profitColor: THEME.RED, 
-  lossColor: THEME.DEFAULT_LOSS 
+const INITIAL_PORTFOLIO: Portfolio = {
+  id: 'main',
+  name: 'Main Account',
+  initialCapital: 100000,
+  profitColor: THEME.RED,
+  lossColor: THEME.DEFAULT_LOSS
 };
 
 export const useIndexedDBData = () => {
@@ -30,13 +30,13 @@ export const useIndexedDBData = () => {
   // 使用 Dexie 的 useLiveQuery 自動訂閱資料變更
   const trades = useLiveQuery(() => db.trades.toArray(), []) || [];
   const portfolios = useLiveQuery(() => db.portfolios.toArray(), []) || [];
-  
+
   const strategies = useLiveQuery(
     () => db.strategies.toArray().then(arr => arr.map(s => s.name)),
     [],
     ['動能突破', '急殺抄底', '波段趨勢'] // 預設值
   );
-  
+
   const emotions = useLiveQuery(
     () => db.emotions.toArray().then(arr => arr.map(e => e.name)),
     [],
@@ -81,23 +81,25 @@ export const useIndexedDBData = () => {
       if (editingId) {
         await db.trades.update(editingId, trade);
       } else {
-        const newTrade = { 
-          ...trade, 
+        const newTrade = {
+          ...trade,
           id: `trade-${Date.now()}`,
-          timestamp: new Date().toISOString() 
+          timestamp: new Date().toISOString()
         };
         await db.trades.add(newTrade);
       }
     },
 
-    saveTrades: async (trades: Omit<Trade, 'id' | 'timestamp'>[]) => {
+    saveTrades: async (trades: Partial<Pick<Trade, 'id' | 'timestamp'>> & Omit<Trade, 'id' | 'timestamp'>[]) => {
       const now = Date.now();
-      const newTrades = trades.map((t, index) => ({
+      const newTrades = (trades as any[]).map((t, index) => ({
         ...t,
-        id: `trade-${now}-${index}`,
-        timestamp: new Date().toISOString()
+        // 保留傳入的 stable ID（來自券商同步），僅在缺失時才生成新 ID
+        id: t.id || `trade-${now}-${index}`,
+        timestamp: t.timestamp || new Date().toISOString()
       }));
-      await db.trades.bulkAdd(newTrades as Trade[]);
+      // 使用 bulkPut 代替 bulkAdd，遇到相同 ID 時更新而非報錯
+      await db.trades.bulkPut(newTrades as Trade[]);
     },
 
     deleteTrade: async (id: string) => {
@@ -161,12 +163,12 @@ export const useIndexedDBData = () => {
       await db.portfolios.clear();
       await db.strategies.clear();
       await db.emotions.clear();
-      
+
       // 重新初始化預設資料
       await db.portfolios.add(INITIAL_PORTFOLIO);
       await db.strategies.bulkAdd(['動能突破', '急殺抄底', '波段趨勢'].map(name => ({ name })));
-      await db.emotions.bulkAdd(['短線', '事件', '產業', '波段'].map(name => ({ name})));
-      
+      await db.emotions.bulkAdd(['短線', '事件', '產業', '波段'].map(name => ({ name })));
+
       console.log('✅ 已清除所有 IndexedDB 資料並重新初始化');
     },
 
@@ -180,17 +182,17 @@ export const useIndexedDBData = () => {
       await db.trades.clear();
       await db.trades.bulkAdd(trades);
     },
-    
+
     setStrategies: async (strategies: string[]) => {
       await db.strategies.clear();
       await db.strategies.bulkAdd(strategies.map(name => ({ name })));
     },
-    
+
     setEmotions: async (emotions: string[]) => {
       await db.emotions.clear();
       await db.emotions.bulkAdd(emotions.map(name => ({ name })));
     },
-    
+
     setPortfolios: async (portfolios: Portfolio[]) => {
       await db.portfolios.clear();
       await db.portfolios.bulkAdd(portfolios);

@@ -17,7 +17,7 @@ export interface DetectionOptions {
  * 2. 回退方案：同日期 + 同成交金額 (amount)
  */
 export function detectDuplicates(
-  trades: Trade[], 
+  trades: Trade[],
   options: DetectionOptions = {}
 ): DuplicateGroup[] {
   const { useOrderNoOnly = false } = options;
@@ -29,23 +29,29 @@ export function detectDuplicates(
 
     const duplicates = trades.slice(index + 1).filter(other => {
       if (processed.has(other.id)) return false;
-      
+
       // 方法 1: 使用 orderNo（最準確）
       if (trade.orderNo && other.orderNo) {
         return trade.orderNo === other.orderNo;
       }
-      
+
       // 若設定為僅用 orderNo，則跳過其他條件
       if (useOrderNoOnly) return false;
-      
-      // 方法 2: 回退方案 - 同日期 + 同成交金額
-      const sameDate = new Date(trade.date).toDateString() === 
-                       new Date(other.date).toDateString();
-      const sameAmount = trade.amount && 
-                        other.amount && 
-                        trade.amount === other.amount;
-      
-      return sameDate && sameAmount;
+
+      // 方法 2: 回退方案 - 同日期 + 同標的代號 + 同損益
+      // 使用 code + pnl 組合（amount 欄位在券商匯入流程中不會被填充）
+      const sameDate = new Date(trade.date).toDateString() ===
+        new Date(other.date).toDateString();
+
+      // 比對標的代號（提取純代號部分）
+      const tradeCode = trade.code ? trade.code.split(' ')[0].trim() : '';
+      const otherCode = other.code ? other.code.split(' ')[0].trim() : '';
+      const sameCode = tradeCode && otherCode && tradeCode === otherCode;
+
+      // 比對損益（±1 容差，與 SyncDateModal 一致）
+      const samePnl = Math.abs(trade.pnl - other.pnl) < 1;
+
+      return sameDate && sameCode && samePnl;
     });
 
     if (duplicates.length > 0) {
@@ -53,7 +59,7 @@ export function detectDuplicates(
         original: trade,
         duplicates: duplicates
       });
-      
+
       processed.add(trade.id);
       duplicates.forEach(d => processed.add(d.id));
     }
@@ -67,11 +73,11 @@ export function detectDuplicates(
  * 保留第一筆（original），刪除後續重複筆數
  */
 export function mergeDuplicates(
-  trades: Trade[], 
+  trades: Trade[],
   duplicateGroups: DuplicateGroup[]
 ): Trade[] {
   const toRemove = new Set<string>();
-  
+
   duplicateGroups.forEach(group => {
     group.duplicates.forEach(d => toRemove.add(d.id));
   });
@@ -84,10 +90,10 @@ export function mergeDuplicates(
  */
 export function getDuplicateStats(duplicateGroups: DuplicateGroup[]) {
   const totalDuplicates = duplicateGroups.reduce(
-    (sum, group) => sum + group.duplicates.length, 
+    (sum, group) => sum + group.duplicates.length,
     0
   );
-  
+
   return {
     groupCount: duplicateGroups.length,
     totalDuplicates: totalDuplicates,

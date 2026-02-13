@@ -6,9 +6,9 @@ import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { detectDuplicates, mergeDuplicates, DuplicateGroup, DetectionOptions } from '../utils/duplicateDetection';
 import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams } from '../types';
-import { db, resetFirestoreCache } from '../firebaseConfig'; 
+import { db, resetFirestoreCache } from '../firebaseConfig';
 import { doc, setDoc } from 'firebase/firestore';
-import { I18N, THEME } from '../constants'; 
+import { I18N, THEME } from '../constants';
 
 interface TradeContextType {
     // Data
@@ -16,7 +16,7 @@ interface TradeContextType {
     strategies: string[];
     emotions: string[];
     portfolios: Portfolio[];
-    
+
     // UI State & Filters
     activePortfolioIds: string[];
     setActivePortfolioIds: React.Dispatch<React.SetStateAction<string[]>>;
@@ -50,7 +50,7 @@ interface TradeContextType {
     setChartHeight: React.Dispatch<React.SetStateAction<number>>;
     lossColor: string;
     setLossColor: React.Dispatch<React.SetStateAction<string>>;
-    
+
     // Broker Accounts
     brokerConfigs: BrokerConfig[];
     activeBrokerId: string;
@@ -74,8 +74,8 @@ interface TradeContextType {
     isSyncing: boolean;
     syncStatus: SyncStatus;
     lastBackupTime: Date | null;
-    triggerCloudBackup: () => Promise<{success: boolean, error?: string}>;
-    manualPull: () => Promise<{success: boolean, error?: string}>;
+    triggerCloudBackup: () => Promise<{ success: boolean, error?: string }>;
+    manualPull: () => Promise<{ success: boolean, error?: string }>;
     syncError: string | null;
     repairDatabase: () => Promise<void>;
     isSyncModalOpen: boolean;
@@ -84,7 +84,7 @@ interface TradeContextType {
     // Actions
     actions: {
         saveTrade: (trade: Trade, editingId: string | null) => void;
-        saveTrades: (trades: Omit<Trade, 'id' | 'timestamp'>[]) => void;
+        saveTrades: (trades: (Omit<Trade, 'id' | 'timestamp'> & { id?: string; timestamp?: string })[]) => void;
         deleteTrade: (id: string) => void;
         updatePortfolio: (id: string, key: keyof Portfolio, value: string | number) => void;
         addPortfolio: (portfolio: Portfolio) => void;
@@ -102,13 +102,13 @@ interface TradeContextType {
         detectDuplicates: (options?: DetectionOptions) => DuplicateGroup[];
         removeDuplicates: () => void;
     };
-    
+
     // Auth (exposed for settings)
     authStatus: string;
     user: any; // Keep generic for now if User type has issues, or switch to User | null
     login: () => void;
     logout: () => void;
-    
+
     // Translation
     t: Translation;
 
@@ -124,12 +124,12 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const { user, status: authStatus, login, logout } = useAuth();
 
     // 2. Local Data
-    const { 
-        trades, strategies, emotions, portfolios, 
-        activePortfolioIds, setActivePortfolioIds, 
+    const {
+        trades, strategies, emotions, portfolios,
+        activePortfolioIds, setActivePortfolioIds,
         lossColor, setLossColor, actions: localActions,
         // Exposed setters for Sync
-        setTrades, setStrategies, setEmotions, setPortfolios 
+        setTrades, setStrategies, setEmotions, setPortfolios
     } = useIndexedDBData();
 
     // 4. Preferences (Lifted from App.tsx)
@@ -149,7 +149,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
             const legacy = localStorage.getItem('broker_config');
             const current = localStorage.getItem('broker_configs');
-            
+
             // Only migrate if legacy exists AND current (new) config is missing
             if (legacy && !current) {
                 console.log('🔄 Performing Broker Config Migration...');
@@ -205,24 +205,24 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [autoSyncParams, setAutoSyncParams] = useState<AutoSyncParams | null>(null);
 
     // 5. Sync Logic
-    const { 
-        isSyncing, syncStatus, syncError, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen, 
-        triggerCloudBackup, manualPull, setLastSyncTimeStr, setSyncStatus 
+    const {
+        isSyncing, syncStatus, syncError, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen,
+        triggerCloudBackup, manualPull, setLastSyncTimeStr, setSyncStatus
     } = useSync({
         user,
         authStatus,
         db,
         data: { trades, strategies, emotions, portfolios, lossColor },
         onPull: (cloudData) => {
-            if(cloudData.trades) setTrades(cloudData.trades);
-            if(cloudData.strategies) setStrategies(cloudData.strategies);
-            if(cloudData.emotions) setEmotions(cloudData.emotions);
-            if(cloudData.portfolios) {
+            if (cloudData.trades) setTrades(cloudData.trades);
+            if (cloudData.strategies) setStrategies(cloudData.strategies);
+            if (cloudData.emotions) setEmotions(cloudData.emotions);
+            if (cloudData.portfolios) {
                 setPortfolios(cloudData.portfolios);
                 // Also update active if needed, logic borrowed from old useTradeData
-                setActivePortfolioIds(cloudData.portfolios.map((p:any) => p.id));
+                setActivePortfolioIds(cloudData.portfolios.map((p: any) => p.id));
             }
-            if(cloudData.settings?.lossColor) setLossColor(cloudData.settings.lossColor);
+            if (cloudData.settings?.lossColor) setLossColor(cloudData.settings.lossColor);
         }
     });
 
@@ -269,29 +269,29 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     if (data.settings && data.settings.lossColor) {
                         setLossColor(data.settings.lossColor);
                     }
-                    
+
                     // 檢查是否啟用「匯入後自動合併」
                     const autoMerge = localStorage.getItem('auto_merge_on_import') === 'true';
-                    
+
                     // 自動檢測重複並提示合併
                     setTimeout(() => {
                         const duplicates = detectDuplicates(data.trades || []);
                         if (duplicates.length > 0) {
                             const total = duplicates.reduce((sum, group) => sum + group.duplicates.length, 0);
-                            
+
                             // 若啟用自動合併，直接合併不詢問
                             if (autoMerge) {
                                 const cleaned = mergeDuplicates(data.trades, duplicates);
                                 setTrades(cleaned);
                                 alert(
-                                    lang === 'zh' 
+                                    lang === 'zh'
                                         ? `匯入完成！已自動合併 ${total} 筆重複交易。`
                                         : `Import complete! Auto-merged ${total} duplicates.`
                                 );
                             } else {
                                 // 未啟用則詢問使用者
                                 if (window.confirm(
-                                    lang === 'zh' 
+                                    lang === 'zh'
                                         ? `匯入完成！檢測到 ${total} 筆重複交易，是否要合併？`
                                         : `Import complete! Found ${total} duplicates. Merge them?`
                                 )) {
@@ -303,7 +303,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                             alert(t.importSuccess);
                         }
                     }, 100);
-                    
+
                     setTimeout(triggerCloudBackup, 200);
                 }
             } catch (err) {
@@ -352,7 +352,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 data.portfolios.forEach((p: Portfolio) => portMap.set(p.id, p));
                 const merged = Array.from(portMap.values());
                 setPortfolios(merged);
-                
+
                 const newActive = Array.from(new Set([...activePortfolioIds, ...data.portfolios.map((p: Portfolio) => p.id)]));
                 setActivePortfolioIds(newActive);
             }
@@ -365,34 +365,34 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const resetAllData = async (t: Translation) => {
         console.log('🚀 Data Reset Started...');
         try {
-                // Cloud Reset (Explicitly Clear)
-                if (user && authStatus === 'online') {
-                     // 1. Explicitly clear user data in Firestore to prevent auto-restore
-                     console.log('🧹 Clearing Cloud Data...');
-                     await setDoc(doc(db, 'users', user.uid), {
-                         trades: [],
-                         strategies: [],
-                         emotions: [],
-                         portfolios: [], 
-                         settings: { lossColor: THEME.DEFAULT_LOSS },
-                         lastUpdated: new Date()
-                     });
-                     console.log('✅ Cloud Data Cleared');
-                }
-
-                // 2. Clear Local
-                console.log('🧹 Clearing Local Data...');
-                await localActions.clearLocalData();
-                
-                // 3. Reload
-                window.location.reload();
-
-            } catch (error) {
-                console.error("Reset failed:", error);
-                // Fallback
-                localStorage.clear();
-                window.location.reload();
+            // Cloud Reset (Explicitly Clear)
+            if (user && authStatus === 'online') {
+                // 1. Explicitly clear user data in Firestore to prevent auto-restore
+                console.log('🧹 Clearing Cloud Data...');
+                await setDoc(doc(db, 'users', user.uid), {
+                    trades: [],
+                    strategies: [],
+                    emotions: [],
+                    portfolios: [],
+                    settings: { lossColor: THEME.DEFAULT_LOSS },
+                    lastUpdated: new Date()
+                });
+                console.log('✅ Cloud Data Cleared');
             }
+
+            // 2. Clear Local
+            console.log('🧹 Clearing Local Data...');
+            await localActions.clearLocalData();
+
+            // 3. Reload
+            window.location.reload();
+
+        } catch (error) {
+            console.error("Reset failed:", error);
+            // Fallback
+            localStorage.clear();
+            window.location.reload();
+        }
     };
 
     const onResolveSyncConflict = (choice: 'merge' | 'discard') => {
@@ -413,19 +413,19 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isImportModalOpen: !!pendingImport,
         // Wrap actions that should trigger sync
         saveTrade: (t: Trade, id: string | null) => { localActions.saveTrade(t, id); setTimeout(triggerCloudBackup, 0); },
-        saveTrades: (ts: Omit<Trade, 'id' | 'timestamp'>[]) => { localActions.saveTrades(ts); setTimeout(triggerCloudBackup, 0); },
+        saveTrades: (ts: (Omit<Trade, 'id' | 'timestamp'> & { id?: string; timestamp?: string })[]) => { localActions.saveTrades(ts); setTimeout(triggerCloudBackup, 0); },
         deleteTrade: (id: string) => { localActions.deleteTrade(id); setTimeout(triggerCloudBackup, 0); },
         updatePortfolio: (id: string, k: any, v: any) => { localActions.updatePortfolio(id, k, v); setTimeout(triggerCloudBackup, 0); },
-        addPortfolio: (p: Portfolio) => { 
-            localActions.addPortfolio(p); 
+        addPortfolio: (p: Portfolio) => {
+            localActions.addPortfolio(p);
             // Optional: Auto-activate new portfolio
             setActivePortfolioIds(prev => [...prev, p.id]);
-            setTimeout(triggerCloudBackup, 0); 
+            setTimeout(triggerCloudBackup, 0);
         },
-        deletePortfolio: (id: string) => { 
+        deletePortfolio: (id: string) => {
             localActions.deletePortfolio(id);
             setActivePortfolioIds(prev => prev.filter(pid => pid !== id));
-            setTimeout(triggerCloudBackup, 0); 
+            setTimeout(triggerCloudBackup, 0);
         },
         addStrategy: (s: string) => { localActions.addStrategy(s); setTimeout(triggerCloudBackup, 0); },
         addEmotion: (e: string) => { localActions.addEmotion(e); setTimeout(triggerCloudBackup, 0); },

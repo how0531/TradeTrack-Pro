@@ -482,7 +482,7 @@ def verify_simulation_account(
         contract = api.Contracts.Stocks["2881"]
         if not contract:
             # Fallback if 2881 is not available in sim
-            log("Contract 2881 not found, trying fallback 2890")
+            log("Contract 2881 not found, trying fallback 2890 (Sinopac)")
             contract = api.Contracts.Stocks["2890"]
         
         if not contract:

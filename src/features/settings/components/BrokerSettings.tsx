@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw, ChevronRight, ArrowDown, Upload } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw, ChevronRight, ArrowDown, Upload, HelpCircle } from 'lucide-react';
 import { BrokerConfig } from '../../../types';
 import { fetchBrokerProfile, pingBackend, validateBackendStatus, wakeUpBackend, verifyBrokerAccount } from '../../../services/brokerService';
 import { useEffect } from 'react';
 import { ACCOUNT_CATEGORY_THEMES } from '../../../constants';
+import { BrokerGuideModal } from './BrokerGuideModal';
 
 interface BrokerSettingsProps {
     configs: BrokerConfig[];
@@ -19,6 +21,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const [isTesting, setIsTesting] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [showSecrets, setShowSecrets] = useState(false);
+    const [showApiHelper, setShowApiHelper] = useState(false);
     const [accountChoices, setAccountChoices] = useState<any[]>([]);
 
     // New state for backend health check
@@ -32,6 +35,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     // Derived state for button type
     const [errors, setErrors] = useState<Record<string, boolean>>({});
     const [progressMsg, setProgressMsg] = useState<string>(''); // Track login progress
+    // 登入狀態追蹤（支援詳細階段）
+    const [accountLoginStatus, setAccountLoginStatus] = useState<Record<string, {
+        phase: 'connecting' | 'authenticating' | 'fetching_data' | 'success' | 'error',
+        message?: string,
+        error?: string
+    }>>({});
 
     const emptyConfig: BrokerConfig = {
         id: '',
@@ -548,8 +557,12 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             </h4>
                                             {/* Unsupported Badge (Next to Title) - Always show for Sub-brokerage */}
                                             {isSub && (
-                                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-500/10 border border-zinc-500/20 cursor-not-allowed">
+                                                <div className="group/badge relative flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-500/10 border border-zinc-500/20 cursor-help">
                                                     <span className="text-[9px] font-bold text-zinc-500 uppercase whitespace-nowrap">尚未支援</span>
+                                                    {/* Tooltip */}
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded border border-white/10 opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-50">
+                                                        目前僅支援台股證券與期貨帳號，複委託尚未開放。
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -570,11 +583,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 })()}
                                             </span>
 
-                                            {config.isConnected && (
-                                                <div className="flex items-center gap-1 ml-1">
-                                                    <div className="w-1 h-1 rounded-full bg-[#C8B085] shadow-[0_0_5px_rgba(200,176,133,0.8)]" />
-                                                </div>
-                                            )}
+                                            {/* Enhanced Connection Status Label - REMOVED per user request */}
 
                                             {/* Verification Status Tag (Interactive Only) */}
                                             {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && !isSub && (
@@ -627,7 +636,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 )}
                                             </>
                                         )}
-                                        <button onClick={() => handleStartEdit(config.id)} className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-all"><FileKey size={12} /></button>
+                                        <button onClick={() => handleStartEdit(config.id)} className="p-1.5 rounded-md text-zinc-400 hover:text-amber-500 hover:bg-amber-500/10 transition-all" title="重新連線 / 設定"><RefreshCw size={12} /></button>
+                                        <button onClick={() => handleStartEdit(config.id)} className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-all" title="編輯"><FileKey size={12} /></button>
                                         <button onClick={(e) => {
                                             e.stopPropagation();
                                             handleDeleteAccount(e);
@@ -682,12 +692,20 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 <span className="text-[9px] text-amber-500/50 break-words font-medium">請保存好，下一步需要這些資訊</span>
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
-                                            className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
-                                        >
-                                            管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowApiHelper(true)}
+                                                className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-transparent hover:bg-white/5 border border-white/20 hover:border-white/50 text-zinc-300 hover:text-white text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group uppercase tracking-wider"
+                                            >
+                                                如何開通? <HelpCircle size={10} className="group-hover:scale-110 transition-transform" />
+                                            </button>
+                                            <button
+                                                onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
+                                                className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
+                                            >
+                                                管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -964,7 +982,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 <h4 className="text-sm font-bold uppercase tracking-widest">請選擇連線帳號</h4>
                             </div>
                             <button
-                                onClick={() => setAccountChoices([])}
+                                onClick={() => {
+                                    setAccountChoices([]);
+                                    setErrorMsg(null);
+                                }}
                                 className="p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
                             >
                                 <X size={18} />
@@ -1045,7 +1066,18 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     const desc = (acc as any).category; // New Backend Field
 
                                                     // Priority: Explicit Category > Type String > Branch Name
-                                                    if (desc === 'SubBrokerage') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.SUB.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.SUB.label}</span>;
+                                                    if (desc === 'SubBrokerage') {
+                                                        return (
+                                                            <div className="group/badge relative flex items-center justify-center">
+                                                                <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.SUB.fullClass} cursor-help`}>
+                                                                    {ACCOUNT_CATEGORY_THEMES.SUB.label}
+                                                                </span>
+                                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded border border-white/10 opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-50">
+                                                                    目前僅支援台股證券與期貨帳號，複委託尚未開放。
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
                                                     if (desc === 'Futures') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.FUTURES.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.FUTURES.label}</span>;
                                                     if (desc === 'Stock') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.STOCK.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.STOCK.label}</span>;
 
@@ -1055,7 +1087,18 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                                                     const theme = isSub ? ACCOUNT_CATEGORY_THEMES.SUB : isFuture ? ACCOUNT_CATEGORY_THEMES.FUTURES : ACCOUNT_CATEGORY_THEMES.STOCK;
 
-                                                    return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${theme.fullClass}`}>{theme.label}</span>;
+                                                    return (
+                                                        <div className="group/badge relative flex items-center justify-center">
+                                                            <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${theme.fullClass} ${isSub ? 'cursor-help' : ''}`}>
+                                                                {theme.label}
+                                                            </span>
+                                                            {isSub && (
+                                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded border border-white/10 opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-50">
+                                                                    目前僅支援台股證券與期貨帳號，複委託尚未開放。
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
                                                 })()}
                                                 <span className="text-[12px] font-mono font-bold text-zinc-500">{acc.account_id}</span>
                                             </div>
@@ -1070,6 +1113,16 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             }`}>
                                             {isConnected ? (
                                                 <span className="text-[9px] font-bold text-zinc-500">已加</span>
+                                            ) : accountLoginStatus[acc.account_id]?.phase === 'connecting' ? (
+                                                <Loader2 size={14} className="animate-spin text-blue-400" />
+                                            ) : accountLoginStatus[acc.account_id]?.phase === 'authenticating' ? (
+                                                <Loader2 size={14} className="animate-spin text-yellow-400" />
+                                            ) : accountLoginStatus[acc.account_id]?.phase === 'fetching_data' ? (
+                                                <Loader2 size={14} className="animate-spin text-purple-400" />
+                                            ) : accountLoginStatus[acc.account_id]?.phase === 'success' ? (
+                                                <Check size={14} className="text-emerald-500 stroke-[4px]" />
+                                            ) : accountLoginStatus[acc.account_id]?.phase === 'error' ? (
+                                                <X size={14} className="text-red-500 stroke-[4px]" />
                                             ) : (
                                                 isSelected && <Check size={14} className="text-black stroke-[4px]" />
                                             )}
@@ -1078,6 +1131,16 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 );
                             })}
                         </div>
+
+                        {/* Error Message inside Modal */}
+                        {errorMsg && (
+                            <div className="px-5 pb-2">
+                                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
+                                    <span className="text-xs text-red-300 font-bold leading-relaxed">{errorMsg}</span>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="p-5 border-t border-white/5 bg-zinc-900/50 flex gap-3">
                             <button
@@ -1091,115 +1154,248 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 onClick={async () => {
                                     setIsTesting(true);
                                     setErrorMsg(null);
+                                    setProgressMsg('');
+
                                     try {
-                                        if (!localConfig) return; // Guard clause
+                                        if (!localConfig) return;
 
-                                        // Improved ID construction: Prioritize account_id for uniqueness.
-                                        // pnl.py checks both (acc_id or branch_code). Using account_id avoids ambiguity if multiple accounts share a branch.
-                                        // Fallback to branch_code only if account_id is empty.
-                                        const idString = accountChoices
-                                            .filter(a => selectedIds.includes(a.account_id))
-                                            .map(a => a.account_id || a.branch_code)
-                                            .join(',');
+                                        // Initialize login status for all selected accounts
+                                        const initialStatus: Record<string, {
+                                            phase: 'connecting' | 'authenticating' | 'fetching_data' | 'success' | 'error',
+                                            message?: string,
+                                            error?: string
+                                        }> = {};
+                                        selectedIds.forEach(id => {
+                                            initialStatus[id] = { phase: 'connecting', message: '連線中...' };
+                                        });
+                                        setAccountLoginStatus(initialStatus);
+                                        setProgressMsg(`正在同時登入 ${selectedIds.length} 個帳號...`);
 
-                                        const updatedConfig: BrokerConfig = {
-                                            ...localConfig,
-                                            branchCode: idString,
-                                            accounts: idString, // Populating accounts field correctly
-                                            branch: accountChoices
-                                                .filter(a => selectedIds.includes(a.account_id))
-                                                .map(a => {
-                                                    // Use backend's full branch name, just remove the account type in parentheses
-                                                    // AND strip redundant broker name (e.g. "永豐金-板新" -> "板新")
-                                                    const branchOnly = a.branch_name.split('(')[0].replace('永豐金-', '').replace('永豐金', '').trim();
-                                                    // Robust Category Logic
-                                                    const cat = (a as any).category; // New field from backend
-                                                    const type = String(a.account_type || '').toUpperCase();
+                                        const selectedAccounts = accountChoices.filter(a => selectedIds.includes(a.account_id));
 
-                                                    // Priority: Explicit Category > Type String > Branch Name
-                                                    if (cat === 'SubBrokerage') return `${branchOnly}(複委託)`;
-                                                    if (cat === 'Futures') return `${branchOnly}(期貨)`;
-                                                    if (cat === 'Stock') return `${branchOnly}(台股)`;
+                                        // Sequential login: Process accounts one by one to prevent backend race conditions
+                                        const successfulResults: any[] = [];
+                                        const results: PromiseSettledResult<any>[] = [];
 
-                                                    // Fallback for old backend or ambiguous cases
-                                                    if (type.includes('H') || type.includes('SUB')) return `${branchOnly}(複委託)`;
-                                                    if (type.includes('F') || type.includes('FUTURE') || branchOnly.includes('期貨')) return `${branchOnly}(期貨)`;
-                                                    return `${branchOnly}(台股)`;
-                                                })
-                                                .join(', ')
-                                        };
+                                        for (const account of selectedAccounts) {
+                                            try {
+                                                // 階段 1: 連線中
+                                                setAccountLoginStatus(prev => ({
+                                                    ...prev,
+                                                    [account.account_id]: { phase: 'connecting', message: '建立連線...' }
+                                                }));
 
-                                        const result: any = await fetchBrokerProfile(updatedConfig);
+                                                // Throttle slightly to be safe
+                                                await new Promise(r => setTimeout(r, 200));
 
-                                        if (result.status === 'error') throw new Error(result.message || result.error);
-
-                                        if (result.environment !== 'production') {
-                                            throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "僅支援正式環境 (Production required)");
-                                        }
-
-                                        const finalConfig: BrokerConfig = {
-                                            ...updatedConfig,
-                                            isConnected: true,
-                                            environment: result.environment,
-                                            brokerUsername: result.username
-                                        };
-
-                                        // Clear cache to ensure SyncDateModal picks up new config immediately
-                                        try {
-                                            // Simple way to clear cache if function not imported, or relying on invalidation from parent
-                                            // But best to try clearing local storage cache key manually if possible
-                                            localStorage.removeItem('broker_configs_cache');
-                                        } catch (e) { console.warn('Cache clear failed', e); }
-
-                                        setLocalConfig(finalConfig);
-
-                                        if (isEditing === 'new') {
-                                            // [Smart Merge Logic]
-                                            // Check if we already have a config for this personId to avoid duplicates
-                                            const existingConfig = configs.find(c => c.personId === finalConfig.personId);
-
-                                            if (existingConfig) {
-                                                // MERGE: Update existing config with new accounts
-                                                const existAccs = (existingConfig.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
-                                                const existBranches = (existingConfig.branch || '').split(',').map(s => s.trim());
-
-                                                // New data
-                                                const newAccs = (finalConfig.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
-                                                const newBranches = (finalConfig.branch || '').split(',').map(s => s.trim());
-
-                                                // Append only unique accounts
-                                                newAccs.forEach((accId, idx) => {
-                                                    if (!existAccs.includes(accId)) {
-                                                        existAccs.push(accId);
-                                                        // Append branch info (match index)
-                                                        existBranches.push(newBranches[idx] || 'Unknown');
-                                                    }
-                                                });
-
-                                                const mergedConfig = {
-                                                    ...existingConfig,
-                                                    ...finalConfig,     // Update credentials with latest successful ones
-                                                    id: existingConfig.id, // CRITICAL: Keep existing ID
-                                                    accounts: existAccs.join(','),
-                                                    branch: existBranches.join(','),
-                                                    // branchCode is often unused or mirrors accounts, merge strictly if present
-                                                    branchCode: existAccs.join(',')
+                                                // Create individual config for each account
+                                                const accountConfig: BrokerConfig = {
+                                                    ...localConfig,
+                                                    accounts: account.account_id || account.branch_code,
+                                                    branchCode: account.account_id || account.branch_code
                                                 };
 
-                                                onUpdate(existingConfig.id, mergedConfig);
-                                            } else {
-                                                // No existing config -> Create new
-                                                onAdd(finalConfig);
+                                                // 階段 2: 驗證中
+                                                setAccountLoginStatus(prev => ({
+                                                    ...prev,
+                                                    [account.account_id]: { phase: 'authenticating', message: '驗證身份...' }
+                                                }));
+
+                                                const result: any = await fetchBrokerProfile(accountConfig);
+
+                                                if (result.status === 'error') {
+                                                    throw new Error(result.message || result.error);
+                                                }
+
+                                                if (result.environment !== 'production') {
+                                                    throw new Error('僅支援正式環境');
+                                                }
+
+                                                // 階段 3: 同步資料
+                                                setAccountLoginStatus(prev => ({
+                                                    ...prev,
+                                                    [account.account_id]: { phase: 'fetching_data', message: '同步帳戶資料...' }
+                                                }));
+
+                                                // 模擬資料同步延遲（讓用戶看到階段變化）
+                                                await new Promise(resolve => setTimeout(resolve, 300));
+
+                                                // Update status: success
+                                                setAccountLoginStatus(prev => ({
+                                                    ...prev,
+                                                    [account.account_id]: { phase: 'success', message: '登入成功' }
+                                                }));
+
+                                                const successData = {
+                                                    success: true,
+                                                    account,
+                                                    result,
+                                                    branchName: (() => {
+                                                        const branchOnly = account.branch_name.split('(')[0].replace('永豐金-', '').replace('永豐金', '').trim();
+                                                        const cat = (account as any).category;
+                                                        const type = String(account.account_type || '').toUpperCase();
+
+                                                        if (cat === 'SubBrokerage') return `${branchOnly}(複委託)`;
+                                                        if (cat === 'Futures') return `${branchOnly}(期貨)`;
+                                                        if (cat === 'Stock') return `${branchOnly}(台股)`;
+
+                                                        if (type.includes('H') || type.includes('SUB')) return `${branchOnly}(複委託)`;
+                                                        if (type.includes('F') || type.includes('FUTURE') || branchOnly.includes('期貨')) return `${branchOnly}(期貨)`;
+                                                        return ` ${branchOnly}(台股)`;
+                                                    })()
+                                                };
+
+                                                successfulResults.push(successData);
+                                                results.push({ status: 'fulfilled', value: successData });
+
+                                            } catch (error: any) {
+                                                // Update status: error
+                                                setAccountLoginStatus(prev => ({
+                                                    ...prev,
+                                                    [account.account_id]: {
+                                                        phase: 'error',
+                                                        error: error.message || '連線失敗'
+                                                    }
+                                                }));
+
+                                                results.push({ status: 'rejected', reason: error });
                                             }
                                         }
-                                        else onUpdate(localConfig.id, finalConfig);
 
-                                        setIsEditing(null);
-                                        setIsTesting(false);
-                                        setAccountChoices([]);
+                                        const failedCount = selectedAccounts.length - successfulResults.length;
+
+                                        if (successfulResults.length === 0) {
+                                            throw new Error('所有帳號登入失敗，請檢查 API 金鑰或網路連線');
+                                        }
+
+                                        // Build final config with successful accounts only
+                                        const successfulAccountIds = successfulResults.map(r => r.account.account_id || r.account.branch_code);
+                                        const successfulBranchNames = successfulResults.map(r => r.branchName);
+
+                                        // 為每個成功的帳戶創建獨立的配置 -> 改為自動合併
+                                        if (successfulResults.length > 0) {
+                                            // Clear cache
+                                            try {
+                                                localStorage.removeItem('broker_configs_cache');
+                                            } catch (e) { console.warn('Cache clear failed', e); }
+
+                                            // 1. Group by Person ID (Should be only one group usually)
+                                            // But strictly speaking, different successful results might (theoretically) come from different person IDs if we supported that. 
+                                            // Here we assume successfulResults all come from the `localConfig` we just tested.
+
+                                            // 2. Check if we already have a config for this Person ID
+                                            const targetPersonId = localConfig.personId;
+
+                                            // Find ANY existing config that matches this Person ID
+                                            const existingConfig = configs.find(c => c.personId === targetPersonId);
+
+                                            // 3. Prepare Lists to Merge
+                                            let finalAccounts: string[] = [];
+                                            let finalBranches: string[] = [];
+                                            let finalCodes: string[] = [];
+                                            let baseConfig = existingConfig || {
+                                                ...localConfig,
+                                                id: `broker-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`, // Generate new ID if creating new
+                                                isConnected: true,
+                                                environment: successfulResults[0].result.environment, // Use first result's env
+                                                brokerUsername: successfulResults[0].result.username // Use first result's name
+                                            };
+
+                                            // Load existing data if we are merging
+                                            if (existingConfig) {
+                                                finalAccounts = (existingConfig.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
+                                                finalBranches = (existingConfig.branch || '').split(',').map(s => s.trim()).filter(Boolean);
+                                                finalCodes = (existingConfig.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
+                                            } else {
+                                                // Reset base config if it's completely new (remove dummy data from localConfig)
+                                                baseConfig = {
+                                                    ...baseConfig,
+                                                    id: `broker-${Date.now()}`,
+                                                    accounts: '',
+                                                    branch: '',
+                                                    branchCode: ''
+                                                };
+                                            }
+
+                                            // 4. Append New Accounts (Avoid Duplicates)
+                                            successfulResults.forEach(({ account, branchName }) => {
+                                                const accId = account.account_id;
+                                                const bCode = account.account_id || account.branch_code; // Usually same
+
+                                                // Check if this account ID is already in the list
+                                                if (!finalAccounts.includes(accId)) {
+                                                    finalAccounts.push(accId);
+                                                    finalBranches.push(branchName);
+                                                    finalCodes.push(bCode);
+                                                }
+                                            });
+
+                                            // 5. Construct Updated Config
+                                            const mergedConfig: BrokerConfig = {
+                                                ...baseConfig,
+                                                accounts: finalAccounts.join(','),
+                                                branch: finalBranches.join(','),
+                                                branchCode: finalCodes.join(','),
+                                                isConnected: true,
+                                                // Ensure correct username/env from latest success
+                                                environment: successfulResults[0].result.environment,
+                                                brokerUsername: successfulResults[0].result.username
+                                            };
+
+                                            // 6. Save (Add or Update)
+                                            if (existingConfig) {
+                                                // Update existing
+                                                onUpdate(existingConfig.id, mergedConfig);
+                                            } else {
+                                                // Add new
+                                                onAdd(mergedConfig);
+                                            }
+
+                                            // 重置 localConfig 為空狀態
+                                            setLocalConfig({
+                                                id: '',
+                                                personId: '',
+                                                provider: 'shioaji',
+                                                apiKey: '',
+                                                apiSecret: '',
+                                                caPath: '',
+                                                caPassword: '',
+                                                caContent: '',
+                                                accounts: '',
+                                                branch: '',
+                                                branchCode: '',
+                                                isConnected: false,
+                                                environment: 'simulation',
+                                                brokerUsername: ''
+                                            });
+                                        }
+
+                                        // Show result message
+                                        if (failedCount > 0) {
+                                            setProgressMsg(`✅ ${successfulResults.length} 個帳號成功，❌ ${failedCount} 個失敗`);
+                                            setTimeout(() => {
+                                                setProgressMsg('');
+                                                setErrorMsg('');
+                                                setIsEditing(null);
+                                                setIsTesting(false);
+                                                setAccountChoices([]);
+                                                setAccountLoginStatus({});
+                                            }, 2000);
+                                        } else {
+                                            setProgressMsg(`🎉 已成功登入全部 ${successfulResults.length} 個帳號！`);
+                                            setTimeout(() => {
+                                                setProgressMsg('');
+                                                setErrorMsg('');
+                                                setIsEditing(null);
+                                                setIsTesting(false);
+                                                setAccountChoices([]);
+                                                setAccountLoginStatus({});
+                                            }, 1500);
+                                        }
                                     } catch (error: any) {
-                                        setErrorMsg(error?.message || '連線失敗 (Connection failed)');
+                                        setErrorMsg(error?.message || '連線失敗');
                                         setIsTesting(false);
+                                        setAccountLoginStatus({});
                                     }
                                 }}
                                 className="flex-[2] py-3 rounded-xl bg-[#C8B085] hover:bg-[#E0C8A0] text-black font-bold text-sm shadow-[0_0_20px_rgba(200,176,133,0.2)] disabled:opacity-50 disabled:shadow-none transition-all flex items-center justify-center gap-2"
@@ -1210,89 +1406,99 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
             {/* DELETE CONFIRMATION MODAL */}
-            {deleteTarget && (
-                <div className="fixed inset-0 z-[10006] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
-                    <div className="w-full max-w-sm bg-[#1C1E22] rounded-3xl border border-red-500/20 shadow-[0_0_40px_rgba(239,68,68,0.1)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-                        <div className="p-6 flex flex-col items-center gap-4 text-center">
-                            <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-2">
-                                <AlertCircle size={32} className="text-red-500" />
+            {
+                deleteTarget && (
+                    <div className="fixed inset-0 z-[10006] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+                        <div className="w-full max-w-sm bg-[#1C1E22] rounded-3xl border border-red-500/20 shadow-[0_0_40px_rgba(239,68,68,0.1)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                            <div className="p-6 flex flex-col items-center gap-4 text-center">
+                                <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-2">
+                                    <AlertCircle size={32} className="text-red-500" />
+                                </div>
+
+                                <h4 className="text-lg font-bold text-white">
+                                    {lang === 'zh' ? '確定要刪除此帳號？' : 'Delete Account?'}
+                                </h4>
+
+                                <p className="text-sm text-zinc-400 leading-relaxed">
+                                    {lang === 'zh'
+                                        ? '此動作無法復原。刪除後您將無法查閱此帳號的歷史交易紀錄。'
+                                        : 'This action cannot be undone. You will lose access to historical data for this account.'}
+                                </p>
                             </div>
 
-                            <h4 className="text-lg font-bold text-white">
-                                {lang === 'zh' ? '確定要刪除此帳號？' : 'Delete Account?'}
-                            </h4>
+                            <div className="p-4 border-t border-white/5 bg-zinc-900/50 flex gap-3">
+                                <button
+                                    onClick={() => setDeleteTarget(null)}
+                                    className="flex-1 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white font-bold text-sm transition-all"
+                                >
+                                    {lang === 'zh' ? '取消' : 'Cancel'}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const { configId, accountIndex } = deleteTarget;
+                                        const config = configs.find(c => c.id === configId);
 
-                            <p className="text-sm text-zinc-400 leading-relaxed">
-                                {lang === 'zh'
-                                    ? '此動作無法復原。刪除後您將無法查閱此帳號的歷史交易紀錄。'
-                                    : 'This action cannot be undone. You will lose access to historical data for this account.'}
-                            </p>
-                        </div>
+                                        if (config) {
+                                            const currentBranches = (config.branch || '').split(',');
+                                            const currentCodes = (config.branchCode || '').split(',');
 
-                        <div className="p-4 border-t border-white/5 bg-zinc-900/50 flex gap-3">
-                            <button
-                                onClick={() => setDeleteTarget(null)}
-                                className="flex-1 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white font-bold text-sm transition-all"
-                            >
-                                {lang === 'zh' ? '取消' : 'Cancel'}
-                            </button>
-                            <button
-                                onClick={() => {
-                                    const { configId, accountIndex } = deleteTarget;
-                                    const config = configs.find(c => c.id === configId);
+                                            // If this is the only account, delete the whole config
+                                            if (currentBranches.length <= 1) {
+                                                onDelete(configId);
+                                            } else {
+                                                // Otherwise remove just this one
+                                                // Robustly handle all arrays (branch, branchCode, accounts)
+                                                // to ensure we delete the correct index across all fields
+                                                const currentAccounts = (config.accounts || config.branchCode || '').split(',');
 
-                                    if (config) {
-                                        const currentBranches = (config.branch || '').split(',');
-                                        const currentCodes = (config.branchCode || '').split(',');
+                                                // Helper to filter safely
+                                                const filterAt = (arr: string[]) => arr.filter((_, i) => i !== accountIndex).join(',');
 
-                                        // If this is the only account, delete the whole config
-                                        if (currentBranches.length <= 1) {
-                                            onDelete(configId);
-                                        } else {
-                                            // Otherwise remove just this one
-                                            // Robustly handle all arrays (branch, branchCode, accounts)
-                                            // to ensure we delete the correct index across all fields
-                                            const currentAccounts = (config.accounts || config.branchCode || '').split(',');
+                                                // Handle potential length mismatches by padding before filtering? 
+                                                // No, just filter what exists. If index is out of bounds for one array, it's fine.
+                                                const newBranches = filterAt(currentBranches);
 
-                                            // Helper to filter safely
-                                            const filterAt = (arr: string[]) => arr.filter((_, i) => i !== accountIndex).join(',');
+                                                // Code might be optional/shorter, but we attempt to filter it
+                                                const newCodes = filterAt(currentCodes);
 
-                                            // Handle potential length mismatches by padding before filtering? 
-                                            // No, just filter what exists. If index is out of bounds for one array, it's fine.
-                                            const newBranches = filterAt(currentBranches);
+                                                // Accounts is the critical one for "Ghost" accounts
+                                                const newAccounts = filterAt(currentAccounts);
 
-                                            // Code might be optional/shorter, but we attempt to filter it
-                                            const newCodes = filterAt(currentCodes);
+                                                // Construct updated config
+                                                const { ...rest } = config;
+                                                const updatedConfig = {
+                                                    ...rest,
+                                                    branch: newBranches,
+                                                    branchCode: newCodes,
+                                                    accounts: newAccounts
+                                                };
 
-                                            // Accounts is the critical one for "Ghost" accounts
-                                            const newAccounts = filterAt(currentAccounts);
-
-                                            // Construct updated config
-                                            const { ...rest } = config;
-                                            const updatedConfig = {
-                                                ...rest,
-                                                branch: newBranches,
-                                                branchCode: newCodes,
-                                                accounts: newAccounts
-                                            };
-
-                                            // Call onUpdate to save the new account list
-                                            onUpdate(configId, updatedConfig);
+                                                // Call onUpdate to save the new account list
+                                                onUpdate(configId, updatedConfig);
+                                            }
                                         }
-                                    }
-                                    setDeleteTarget(null);
-                                }}
-                                className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm shadow-[0_0_20px_rgba(239,68,68,0.2)] transition-all"
-                            >
-                                {lang === 'zh' ? '確認刪除' : 'Delete'}
-                            </button>
+                                        setDeleteTarget(null);
+                                    }}
+                                    className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm shadow-[0_0_20px_rgba(239,68,68,0.2)] transition-all"
+                                >
+                                    {lang === 'zh' ? '確認刪除' : 'Delete'}
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+            {/* API Setup Helper Dialog */}
+            {/* API Setup Helper Dialog - Full Guide */}
+            <BrokerGuideModal
+                isOpen={showApiHelper}
+                onClose={() => setShowApiHelper(false)}
+                lang={lang}
+            />
+        </div >
     );
 };
 

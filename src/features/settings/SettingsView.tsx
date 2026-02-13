@@ -464,8 +464,8 @@ const ResetConfirmPanel = ({ lang, onConfirm, onCancel }: { lang: Lang; onConfir
                     disabled={countdown > 0}
                     onClick={(e) => { e.preventDefault(); onConfirm(); }}
                     className={`flex-[2] py-3 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all ${countdown > 0
-                            ? 'bg-zinc-800 border-zinc-700 text-zinc-600 cursor-not-allowed'
-                            : 'bg-red-500 border-red-600 text-white hover:bg-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)]'
+                        ? 'bg-zinc-800 border-zinc-700 text-zinc-600 cursor-not-allowed'
+                        : 'bg-red-500 border-red-600 text-white hover:bg-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)]'
                         }`}
                 >
                     {countdown > 0
@@ -648,48 +648,9 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                 />
             </div>
 
-            {/* STORAGE DIAGNOSTICS (Temporary) */}
-            <div className="space-y-4">
-                <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5">
-                    <HardDrive size={12} /> {lang === 'zh' ? '儲存空間診斷' : 'STORAGE DIAGNOSTICS'}
-                </h3>
-                <div className="p-4 rounded-xl border border-white/5 space-y-4 bg-white/[0.02]">
-                    <div className="flex justify-between items-center">
-                        <span className="text-xs text-zinc-400">Local Storage Usage</span>
-                        <span className="text-xs font-mono text-[#C8B085]">
-                            {(() => {
-                                let total = 0;
-                                for (let x in localStorage) {
-                                    if (localStorage.hasOwnProperty(x)) total += ((localStorage[x].length + x.length) * 2);
-                                }
-                                return `${(total / 1024 / 1024).toFixed(2)} MB`;
-                            })()}
-                        </span>
-                    </div>
-                    <div className="space-y-2">
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Broker Configs Status</span>
-                        {brokerConfigs.map(c => (
-                            <div key={c.id} className="flex justify-between items-center p-2 bg-black/20 rounded border border-white/5">
-                                <span className="text-xs text-zinc-300">{c.personId || 'No ID'}</span>
-                                <div className="flex items-center gap-3">
-                                    <span className="text-[10px] text-zinc-500">{c.id.substring(0, 4)}...</span>
-                                    {c.caContent ? (
-                                        <span className="text-[10px] text-emerald-500 flex items-center gap-1">
-                                            <Check size={10} /> CA: {(c.caContent.length / 1024).toFixed(1)}KB
-                                        </span>
-                                    ) : (
-                                        <span className="text-[10px] text-red-500 flex items-center gap-1">
-                                            <X size={10} /> No CA
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
 
             {/* RISK MANAGEMENT */}
+
 
             <div className="space-y-4">
                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><Shield size={12} /> {t.riskSettings}</h3>

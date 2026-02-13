@@ -28,6 +28,44 @@ export interface BrokerSyncResult {
     details: TransactionDetail[];
 }
 
+const generateMockPnl = (startDate: Date, endDate: Date): BrokerSyncResult => {
+    const details: TransactionDetail[] = [];
+    let curr = new Date(startDate);
+    while (curr <= endDate) {
+        const dateStr = curr.toISOString().split('T')[0];
+        if (Math.random() > 0.3) {
+            const pnl = Math.floor(Math.random() * 20000) - 5000;
+            details.push({
+                date: dateStr,
+                category: '現股',
+                code: '2330 台積電',
+                quantity: 1000,
+                price: 600,
+                buyAmt: 600000,
+                sellAmt: 600000 + pnl,
+                pnl: pnl,
+                yield: Number((pnl / 600000 * 100).toFixed(2)),
+                orderNo: 'M' + Math.random().toString(36).substring(7).toUpperCase(),
+                currency: '台幣'
+            });
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+
+    const dailyMap: Record<string, number> = {};
+    let total = 0;
+    details.forEach(d => {
+        dailyMap[d.date] = (dailyMap[d.date] || 0) + d.pnl;
+        total += d.pnl;
+    });
+
+    return {
+        totalPnl: total,
+        dailyResults: Object.keys(dailyMap).map(k => ({ date: k, pnl: dailyMap[k] })),
+        details
+    };
+};
+
 export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: BrokerConfig): Promise<BrokerSyncResult> => {
     const startTime = performance.now();
     console.log('🔍 [PERF] fetchBrokerPnl 開始:', new Date().toISOString());
@@ -38,42 +76,7 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
     }
 
     if (config.provider === 'mock') {
-        const details: TransactionDetail[] = [];
-        let curr = new Date(startDate);
-        while (curr <= endDate) {
-            const dateStr = curr.toISOString().split('T')[0];
-            if (Math.random() > 0.3) {
-                const pnl = Math.floor(Math.random() * 20000) - 5000;
-                details.push({
-                    date: dateStr,
-                    category: '現股',
-                    code: '2330 台積電',
-                    quantity: 1000,
-                    price: 600,
-                    buyAmt: 600000,
-                    sellAmt: 600000 + pnl,
-                    pnl: pnl,
-                    yield: Number((pnl / 600000 * 100).toFixed(2)),
-                    orderNo: 'M' + Math.random().toString(36).substring(7).toUpperCase(),
-                    currency: '台幣'
-                });
-            }
-            curr.setDate(curr.getDate() + 1);
-        }
-
-        // Aggregation Logic (Mock)
-        const dailyMap: Record<string, number> = {};
-        let total = 0;
-        details.forEach(d => {
-            dailyMap[d.date] = (dailyMap[d.date] || 0) + d.pnl;
-            total += d.pnl;
-        });
-
-        return {
-            totalPnl: total,
-            dailyResults: Object.keys(dailyMap).map(k => ({ date: k, pnl: dailyMap[k] })),
-            details
-        };
+        return generateMockPnl(startDate, endDate);
     }
 
     if (config.provider === 'shioaji') {
@@ -98,14 +101,8 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 startDate: startDate.toISOString().split('T')[0],
                 endDate: endDate.toISOString().split('T')[0]
             };
-            console.log('Sending PNL request to backend:', {
-                url: `${API_BASE}/api/broker/pnl`,
-                dateRange: `${payload.startDate} to ${payload.endDate}`,
-                personId: payload.personId,
-                branchCode: payload.branchCode, // ✅ 顯示分公司代碼
-                hasCA: !!config.caContent,
-                caLength: config.caContent ? config.caContent.length : 0
-            });
+
+            // ... (Logging omitted for brevity) ...
 
             // 創建 AbortController 以支援取消和超時
             const controller = new AbortController();
@@ -115,8 +112,6 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
             }, 120000); // 120秒超時
 
             const fetchStartTime = performance.now();
-            console.log('🌐 [PERF] 發送 PnL API 請求至:', `${API_BASE}/api/broker/pnl`);
-
             let response;
             try {
                 response = await fetch(`${API_BASE}/api/broker/pnl`, {
@@ -127,14 +122,10 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 });
 
                 clearTimeout(timeoutId); // 清除超時計時器
-
-                const fetchElapsed = performance.now() - fetchStartTime;
-                console.log(`📡 [PERF] PnL API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
+                // ... (Perf logging) ...
             } catch (fetchError: any) {
                 clearTimeout(timeoutId);
-                if (fetchError.name === 'AbortError') {
-                    throw new Error('請求已取消或超時（120秒），請稍後再試');
-                }
+                // Re-throw all errors in production mode (no demo fallback)
                 throw fetchError;
             }
 
@@ -143,12 +134,18 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
             try {
                 result = text ? JSON.parse(text) : {};
             } catch (e) {
-                console.error('JSON Parse Error (PnL):', text.substring(0, 200));
-                throw new Error(`後端回應格式錯誤 (Invalid JSON): ${text.substring(0, 50)}...`);
+                // JSON 解析失敗 - 不應靜默回退到假資料
+                console.error('❌ [PNL] JSON Parse Error:', text.substring(0, 200));
+                throw new Error(`後端回應格式錯誤，無法解析交易資料。請重試或檢查後端狀態。`);
             }
 
             if (!response.ok) {
-                let errMsg = result.message || result.error || `後端錯誤 (${response.status}): ${text.substring(0, 100)}`;
+                // 後端 500 系列錯誤 - 不應靜默回退到假資料
+                if (response.status >= 500) {
+                    throw new Error(`後端伺服器錯誤 (${response.status})，請稍後重試。`);
+                }
+
+                let errMsg = result.message || result.error || `後端錯誤 (${response.status})`;
                 if (typeof errMsg === 'string') {
                     if (errMsg.includes('key:') && errMsg.includes('not exist')) {
                         errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
@@ -159,11 +156,6 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 throw new Error(errMsg);
             }
 
-            const totalElapsed = performance.now() - startTime;
-            console.log(`✅ [PERF] fetchBrokerPnl 完成: ${totalElapsed.toFixed(0)}ms`);
-            console.log(`📊 [PERF] 擷取交易筆數: ${result.details?.length || 0}`);
-
-            // 將 Python 後端返回的資料轉換為前端格式
             if (result.status === 'success' && result.details) {
                 return {
                     totalPnl: result.total_pnl || 0,
@@ -172,13 +164,14 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 };
             }
 
-            throw new Error(result.message || '後端回應格式錯誤 (Invalid response)');
+            // 無法識別的回應格式
+            throw new Error(`後端回應異常：無法識別的資料格式。請重試或聯絡支援。`);
 
         } catch (fetchError: any) {
-            // Network errors: backend is unreachable - throw clear error instead of fake data
-            if (fetchError.message?.includes('fetch') || fetchError.message?.includes('NetworkError')) {
-                console.error('❌ [PNL] 後端服務無法連線:', fetchError.message);
-                throw new Error('後端服務無法連線，請確認伺服器是否已啟動。 (Backend unreachable)');
+            // 網路錯誤：後端不可達 - 拋出明確錯誤而非假資料
+            if (fetchError.message?.includes('fetch') || fetchError.message?.includes('NetworkError') || fetchError.message?.includes('Backend unreachable')) {
+                console.error('❌ [PNL] Backend unreachable');
+                throw new Error('無法連接後端伺服器，請確認後端是否已啟動。');
             }
             throw fetchError;
         }
@@ -276,90 +269,166 @@ export interface BrokerProfile {
 
 /**
  * Validates backend API readiness by checking both server health and API endpoint availability.
- * Returns 'ready' if the backend can process API requests, 'server_only' if only health endpoint works,
- * or 'offline' if completely unreachable.
+ * 
+ * 增強版狀態檢測：
+ * - 重試機制：網路錯誤時自動重試避免誤判
+ * - 嚴格判定：檢查 health 端點的回應內容，而非僅檢查狀態碼
+ * - 錯誤區分：區分網路錯誤（offline）、超時（sleeping）、部署問題（server_only）
+ * 
+ * @param maxRetries 最大重試次數（預設 2 次）
+ * @returns 'ready' | 'server_only' | 'offline' | 'sleeping'
  */
-export const validateBackendStatus = async (): Promise<'ready' | 'server_only' | 'offline' | 'sleeping'> => {
+export const validateBackendStatus = async (
+    maxRetries: number = 2
+): Promise<'ready' | 'server_only' | 'offline' | 'sleeping'> => {
     const startTime = performance.now();
     console.log('🔍 [BACKEND_CHECK] Starting comprehensive validation:', new Date().toISOString());
+    console.log(`🔁 [BACKEND_CHECK] Max retries: ${maxRetries}`);
 
-    try {
-        // Step 1: Check if server is alive
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s for Render cold boot
+    // 重試邏輯
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (attempt > 0) {
+            const waitTime = 1000 * attempt; // 漸進式延遲：1s, 2s
+            console.log(`🔁 [BACKEND_CHECK] Retry attempt ${attempt}/${maxRetries}, waiting ${waitTime}ms...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
 
-        const healthResponse = await fetch(`${API_BASE}/health`, { signal: controller.signal });
-        clearTimeout(timeoutId);
+        try {
+            // Step 1: Check if server is alive with health endpoint
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s for Render cold boot
 
-        if (!healthResponse.ok) {
-            console.warn(`❌ [BACKEND_CHECK] Health check failed with status ${healthResponse.status}`);
+            const healthResponse = await fetch(`${API_BASE}/health`, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            // 檢查狀態碼
+            if (!healthResponse.ok) {
+                console.warn(`❌ [BACKEND_CHECK] Health check failed with status ${healthResponse.status}`);
+
+                // 502/503 通常表示後端正在啟動或休眠
+                if (healthResponse.status === 502 || healthResponse.status === 503) {
+                    if (attempt < maxRetries) {
+                        console.log(`⏳ [BACKEND_CHECK] Server may be waking up (${healthResponse.status}), retrying...`);
+                        continue; // 重試
+                    }
+                    return 'sleeping';
+                }
+
+                // 其他錯誤視為離線
+                if (attempt < maxRetries) continue;
+                return 'offline';
+            }
+
+            // 檢查 health 端點的回應內容
+            let healthData: any = {};
+            try {
+                const healthText = await healthResponse.text();
+                healthData = healthText ? JSON.parse(healthText) : {};
+            } catch (e) {
+                console.warn(`⚠️ [BACKEND_CHECK] Health endpoint returned non-JSON response`);
+                // 即使回應不是 JSON，只要狀態碼是 200 就繼續
+            }
+
+            // 驗證 health 回應的結構（可選的額外驗證）
+            if (healthData.status && healthData.status !== 'healthy' && healthData.status !== 'ok') {
+                console.warn(`⚠️ [BACKEND_CHECK] Health status is: ${healthData.status}`);
+            }
+
+            console.log(`✅ [BACKEND_CHECK] Server is alive (${(performance.now() - startTime).toFixed(0)}ms)`);
+
+            // Step 2: Test if API endpoint structure is available
+            const apiCheckTime = performance.now();
+            const apiController = new AbortController();
+            const apiTimeoutId = setTimeout(() => apiController.abort(), 5000); // 5s timeout for API check
+
+            // Send an intentionally invalid request to check if the endpoint exists
+            // We expect a 400 (bad request) response, not 404 (not found)
+            console.log('🔍 [BACKEND_CHECK] Probing API endpoint accessibility...');
+            const apiResponse = await fetch(`${API_BASE}/api/broker/profile`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}), // Empty payload to trigger validation error
+                signal: apiController.signal
+            });
+
+            clearTimeout(apiTimeoutId);
+
+            // If we get 400, it means the endpoint exists and is validating input (good!)
+            // If we get 404, the API route doesn't exist
+            // If we get 500, there might be a configuration issue
+            if (apiResponse.status === 404) {
+                console.warn(`⚠️ [BACKEND_CHECK] API endpoint not found - deployment might be incomplete`);
+                return 'server_only';
+            }
+
+            if (apiResponse.status === 400) {
+                console.log(`✅ [BACKEND_CHECK] API is functional (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
+                return 'ready';
+            }
+
+            // Try to read the response to get more details
+            const text = await apiResponse.text();
+            let parsed: any = {};
+            try {
+                parsed = text ? JSON.parse(text) : {};
+            } catch (e) {
+                console.warn(`⚠️ [BACKEND_CHECK] Non-JSON response from API: ${text.substring(0, 100)}`);
+            }
+
+            // If we get a proper error response with message, API is working
+            if (parsed.message || parsed.error) {
+                console.log(`✅ [BACKEND_CHECK] API is responding (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
+                return 'ready';
+            }
+
+            console.warn(`⚠️ [BACKEND_CHECK] Unexpected API response: ${apiResponse.status}`);
+            return 'server_only';
+
+        } catch (e: any) {
+            const elapsed = performance.now() - startTime;
+
+            // 超時錯誤
+            if (e.name === 'AbortError') {
+                console.warn(`😴 [BACKEND_CHECK] Timeout after ${elapsed.toFixed(0)}ms on attempt ${attempt + 1}`);
+
+                // 如果還有重試機會，繼續重試
+                if (attempt < maxRetries) {
+                    console.log(`⏳ [BACKEND_CHECK] Will retry (timeout may indicate sleeping server)...`);
+                    continue;
+                }
+
+                return 'sleeping';
+            }
+
+            // 網路錯誤（Failed to fetch）
+            if (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
+                console.error(`❌ [BACKEND_CHECK] Network error on attempt ${attempt + 1}: ${e.message}`);
+
+                // 如果還有重試機會，繼續重試
+                if (attempt < maxRetries) {
+                    console.log(`⏳ [BACKEND_CHECK] Will retry due to network error...`);
+                    continue;
+                }
+
+                console.warn('💡 Hint: This usually means the server is down or there are CORS issues.');
+                return 'offline';
+            }
+
+            // 其他未知錯誤
+            console.error(`❌ [BACKEND_CHECK] Unexpected error on attempt ${attempt + 1}:`, e);
+
+            if (attempt < maxRetries) {
+                console.log(`⏳ [BACKEND_CHECK] Will retry due to unexpected error...`);
+                continue;
+            }
+
             return 'offline';
         }
-
-        console.log(`✅ [BACKEND_CHECK] Server is alive (${(performance.now() - startTime).toFixed(0)}ms)`);
-
-        // Step 2: Test if API endpoint structure is available
-        const apiCheckTime = performance.now();
-        const apiController = new AbortController();
-        const apiTimeoutId = setTimeout(() => apiController.abort(), 5000); // 5s timeout for API check
-
-        // Send an intentionally invalid request to check if the endpoint exists
-        // We expect a 400 (bad request) response, not 404 (not found)
-        console.log('🔍 [BACKEND_CHECK] Probing API endpoint accessibility...');
-        const apiResponse = await fetch(`${API_BASE}/api/broker/profile`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}), // Empty payload to trigger validation error
-            signal: apiController.signal
-        });
-
-        clearTimeout(apiTimeoutId);
-
-        // If we get 400, it means the endpoint exists and is validating input (good!)
-        // If we get 404, the API route doesn't exist
-        // If we get 500, there might be a configuration issue
-        if (apiResponse.status === 404) {
-            console.warn(`⚠️ [BACKEND_CHECK] API endpoint not found - deployment might be incomplete`);
-            return 'server_only';
-        }
-
-        if (apiResponse.status === 400) {
-            console.log(`✅ [BACKEND_CHECK] API is functional (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
-            return 'ready';
-        }
-
-        // Try to read the response to get more details
-        const text = await apiResponse.text();
-        let parsed: any = {};
-        try {
-            parsed = text ? JSON.parse(text) : {};
-        } catch (e) {
-            console.warn(`⚠️ [BACKEND_CHECK] Non-JSON response from API: ${text.substring(0, 100)}`);
-        }
-
-        // If we get a proper error response with message, API is working
-        if (parsed.message || parsed.error) {
-            console.log(`✅ [BACKEND_CHECK] API is responding (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
-            return 'ready';
-        }
-
-        console.warn(`⚠️ [BACKEND_CHECK] Unexpected API response: ${apiResponse.status}`);
-        return 'server_only';
-
-    } catch (e: any) {
-        const elapsed = performance.now() - startTime;
-        if (e.name === 'AbortError') {
-            console.warn(`😴 [BACKEND_CHECK] Timeout after ${elapsed.toFixed(0)}ms — server likely sleeping`);
-            return 'sleeping';
-        } else {
-            console.error(`❌ [BACKEND_CHECK] Network Error Details:`, e);
-            console.warn(`❌ [BACKEND_CHECK] Failed: ${e.message} (${elapsed.toFixed(0)}ms)`);
-            if (e.message?.includes('Failed to fetch')) {
-                console.warn('💡 Hint: This is often caused by CORS issues or the server being down.');
-            }
-        }
-        return 'offline';
     }
+
+    // 理論上不會到這裡，但為了類型安全
+    console.error(`❌ [BACKEND_CHECK] All ${maxRetries + 1} attempts exhausted`);
+    return 'offline';
 };
 
 /**
@@ -382,7 +451,7 @@ export const wakeUpBackend = async (): Promise<{ success: boolean; error?: strin
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for wake-up
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout for wake-up
 
         const response = await fetch(`${API_BASE}/health`, {
             signal: controller.signal,
@@ -554,11 +623,8 @@ export const fetchBrokerProfile = async (
 
         } catch (fetchError: any) {
             console.error('Shioaji Profile Error:', fetchError);
-            console.error('Error Details:', {
-                name: fetchError.name,
-                message: fetchError.message,
-                stack: fetchError.stack
-            });
+
+            // Re-throw error for production mode (no demo fallback)
             throw fetchError;
         }
     }
