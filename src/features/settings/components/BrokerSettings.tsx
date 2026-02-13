@@ -673,7 +673,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                             {/* STEP 1: 取得 API Key */}
                             <div className="relative pl-10">
-                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/10 to-transparent opacity-50 select-none pointer-events-none font-sans">1</div>
+                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/30 to-white/5 opacity-100 select-none pointer-events-none font-sans">1</div>
                                 <div className="relative z-10 pt-1">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
                                         <div className="flex items-start gap-2.5">
@@ -694,7 +694,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                             {/* STEP 2: 輸入 API 資訊 */}
                             <div className="relative pl-10">
-                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/10 to-transparent opacity-50 select-none pointer-events-none font-sans">2</div>
+                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/30 to-white/5 opacity-100 select-none pointer-events-none font-sans">2</div>
                                 <div className="relative z-10 pt-1">
                                     <h5 className="text-[10px] font-bold text-zinc-500 mb-3 uppercase tracking-[0.2em] pl-1">輸入用戶資訊</h5>
                                     <div className="space-y-4">
@@ -771,9 +771,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 </div>
                             </div>
 
-                            {/* STEP 4: 匯入憑證 */}
+                            {/* STEP 3: 匯入憑證 */}
                             <div className="relative pl-10">
-                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/10 to-transparent opacity-50 select-none pointer-events-none font-sans">4</div>
+                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/30 to-white/5 opacity-100 select-none pointer-events-none font-sans">3</div>
                                 <div className="relative z-10 pt-1">
                                     <h5 className="text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-[0.2em] pl-1">匯入憑證</h5>
                                     <div className="grid grid-cols-2 gap-4">
