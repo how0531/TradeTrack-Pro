@@ -815,17 +815,17 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 </label>
                                             ) : (
                                                 <div className="relative group animate-in fade-in zoom-in-95 duration-300">
-                                                    <div className={`w-full bg-[#10B981]/10 border border-[#10B981]/30 rounded-xl px-4 py-3 flex justify-between items-center group-hover:bg-[#10B981]/15 transition-all`}>
-                                                        <div className="flex items-center gap-3 overflow-hidden">
-                                                            <div className="w-8 h-8 rounded-full bg-[#10B981]/20 flex items-center justify-center shrink-0">
-                                                                <Check size={14} className="text-[#10B981]" strokeWidth={3} />
+                                                    <div className={`w-full bg-[#10B981]/10 border border-[#10B981]/30 rounded-xl px-3 py-3 flex justify-between items-center group-hover:bg-[#10B981]/15 transition-all h-[46px]`}>
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            <div className="w-5 h-5 rounded-full bg-[#10B981]/20 flex items-center justify-center shrink-0">
+                                                                <Check size={10} className="text-[#10B981]" strokeWidth={3} />
                                                             </div>
-                                                            <div className="flex flex-col min-w-0">
-                                                                <span className="text-[11px] font-bold text-white truncate leading-tight">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <span className="text-[11px] font-bold text-white truncate max-w-[120px]">
                                                                     {localConfig.caPath}
                                                                 </span>
-                                                                <span className="text-[9px] text-[#10B981] font-mono flex items-center gap-1">
-                                                                    已載入 (Loaded) • {(localConfig.caContent.length / 1024).toFixed(1)} KB
+                                                                <span className="text-[10px] text-[#10B981] font-mono whitespace-nowrap bg-[#10B981]/10 px-1.5 py-0.5 rounded">
+                                                                    {(localConfig.caContent.length / 1024).toFixed(1)} KB
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -837,10 +837,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                                 handleChange('caPath', '');
                                                                 handleChange('caContent', '');
                                                             }}
-                                                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/20 text-[#10B981]/60 hover:text-red-400 transition-all"
+                                                            className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-black/20 text-[#10B981]/60 hover:text-red-400 transition-all ml-1"
                                                             title="Remove Certificate"
                                                         >
-                                                            <Trash2 size={14} />
+                                                            <Trash2 size={12} />
                                                         </button>
                                                     </div>
                                                 </div>
