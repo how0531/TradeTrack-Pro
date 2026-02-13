@@ -815,33 +815,47 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 </label>
                                             ) : (
                                                 <div className="relative group animate-in fade-in zoom-in-95 duration-300">
-                                                    <div className={`w-full bg-[#10B981]/10 border border-[#10B981]/30 rounded-xl px-3 py-3 flex justify-between items-center group-hover:bg-[#10B981]/15 transition-all h-[46px]`}>
-                                                        <div className="flex items-center gap-2 overflow-hidden">
-                                                            <div className="w-5 h-5 rounded-full bg-[#10B981]/20 flex items-center justify-center shrink-0">
-                                                                <Check size={10} className="text-[#10B981]" strokeWidth={3} />
+                                                    {/* PRO MAX UI: Mimic the exact style of the password input for alignment */}
+                                                    <div className="w-full bg-black/40 border border-emerald-500/30 rounded-xl px-4 py-3 flex items-center justify-between group-hover:border-emerald-500/50 transition-all h-[46px]">
+
+                                                        {/* Left: Icon + Filename */}
+                                                        <div className="flex items-center gap-3 overflow-hidden flex-1">
+                                                            {/* Icon with Glow Effect */}
+                                                            <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                                                                <Check size={10} className="text-emerald-500" strokeWidth={3} />
                                                             </div>
-                                                            <div className="flex items-center gap-2 min-w-0">
-                                                                <span className="text-[11px] font-bold text-white truncate max-w-[120px]">
-                                                                    {localConfig.caPath}
-                                                                </span>
-                                                                <span className="text-[10px] text-[#10B981] font-mono whitespace-nowrap bg-[#10B981]/10 px-1.5 py-0.5 rounded">
-                                                                    {(localConfig.caContent.length / 1024).toFixed(1)} KB
-                                                                </span>
-                                                            </div>
+
+                                                            {/* Filename with Gradient Text for Premium Feel */}
+                                                            <span className="text-xs font-medium text-zinc-200 truncate font-mono tracking-tight min-w-0">
+                                                                {localConfig.caPath}
+                                                            </span>
                                                         </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                e.stopPropagation(); // Stop label trigger if nested
-                                                                handleChange('caPath', '');
-                                                                handleChange('caContent', '');
-                                                            }}
-                                                            className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-black/20 text-[#10B981]/60 hover:text-red-400 transition-all ml-1"
-                                                            title="Remove Certificate"
-                                                        >
-                                                            <Trash2 size={12} />
-                                                        </button>
+
+                                                        {/* Right: Size Badge + Delete Action */}
+                                                        <div className="flex items-center gap-3 shrink-0 pl-2">
+                                                            {/* Monospace Size Badge */}
+                                                            <span className="text-[10px] font-mono text-emerald-500/80 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/10">
+                                                                {(localConfig.caContent.length / 1024).toFixed(1)} KB
+                                                            </span>
+
+                                                            {/* Separator */}
+                                                            <div className="w-[1px] h-3 bg-white/10" />
+
+                                                            {/* Delete Button with Hover Effect */}
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    handleChange('caPath', '');
+                                                                    handleChange('caContent', '');
+                                                                }}
+                                                                className="text-zinc-600 hover:text-red-400 transition-colors p-1 -mr-1"
+                                                                title="Remove"
+                                                            >
+                                                                <Trash2 size={13} />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )}
