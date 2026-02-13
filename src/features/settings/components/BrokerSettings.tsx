@@ -767,7 +767,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     <h5 className="text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-[0.2em] pl-1">匯入憑證</h5>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="flex flex-col gap-2">
-                                            <div className="flex justify-between items-center h-[15px] mb-2">
+                                            <div className="flex justify-between items-center h-[15px]">
                                                 <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter flex items-center gap-2">
                                                     憑證檔案 (.pfx)
                                                 </label>
@@ -857,7 +857,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             )}
                                         </div>
                                         <div className="flex flex-col gap-2">
-                                            <div className="flex justify-between items-center">
+                                            <div className="flex justify-between items-center h-[15px]">
                                                 <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">憑證密碼</label>
                                                 <button
                                                     type="button"
