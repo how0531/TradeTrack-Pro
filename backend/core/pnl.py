@@ -48,7 +48,7 @@ def login_and_fetch_pnl(
             temp_ca_path = tf.name
             final_ca_path = temp_ca_path
         except Exception as e:
-            return {"error": f"憑證處理失敗 (CA Failed): {str(e)}", "details": []}
+            return {"status": "error", "message": f"憑證處理失敗 (CA Failed): {str(e)}", "details": []}
 
     try:
         # 2. Get API Session
@@ -56,6 +56,17 @@ def login_and_fetch_pnl(
         api = manager.get_api(
             api_key, secret_key, person_id, final_ca_path, ca_password, simulation=simulation
         )
+
+        # 🔑 Check CA activation status and warn if not activated
+        if not manager.ca_activated:
+            log("⚠️ CA NOT ACTIVATED — PnL queries may return empty results!")
+            if not ca_content and (not ca_path or not os.path.exists(ca_path)):
+                return {
+                    "status": "error",
+                    "message": "CA 憑證未啟動：雲端伺服器找不到 .pfx 檔案。請在設定頁面重新上傳憑證檔案 (.pfx)。",
+                    "details": [],
+                    "ca_error": True
+                }
         
         # 3. List Accounts
         try:
@@ -159,6 +170,8 @@ def login_and_fetch_pnl(
         def fetch_worker(target_account):
             acc_pnl = 0
             acc_details = []
+            acc_equity = 0    # New: 權益數
+            acc_open_pnl = 0  # New: 未平倉損益
             
             try:
                 acc_type_str = str(getattr(target_account, "account_type", "")).upper()
@@ -169,37 +182,50 @@ def login_and_fetch_pnl(
                 
                 log(f"🚀 [Thread Start] Fetching {target_account.account_id} ({category})")
                 
-                # 🔧 FIX [406] Sub-brokerage (H) is NOT supported by standard API
+                # 1. 複委託 (Sub-brokerage) - Skip (Not supported)
                 if is_sub:
-                     log(f"ℹ️ [Skip PnL] Skipping PnL for Sub-brokerage account {target_account.account_id} (API V1 does not support Foreign Stock PnL)")
-                     return 0, acc_details
+                     log(f"ℹ️ [Skip PnL] Skipping PnL for Sub-brokerage account {target_account.account_id}")
+                     return 0, acc_details, 0, 0
 
-                # 🔧 FIX [406] Futures accounts (F) often return 406 on list_profit_loss
+                # 2. 期貨額外數據：權益數 (Equity) & 未平倉 (Open Positions)
                 if is_futures:
-                     log(f"ℹ️ [Skip PnL] Skipping PnL for Futures account {target_account.account_id} (Avoid 406 Account Not Acceptable)")
-                     return 0, acc_details
+                    try:
+                        # Fetch Margin (Equity)
+                        log(f"💰 [Futures Margin] Fetching margin for {target_account.account_id}...")
+                        margin_data = api.margin(target_account)
+                        acc_equity = int(getattr(margin_data, "equity", 0))
+                        log(f"💰 [Futures Margin] Equity: {acc_equity}")
+
+                        # Fetch Open Positions
+                        log(f"📜 [Futures Positions] Fetching open positions for {target_account.account_id}...")
+                        positions = api.list_positions(target_account)
+                        for pos in positions:
+                            open_pnl = float(getattr(pos, "pnl", 0))
+                            acc_open_pnl += open_pnl
+                            
+                            # Optional: Add open positions to details list? 
+                            # User asked for "Total Asset" view, but mixing open/closed in list might be confusing.
+                            # For now, we aggregate open PnL.
+                        log(f"📜 [Futures Positions] Open PnL: {acc_open_pnl}")
+
+                    except Exception as me:
+                        log(f"⚠️ [Futures Margin/Pos Error] {me}")
 
                 candidates = []
-                max_attempts = 2  # Fetch at least twice to compare
-                
-                # Small random delay to prevent exact-moment collisions
+                max_attempts = 2
                 import random
                 time.sleep(random.uniform(0.1, 0.5))
 
+                # 3. 核心 PnL 抓取 (Unified Logic for Stock & Futures)
+                # 使用 list_profit_loss (已驗證期貨也有資料)
                 for attempt in range(max_attempts):
                     try:
-                        # 🔧 HANDLE [406] Account Not Acceptable Gracefully
                         try:
-                            # Note: api.list_profit_loss might block, assuming thread-safety or GIL release
                             current_pnl = api.list_profit_loss(target_account, start_date, end_date)
                         except Exception as api_e:
                             err_str = str(api_e)
-                            # Log details for specific branch debugging (Wan Sheng 9A92)
-                            if "9A92" in str(target_account.broker_id):
-                                log(f"🐞 [DEBUG 9A92] Account: {target_account} Error: {err_str}")
-
                             if "406" in err_str or "Account Not Acceptable" in err_str:
-                                log(f"ℹ️ [Skip 406] {target_account.account_id} ({getattr(target_account, 'account_type', '?')}) does not support PnL query.")
+                                log(f"ℹ️ [Skip 406] Account {target_account.account_id} not supported by list_profit_loss.")
                                 current_pnl = []
                             else:
                                 raise api_e 
@@ -214,11 +240,7 @@ def login_and_fetch_pnl(
                             time.sleep(0.5) 
 
                     except Exception as e:
-                        # If it's the 406 error that bubbled up (should be caught above), ignore it
-                        if "406" in str(e) or "Account Not Acceptable" in str(e):
-                             log(f"ℹ️ [Skip 406] {target_account.account_id} caught in outer loop.")
-                             break
-                        
+                        if "406" in str(e): break
                         log(f"❌ [API Error] {target_account.account_id} Attempt {attempt+1}: {str(e)}")
                         time.sleep(0.5)
 
@@ -241,7 +263,7 @@ def login_and_fetch_pnl(
                         buy_amt = round(float(getattr(item, "buy_amt", 0)), 4)
                         sell_amt = round(float(getattr(item, "sell_amt", 0)), 4)
                         
-                        # Share quantity correction
+                        # Share quantity correction (Stock only)
                         if not is_futures and not is_sub:
                             cond_str = str(getattr(item, "cond", "")).upper()
                             is_margin = any(x in cond_str for x in ["MARGIN", "SHORT", "融資", "融券"])
@@ -250,38 +272,25 @@ def login_and_fetch_pnl(
                                  if ((max(buy_amt, sell_amt)) / price) > raw_qty * 800:
                                      raw_qty *= 1000
 
-                        pid = os.getpid()
-                        # Name Resolution Logic (Simplified for brevity inside worker)
-                        name = getattr(item, "name", "")
-                        if name is None: name = ""
-                        name = str(name).strip()
-                        
-                        FUTURES_NAMES = {
-                            'TXF': '台指期', 'MTX': '小台指', 'TE': '電子期', 'MTE': '小電子期',
-                            'TF': '金融期', 'T5F': '櫃買期', 'UNF': '非金電期', 'GTF': '黃金期',
-                            'XIF': '東證期', 'SP': 'S&P期', 'ND': '那斯達克期',
-                        }
-                        
-                        if is_futures and len(code) >= 2:
-                             prefix3 = code[:3].upper()
-                             prefix2 = code[:2].upper()
-                             if prefix3 in FUTURES_NAMES: name = FUTURES_NAMES[prefix3]
-                             elif prefix2 in FUTURES_NAMES: name = FUTURES_NAMES[prefix2]
-                        
-                        if "臺股期" in name: name = "台指期"
-                        elif "小型臺指" in name: name = "小台指"
+                        # Helper to resolve names
+                        def resolve_name(code, is_futures):
+                           FUTURES_NAMES = {
+                               'TXF': '台指期', 'MTX': '小台指', 'TE': '電子期', 'MTE': '小電子期',
+                               'TF': '金融期', 'T5F': '櫃買期', 'UNF': '非金電期', 'GTF': '黃金期',
+                               'XIF': '東證期', 'SP': 'S&P期', 'ND': '那斯達克期',
+                           }
+                           name = ""
+                           if is_futures and len(code) >= 2:
+                                for prefix in [code[:3].upper(), code[:2].upper()]:
+                                    if prefix in FUTURES_NAMES: 
+                                        name = FUTURES_NAMES[prefix]
+                                        break
+                           if "臺股期" in name: name = "台指期"
+                           elif "小型臺指" in name: name = "小台指"
+                           return name
 
-                        # SDK Lookup Fallback (Thread-safety Warning: Accessing Contracts might be risky)
-                        if not name or name == code:
-                            try:
-                                if is_futures: 
-                                    c = api.Contracts.Futures[code]
-                                    if c: name = c.name
-                                elif not is_sub:
-                                    c = api.Contracts.Stocks[code]
-                                    if c: name = c.name
-                            except: pass
-
+                        name = getattr(item, "name", "") or resolve_name(code, is_futures)
+                        
                         if name and name != code:
                             display_code = name if code in name else f"{code} {name}"
                         else:
@@ -299,70 +308,96 @@ def login_and_fetch_pnl(
                             "sellAmt": sell_amt,
                             "entryPrice": float(getattr(item, "entry_price", 0)),
                             "exitPrice": float(getattr(item, "cover_price", 0)),
-                            "yield": float(getattr(item, "pr_ratio", 0)), # Extract PnL Ratio
-                            "accountId": target_account.account_id # Tag with account ID
+                            "yield": round(float(getattr(item, "pr_ratio", 0)) * 100, 2),
+                            "accountId": target_account.account_id
                         })
                         acc_pnl += realized
                     except Exception as item_e:
                          log(f"❌ [Item Error] {getattr(item, 'code', '?')}: {item_e}")
                          continue
                          
-                return acc_pnl, acc_details
+                return acc_pnl, acc_details, acc_equity, acc_open_pnl
 
             except Exception as e:
                 log(f"❌ [Worker Error] {target_account.account_id}: {e}")
                 import traceback
                 log(traceback.format_exc())
-                return 0, []
+                return 0, [], 0, 0
 
         
         total_pnl = 0
         details = []
-
-        # EXECUTE IN PARALLEL
+        total_equity = 0      # New: 總權益數
+        total_open_pnl = 0    # New: 總未平倉損益
+        
+        # Threads
+        import concurrent.futures
         max_workers = min(len(valid_accounts), 5) if len(valid_accounts) > 0 else 1
         log(f"🚀 Starting Parallel Execution with {max_workers} workers...")
-        
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_acc = {executor.submit(fetch_worker, acc): acc for acc in valid_accounts}
-            
-            for future in concurrent.futures.as_completed(future_to_acc):
-                acc = future_to_acc[future]
-                try:
-                    pnl, items = future.result()
-                    total_pnl += pnl
-                    details.extend(items)
-                    log(f"✅ [Thread Done] {acc.account_id} finished via {acc.broker_id}")
-                except Exception as exc:
-                    log(f"❌ [Thread Exception] {acc.account_id} generated an exception: {exc}")
+             future_to_acc = {executor.submit(fetch_worker, acc): acc for acc in valid_accounts}
+             
+             for future in concurrent.futures.as_completed(future_to_acc):
+                 acc = future_to_acc[future]
+                 try:
+                     # Unpack 4 values now
+                     pnl, acc_dets, equity, open_pnl = future.result()
+                     
+                     if pnl != 0 or acc_dets:
+                         total_pnl += pnl
+                         details.extend(acc_dets)
+                    
+                     # Aggregate Futures Data
+                     total_equity += equity
+                     total_open_pnl += open_pnl
+                     log(f"✅ [Thread Done] {acc.account_id} finished via {acc.broker_id}")
+                         
+                 except Exception as exc:
+                     log(f"❌ [Thread Exception] {acc.account_id} generated an exception: {exc}")
 
         if temp_ca_path and os.path.exists(temp_ca_path):
             try: os.unlink(temp_ca_path)
             except: pass
 
+        # Final Sort
         details.sort(key=lambda x: x["date"], reverse=True)
         
         # Get final metadata from the valid accounts
-        final_branch = ""
-        final_user = ""
+        signed_ids = []
+        branch_codes = set()
+        
         if valid_accounts:
-            # Join all branch codes if multiple, otherwise just the one
-            all_bids = sorted(list(set([str(getattr(acc, "broker_id", "")).strip()[:4] for acc in valid_accounts])))
-            final_branch = ",".join(all_bids)
-            
-            acc = valid_accounts[0]
-            final_user = getattr(acc, "username", getattr(acc, "name", ""))
-            if not final_user:
-                final_user = person_id[:3] + "*****" + person_id[-2:] if person_id else "User"
+             for acc in valid_accounts:
+                 if getattr(acc, "signed", False):
+                     signed_ids.append(str(acc.account_id))
+                 
+                 bid = str(getattr(acc, "broker_id", "")).strip()[:4]
+                 if bid: branch_codes.add(bid)
 
-        return {
-            "status": "success", 
-            "total_pnl": total_pnl, 
+        # Result Construction
+        result = {
+            "status": "success",
+            "total_pnl": round(total_pnl, 2),
             "details": details,
+            "details_count": len(details),
+            "branch_code": branch_filter or ",".join(sorted(list(branch_codes))) or "ALL",
             "environment": "simulation" if simulation else "production",
-            "branch_code": final_branch,
-            "username": final_user
+            "signed_accounts": signed_ids,
+            # New Summary Fields
+            "summary": {
+                "equity": total_equity,
+                "open_pnl": round(total_open_pnl, 2),
+                "realized_pnl": round(total_pnl, 2)
+            }
         }
+        
+        # Helper to extract name (simplified)
+        if accounts:
+            result["username"] = getattr(accounts[0], "username", person_id)
+
+        log(f"✅ [Done] PnL: {total_pnl}, Items: {len(details)}, Equity: {total_equity}")
+        
+        return result
 
     except Exception as e:
         import traceback

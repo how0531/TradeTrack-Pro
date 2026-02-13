@@ -147,8 +147,12 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
 
             if (!response.ok) {
                 let errMsg = result.message || result.error || `後端錯誤 (${response.status}): ${text.substring(0, 100)}`;
-                if (typeof errMsg === 'string' && errMsg.includes('key:') && errMsg.includes('not exist')) {
-                     errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                if (typeof errMsg === 'string') {
+                    if (errMsg.includes('key:') && errMsg.includes('not exist')) {
+                        errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                    } else if (result.ca_error || errMsg.includes('CA') || errMsg.includes('憑證未啟動')) {
+                        errMsg = '⚠️ CA 憑證未啟動：請至「設定」→ 帳號設定 → 重新上傳 .pfx 憑證檔案。雲端部署不支援本地路徑。';
+                    }
                 }
                 throw new Error(errMsg);
             }
@@ -265,6 +269,7 @@ export interface BrokerProfile {
     apiKeyHint?: string;
     accountId?: string; // Individual account ID for single account login
     accounts?: { branch_code: string, branch_name: string, account_id: string, account_type?: string }[];
+    signedAccounts?: string[]; // Array of signed account IDs
 }
 
 /**
@@ -532,7 +537,8 @@ export const fetchBrokerProfile = async (
                 username: result.username,
                 environment: result.environment as any,
                 apiKeyHint: result.apiKeyHint,
-                accountId: result.account_id || result.accountId // Backend may return account_id or accountId
+                accountId: result.account_id || result.accountId, // Backend may return account_id or accountId
+                signedAccounts: result.signedAccounts || []
             };
 
         } catch (fetchError: any) {
