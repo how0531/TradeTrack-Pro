@@ -746,7 +746,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                                         {/* API Risk Disclosure Link */}
                                         <a
-                                            href="https://www.sinotrade.com.tw/CS/CS_03/CS_03_06"
+                                            href="https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/"
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="group w-full bg-zinc-900/30 hover:bg-zinc-800/50 border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-300 -mt-1"
