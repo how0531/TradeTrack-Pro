@@ -865,7 +865,6 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/5 hover:bg-white/10 text-[#C8B085] hover:text-[#E0C8A0] text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1 backdrop-blur-sm border border-white/5"
                                                     title={lang === 'zh' ? "使用身分證字號自動帶入" : "Auto-fill with Person ID"}
                                                 >
-                                                    <ArrowDown size={10} />
                                                     {lang === 'zh' ? "ID 帶入" : "Use ID"}
                                                 </button>
                                             </div>
