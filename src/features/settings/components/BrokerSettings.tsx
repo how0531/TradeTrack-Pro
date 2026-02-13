@@ -767,32 +767,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     <h5 className="text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-[0.2em] pl-1">匯入憑證</h5>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="flex flex-col gap-2">
-                                            <div className="flex justify-between items-center h-[15px]">
+                                            <div className="flex justify-between items-center h-[15px] mb-2">
                                                 <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter flex items-center gap-2">
                                                     憑證檔案 (.pfx)
                                                 </label>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <label
-                                                    htmlFor="ca-upload"
-                                                    className="cursor-pointer px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-zinc-400 hover:text-white transition-all flex items-center gap-2"
-                                                >
-                                                    <FileKey size={14} />
-                                                    {lang === 'zh' ? '選擇 .pfx 檔案' : 'Select .pfx File'}
-                                                </label>
-                                                <span className="text-[10px] text-zinc-500 font-mono truncate max-w-[150px]">
-                                                    {localConfig?.caPath || (lang === 'zh' ? '尚未選擇' : 'No file selected')}
-                                                </span>
-                                            </div>
-
-                                            {/* Certificate Status Indicator */}
-                                            <div className="flex items-center gap-2 mt-2 px-2 py-1 bg-black/20 rounded border border-white/5">
-                                                <div className={`w-2 h-2 rounded-full ${localConfig?.caContent ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500/50'}`} />
-                                                <span className={`text-[10px] ${localConfig?.caContent ? 'text-emerald-500' : 'text-zinc-600'}`}>
-                                                    {localConfig?.caContent
-                                                        ? `${lang === 'zh' ? '憑證已載入' : 'Certificate Loaded'} (${(localConfig.caContent.length / 1024).toFixed(1)} KB)`
-                                                        : (lang === 'zh' ? '憑證內容為空' : 'Certificate Content Missing')}
-                                                </span>
                                             </div>
 
                                             <input
@@ -815,47 +793,54 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                 }}
                                             />
 
-                                            {/* DUAL MODE PFX INPUT */}
+                                            {/* Unified Certificate Input */}
                                             {!localConfig.caContent ? (
-                                                <div className="relative group">
-                                                    <FileKey className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700 pointer-events-none" size={14} />
-                                                    <input
-                                                        type="text"
-                                                        value={localConfig.caPath || ''}
-                                                        onChange={(e) => {
-                                                            handleChange('caPath', e.target.value);
-                                                            if (localConfig.caContent) handleChange('caContent', '');
-                                                        }}
-                                                        placeholder={lang === 'zh' ? "絕對路徑" : "Absolute path"}
-                                                        className={`w-full bg-black/40 border rounded-xl px-4 py-3 pl-10 text-[10px] font-mono text-zinc-400 focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPath ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
-                                                    />
-                                                    <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                                                        <label
-                                                            htmlFor="ca-upload"
-                                                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer border border-white/5 transition-all flex items-center gap-1 group/btn"
-                                                            title={lang === 'zh' ? "選取檔案" : "Select File"}
-                                                        >
-                                                            <FolderOpen size={12} className="text-[#C8B085] group-hover/btn:scale-110 transition-transform" />
-                                                        </label>
+                                                <label
+                                                    htmlFor="ca-upload"
+                                                    className="relative group cursor-pointer block"
+                                                >
+                                                    <div className="w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 hover:border-[#C8B085]/50 rounded-xl px-4 py-6 flex flex-col items-center justify-center gap-2 transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(200,176,133,0.1)]">
+                                                        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                                            <FileKey size={14} className="text-zinc-500 group-hover:text-[#C8B085] transition-colors" />
+                                                        </div>
+                                                        <div className="flex flex-col items-center gap-0.5">
+                                                            <span className="text-[11px] font-bold text-zinc-400 group-hover:text-white transition-colors">
+                                                                {lang === 'zh' ? '點擊上傳 .pfx 憑證' : 'Click to Upload .pfx'}
+                                                            </span>
+                                                            <span className="text-[9px] text-zinc-600 group-hover:text-zinc-500 transition-colors font-mono">
+                                                                {localConfig.caPath || (lang === 'zh' ? '尚未選擇檔案' : 'No file selected')}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                </label>
                                             ) : (
-                                                <div className="relative group">
-                                                    <div className={`w-full bg-[#C8B085]/5 border border-[#C8B085]/20 rounded-xl px-4 py-3 text-[10px] font-mono text-[#C8B085] flex justify-between items-center`}>
-                                                        <div className="flex items-center gap-2 truncate">
-                                                            <Check size={14} />
-                                                            <span className="truncate">{localConfig.caPath}</span>
+                                                <div className="relative group animate-in fade-in zoom-in-95 duration-300">
+                                                    <div className={`w-full bg-[#10B981]/10 border border-[#10B981]/30 rounded-xl px-4 py-3 flex justify-between items-center group-hover:bg-[#10B981]/15 transition-all`}>
+                                                        <div className="flex items-center gap-3 overflow-hidden">
+                                                            <div className="w-8 h-8 rounded-full bg-[#10B981]/20 flex items-center justify-center shrink-0">
+                                                                <Check size={14} className="text-[#10B981]" strokeWidth={3} />
+                                                            </div>
+                                                            <div className="flex flex-col min-w-0">
+                                                                <span className="text-[11px] font-bold text-white truncate leading-tight">
+                                                                    {localConfig.caPath}
+                                                                </span>
+                                                                <span className="text-[9px] text-[#10B981] font-mono flex items-center gap-1">
+                                                                    已載入 (Loaded) • {(localConfig.caContent.length / 1024).toFixed(1)} KB
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                         <button
                                                             type="button"
-                                                            onClick={() => {
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation(); // Stop label trigger if nested
                                                                 handleChange('caPath', '');
                                                                 handleChange('caContent', '');
                                                             }}
-                                                            className="p-1 hover:bg-black/20 rounded-full transition-colors"
-                                                            title="Clear"
+                                                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/20 text-[#10B981]/60 hover:text-red-400 transition-all"
+                                                            title="Remove Certificate"
                                                         >
-                                                            <X size={14} className="text-[#C8B085]/70 hover:text-[#C8B085]" />
+                                                            <Trash2 size={14} />
                                                         </button>
                                                     </div>
                                                 </div>
