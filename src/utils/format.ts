@@ -115,3 +115,30 @@ export const formatDateWithWeekday = (d: string | Date | number) => {
     
     return `${y}.${m}.${day}(${weekDay})`;
 };
+
+/**
+ * 格式化點數或百分比顯示，確保小數點位數一致 (最多2位)
+ * @param points 原始字串 (例如 "+0.3328%", "150.555 pts")
+ * @returns 格式化後的字串 (例如 "+0.33%", "150.56 pts")
+ */
+export const formatPointsDisplay = (points: string | undefined | null): string => {
+    if (!points) return '';
+    
+    // 找出數值部分 (包含小數點與正負號)
+    const numericMatch = points.match(/[-+]?\d*\.?\d+/);
+    if (!numericMatch) return points;
+    
+    const rawValue = numericMatch[0];
+    const numericValue = parseFloat(rawValue);
+    
+    if (isNaN(numericValue)) return points;
+    
+    // 捨入到兩位小數 (如果本來就是整數則不加 .00)
+    const roundedValue = parseFloat(numericValue.toFixed(2));
+    
+    // 保留正號 (toFixed 會處理負號，但正號會消失)
+    const prefix = (numericValue > 0 && points.startsWith('+')) ? '+' : '';
+    
+    // 替換回原字串中的數值部分
+    return points.replace(rawValue, `${prefix}${roundedValue}`);
+};

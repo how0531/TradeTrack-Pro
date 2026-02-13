@@ -34,8 +34,7 @@ def run_stress_test():
         print(f"🔌 Connecting to Shioaji API...")
         api.login(
             api_key=api_key,
-            secret_key=secret_key,
-            contracts_cb=lambda security_type: print(f"   Shape of {security_type} contracts is {api.Contracts[security_type]}")
+            secret_key=secret_key
         )
         api.activate_ca(
             ca_path=pf_path,

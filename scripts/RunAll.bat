@@ -7,12 +7,12 @@ echo.
 
 :: 啟動後端
 echo [1/2] Launching Python Backend...
-start "TradeTrack Backend" cmd /c "cd /d %~dp0backend && start.bat"
+start "TradeTrack Backend" cmd /c "cd /d %~dp0.. && cd backend && start.bat"
 
 echo.
 :: 啟動前端
 echo [2/2] Launching Frontend (Vite)...
-start "TradeTrack Frontend" cmd /c "cd /d %~dp0 && npm run dev"
+start "TradeTrack Frontend" cmd /c "cd /d %~dp0.. && npm run dev"
 
 echo.
 echo ========================================

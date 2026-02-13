@@ -3,7 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Scroll, Trash2, Edit2, Calendar, ArrowUpDown, StickyNote } from 'lucide-react';
 import { Trade, LogsViewProps, Lang } from '../../types';
 import { I18N } from '../../constants';
-import { formatDate } from '../../utils/format';
+import { formatCompactNumber, formatDate, formatPointsDisplay } from '../../utils/format';
+import { formatSymbolCode } from '../../utils/symbolNames';
 import { vibrate } from '../../utils/haptics';
 
 type SortType = 'date' | 'pnl_high' | 'pnl_low';
@@ -39,7 +40,150 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
         noteBg: 'bg-[#1D332E]/5', noteBorder: 'border-[#1D332E]/20', noteLabel: 'text-[#5B9A8B]', noteHover: 'hover:bg-[#1D332E]/10'
     };
 
-    const priceDisplay = Math.abs(trade.pnl).toLocaleString('en-US');
+    const priceDisplay = useMemo(() => {
+        // Futures/Options Logic (Points)
+        const category = trade.category || '';
+        const code = trade.code || '';
+        const isFutures = (
+            category === '期貨' || 
+            category === 'Option' || 
+            category.includes('Futures') ||
+            category.includes('台指') ||
+            code.includes('期') || 
+            code.includes('選') ||
+            code.includes('TX') || 
+            code.includes('MTX') ||
+            code.includes('TFE') ||
+            code.includes('TFO') ||
+            code.includes('TF')
+        );
+        
+        // 🔧 Robust Points Check: Must have both prices and they shouldn't be zero/null
+        const hasPrices = trade.entryPrice != null && trade.exitPrice != null && trade.entryPrice > 0 && trade.exitPrice > 0;
+
+        if (isFutures) {
+            if (hasPrices) {
+                const points = Number(Math.abs(trade.exitPrice! - trade.entryPrice!).toFixed(2));
+                const formatted = points.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                return `${formatted} pts`;
+            } else if (trade.pnl !== 0) {
+                // Fallback for points calculation
+                let multiplier = 200;
+                if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
+                else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
+                else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
+                
+                const guessedPts = Number((Math.abs(trade.pnl) / multiplier / Math.abs(trade.quantity || 1)).toFixed(2));
+                if (guessedPts > 0) {
+                    const formatted = guessedPts.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                    return `${formatted} pts`;
+                }
+            }
+        }
+        
+        // Default Logic (Currency)
+        return Math.abs(trade.pnl).toLocaleString('en-US');
+    }, [trade]);
+
+    const { infoLine, displayNote } = useMemo(() => {
+        // 1. Priority: Construct Info from Independent Fields (New Data Structure)
+        // Relaxed check: Show if ANY of the structural fields exist
+        if (trade.code || trade.points || (trade.quantity && trade.quantity > 0)) {
+            const isFuture = trade.category === 'Futures' || trade.category === 'Option';
+            const unit = isFuture ? '口' : '張';
+            
+            // Reconstruct Pts/Amt string based on trade data if possible, or simplified display
+            const ptsDisplay = formatPointsDisplay(trade.points);
+
+            // Strict Format: Name | Pts | Qty
+            // User requested: "台指期 | +100 pts | 7口" (Removing 【】 labels)
+            
+            // Extract Name
+            let displayName = '';
+            const codeStr = String(trade.code || '');
+            if (codeStr) {
+                // Use centralized formatter to handle "TXFB6" -> "台指期02"
+                displayName = formatSymbolCode(codeStr);
+            }
+            
+            const qtyDisplay = trade.quantity ? `${trade.quantity}${unit}` : '';
+            
+            // Filter out empty parts and join with pipe
+            const info = [displayName, ptsDisplay, qtyDisplay].filter(Boolean).join(' | ');
+
+            // Deduplication Logic:
+            // If trade.note contains the legacy "Code | Pts | Qty" string, allow TradeModal to clean it permanently,
+            // BUT for display, we dynamically strip it here to avoid showing it twice (InfoLine + NoteBox).
+            let finalNote = trade.note;
+            if (finalNote) {
+                const parts = String(finalNote).split('|');
+                if (parts.length >= 3) {
+                    const legacyCode = parts[0].trim();
+                    const legacyPts = parts[1].trim();
+                    const legacyQty = parts[2].trim();
+                    // Simple heuristic: if it looks like the legacy format, strip it
+                    const isLegacyFormat = legacyCode.length < 20 && legacyPts.length < 15 && legacyQty.length < 10;
+                    if (isLegacyFormat) {
+                        finalNote = parts.slice(3).join('|').trim();
+                    }
+                }
+            }
+            
+            return { 
+                infoLine: info, 
+                displayNote: finalNote && finalNote.length > 0 ? finalNote : null
+            };
+        }
+
+        // 2. Legacy Fallback: Parse Note (for old trades without trade.code)
+        if (!trade.note) return { infoLine: null, displayNote: null };
+        
+        const noteStr = String(trade.note);
+        
+        // CASE A: Pipe Separated Legacy "Code Name | Pts | Qty"
+        const parts = noteStr.split('|');
+        if (parts.length >= 3) {
+            const codeRaw = parts[0].trim();
+            const pts = parts[1].trim();
+            const qty = parts[2].trim(); 
+            
+            // Check if it fits the structure
+            const isAutoFormat = codeRaw.length < 30 && pts.length < 20 && qty.length < 15;
+            
+            if (isAutoFormat) {
+                 // Clean Name using centralized logic
+                 const displayName = formatSymbolCode(codeRaw);
+                 
+                 const info = `${displayName} | ${formatPointsDisplay(pts)} | ${qty}`;
+                 const rest = parts.slice(3).join('|').trim();
+                 return { infoLine: info, displayNote: rest.length > 0 ? rest : null };
+            }
+        }
+
+        // CASE B: Bracketed Legacy "【商品】TXFB6 台指期 【損益】+422 pts 【部位】1口"
+        // Regex to capture content inside brackets
+        const bracketRegex = /【商品】(.*?)【損益】(.*?)【部位】(.*?)(?:$|\s+)/;
+        const match = noteStr.match(bracketRegex);
+        
+        if (match) {
+            const codeRaw = match[1].trim(); // "TXFB6 台指期"
+            const pts = match[2].trim();     // "+422 pts"
+            const qty = match[3].trim();     // "1口"
+            
+            // Clean Name using centralized logic
+            const displayName = formatSymbolCode(codeRaw);
+            
+            const info = `${displayName} | ${formatPointsDisplay(pts)} | ${qty}`;
+            
+            // Remove the matched part from the note to get the user note
+            const rest = noteStr.replace(match[0], '').trim();
+            
+            return { infoLine: info, displayNote: rest.length > 0 ? rest : null };
+        }
+        
+        // Strict Mode: Any other note content goes to Note Box
+        return { infoLine: null, displayNote: trade.note };
+    }, [trade]);
 
     return (
         <div className="relative w-full mb-5 group animate-in slide-in-from-bottom-2 duration-500">
@@ -69,6 +213,10 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                                     <button onClick={handleDeleteClick} className={`p-1 rounded-full transition-colors ${deleteStatus === 'confirm' ? 'text-red-500 bg-red-500/10' : 'text-zinc-500 hover:text-red-500 hover:bg-red-500/10'}`}><Trash2 size={10} /></button>
                                 </div>
                             </div>
+                            {/* Info Line (Loss Side) */}
+                            {infoLine && (
+                                <span className="text-[10px] font-medium tracking-tight text-zinc-500 mt-1.5 opacity-80">{infoLine}</span>
+                            )}
                         </div>
                     )}
                 </div>
@@ -83,6 +231,10 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                                     <button onClick={handleDeleteClick} className={`p-1 rounded-full transition-colors ${deleteStatus === 'confirm' ? 'text-red-500 bg-red-500/10' : 'text-zinc-500 hover:text-red-500 hover:bg-red-500/10'}`}><Trash2 size={10} /></button>
                                 </div>
                             </div>
+                            {/* Info Line (Profit Side) */}
+                            {infoLine && (
+                                <span className="text-[10px] font-medium tracking-tight text-zinc-500 mt-1.5 opacity-80">{infoLine}</span>
+                            )}
                         </div>
                     ) : (
                         <div className="mt-[5px]">
@@ -97,14 +249,14 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                 </div>
             </div>
 
-            {/* Note Section (No Image) */}
-            {trade.note && (
+            {/* Note Section (No Image) - Only show if there is a 'displayNote' (i.e. not fully consumed by InfoLine) */}
+            {displayNote && (
                 <div className="w-full px-5 mt-2.5 relative z-10">
                     <div onClick={() => setIsNoteExpanded(!isNoteExpanded)} className={`relative px-3 pt-5 pb-2 rounded-lg border backdrop-blur-[2px] cursor-pointer transition-all duration-300 group/note ${theme.noteBg} ${theme.noteBorder} ${theme.noteHover}`}>
                         <div className="absolute top-1 left-3 z-20">
                              <span className={`text-[8px] font-bold tracking-widest ${theme.noteLabel} opacity-50 uppercase`}>Note</span>
                         </div>
-                        <div className="w-full mt-0.5"><p className={`text-[10px] leading-relaxed font-medium text-slate-400 break-words ${isNoteExpanded ? '' : 'line-clamp-2'}`}>{trade.note}</p></div>
+                        <div className="w-full mt-0.5"><p className={`text-[10px] leading-relaxed font-medium text-slate-400 break-words ${isNoteExpanded ? '' : 'line-clamp-2'}`}>{displayNote}</p></div>
                     </div>
                 </div>
             )}

@@ -92,8 +92,35 @@ function MainApp() {
         lossColor,
         setLossColor,
         triggerCloudBackup,
-        onResolveSyncConflict
+        onResolveSyncConflict,
+        autoSyncParams,
+        setAutoSyncParams
     } = useTradeContext();
+
+    // 1.5 Auto-Sync URL Parser
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const isAuto = params.get('auto_sync') === 'true';
+        
+        if (isAuto && !autoSyncParams) {
+            console.log('🤖 [AUTO] Detected Auto-Sync Params');
+            const start = params.get('start') || '';
+            const end = params.get('end') || '';
+            const accounts = (params.get('accounts') || '').split(',').filter(Boolean);
+            
+            if (start && end) {
+                setAutoSyncParams({
+                    start,
+                    end,
+                    accounts,
+                    executed: false
+                });
+                
+                // Optional: Clean URL
+                // window.history.replaceState({}, '', window.location.pathname);
+            }
+        }
+    }, [autoSyncParams, setAutoSyncParams]);
 
     // 2. UI-Only local state
     const [showFullEquity, setShowFullEquity] = useState(false);
@@ -160,23 +187,23 @@ function MainApp() {
     }, [detailStrategy, filteredTrades, portfolios, activePortfolioIds, frequency, lang]);
 
     return (
-        <div className={`min-h-[100dvh] bg-[#000000] text-[#E0E0E0] font-sans flex flex-col max-w-md mx-auto relative shadow-2xl transition-all duration-700 overflow-hidden ${isRiskAlert ? 'shadow-[0_0_50px_rgba(208,90,90,0.3)] border-x border-red-500/20' : ''}`}>
+        <div className={`min-h-[100dvh] bg-[#000000] text-[#E0E0E0] font-sans flex flex-col w-full max-w-full sm:max-w-md mx-auto relative shadow-2xl transition-all duration-700 overflow-x-hidden ${isRiskAlert ? 'shadow-[0_0_50px_rgba(208,90,90,0.3)] border-x border-red-500/20' : ''}`}>
             
             {/* <div className="fixed inset-0 pointer-events-none z-0 transition-all duration-1000 ease-in-out" style={{ background: moodGradient }} /> */}
 
             {/* ALERT BANNER */}
             {isRiskAlert && (
-                <div className="bg-[#D05A5A]/10 border-b border-[#D05A5A]/30 backdrop-blur-md px-4 py-2 flex items-center justify-between sticky top-0 z-50 animate-in slide-in-from-top duration-500">
+                <div className="bg-[#D05A5A]/10 border-b border-[#D05A5A]/30 backdrop-blur-md px-4 py-2 flex flex-col sm:flex-row items-center justify-between sticky top-0 z-[100] animate-in slide-in-from-top duration-500 gap-2">
                     <div className="flex items-center gap-2">
-                        <AlertOctagon size={16} className="text-[#D05A5A] animate-pulse" />
-                        <span className="text-xs font-bold text-[#D05A5A] uppercase tracking-wide">
+                        <AlertOctagon size={14} className="text-[#D05A5A] animate-pulse shrink-0" />
+                        <span className="text-[10px] sm:text-xs font-bold text-[#D05A5A] uppercase tracking-wide text-center sm:text-left">
                              {isDDAlert 
                                 ? (lang === 'zh' ? `回撤 ${formatDecimal(Math.abs(metrics.currentDD))}% 已達警戒 (${ddThreshold}%)` : `Drawdown ${formatDecimal(Math.abs(metrics.currentDD))}% hits limit (${ddThreshold}%)`)
                                 : (lang === 'zh' ? `連敗 ${riskStreaks.currentLoss} 次，建議暫停交易` : `Lost ${riskStreaks.currentLoss} in a row. Take a break.`)
                              }
                         </span>
                     </div>
-                    <button onClick={() => isDDAlert ? setDdThreshold(99) : setMaxLossStreak(99)} className="text-[10px] text-[#D05A5A] underline opacity-80 hover:opacity-100">{lang === 'zh' ? '忽略' : 'Dismiss'}</button>
+                    <button onClick={() => isDDAlert ? setDdThreshold(99) : setMaxLossStreak(99)} className="text-[10px] text-[#D05A5A] underline opacity-80 hover:opacity-100 font-bold px-2 py-0.5">{lang === 'zh' ? '忽略' : 'Dismiss'}</button>
                 </div>
             )}
 

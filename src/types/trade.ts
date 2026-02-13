@@ -23,6 +23,13 @@ export interface Trade {
   timestamp?: string;
   amount?: string;
   type?: 'profit' | 'loss';
+  code?: string;
+  entryPrice?: number;
+  exitPrice?: number;
+  quantity?: number;
+  category?: string;
+  raw_yield?: number;
+  points?: string; // e.g. "+150 pts" or "+5.2%"
 }
 
 export interface Metrics {
@@ -45,6 +52,7 @@ export interface Metrics {
   avgLoss: number;
   totalTrades: number;
   maxStagnationDays: number;
+  expectancy: number; // Avg profit per trade
 }
 
 export interface StrategyStat {

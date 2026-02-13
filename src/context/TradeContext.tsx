@@ -5,9 +5,10 @@ import { useSync } from '../hooks/useSync';
 import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { detectDuplicates, mergeDuplicates, DuplicateGroup, DetectionOptions } from '../utils/duplicateDetection';
-import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig } from '../types';
+import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams } from '../types';
 import { db, resetFirestoreCache } from '../firebaseConfig'; 
-import { I18N } from '../constants'; 
+import { doc, setDoc } from 'firebase/firestore';
+import { I18N, THEME } from '../constants'; 
 
 interface TradeContextType {
     // Data
@@ -18,42 +19,42 @@ interface TradeContextType {
     
     // UI State & Filters
     activePortfolioIds: string[];
-    setActivePortfolioIds: (ids: string[]) => void;
+    setActivePortfolioIds: React.Dispatch<React.SetStateAction<string[]>>;
     currentMonth: Date;
-    setCurrentMonth: (d: Date) => void;
+    setCurrentMonth: React.Dispatch<React.SetStateAction<Date>>;
     filterStrategy: string[];
-    setFilterStrategy: (s: string[]) => void;
+    setFilterStrategy: React.Dispatch<React.SetStateAction<string[]>>;
     filterEmotion: string[];
-    setFilterEmotion: (e: string[]) => void;
+    setFilterEmotion: React.Dispatch<React.SetStateAction<string[]>>;
     timeRange: TimeRange;
-    setTimeRange: (t: TimeRange) => void;
+    setTimeRange: React.Dispatch<React.SetStateAction<TimeRange>>;
     frequency: Frequency;
-    setFrequency: (f: Frequency) => void;
+    setFrequency: React.Dispatch<React.SetStateAction<Frequency>>;
     customRange: { start: string | null; end: string | null };
-    setCustomRange: (r: { start: string | null; end: string | null }) => void;
+    setCustomRange: React.Dispatch<React.SetStateAction<{ start: string | null; end: string | null }>>;
     isDatePickerOpen: boolean;
-    setIsDatePickerOpen: (b: boolean) => void;
+    setIsDatePickerOpen: React.Dispatch<React.SetStateAction<boolean>>;
     isFilterOpen: boolean;
-    setIsFilterOpen: (b: boolean) => void;
+    setIsFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
 
     // Preferences
     lang: 'zh' | 'en';
-    setLang: (l: 'zh' | 'en') => void;
+    setLang: React.Dispatch<React.SetStateAction<'zh' | 'en'>>;
     hideAmounts: boolean;
-    setHideAmounts: (b: boolean) => void;
+    setHideAmounts: React.Dispatch<React.SetStateAction<boolean>>;
     ddThreshold: number;
-    setDdThreshold: (n: number) => void;
+    setDdThreshold: React.Dispatch<React.SetStateAction<number>>;
     maxLossStreak: number;
-    setMaxLossStreak: (n: number) => void;
+    setMaxLossStreak: React.Dispatch<React.SetStateAction<number>>;
     chartHeight: number;
-    setChartHeight: (h: number) => void;
+    setChartHeight: React.Dispatch<React.SetStateAction<number>>;
     lossColor: string;
-    setLossColor: (c: string) => void;
+    setLossColor: React.Dispatch<React.SetStateAction<string>>;
     
     // Broker Accounts
     brokerConfigs: BrokerConfig[];
     activeBrokerId: string;
-    setActiveBrokerId: (id: string) => void;
+    setActiveBrokerId: React.Dispatch<React.SetStateAction<string>>;
     updateBrokerConfig: (id: string, config: BrokerConfig) => void;
     addBrokerConfig: (config: BrokerConfig) => void;
     deleteBrokerConfig: (id: string) => void;
@@ -83,6 +84,7 @@ interface TradeContextType {
     // Actions
     actions: {
         saveTrade: (trade: Trade, editingId: string | null) => void;
+        saveTrades: (trades: Omit<Trade, 'id' | 'timestamp'>[]) => void;
         deleteTrade: (id: string) => void;
         updatePortfolio: (id: string, key: keyof Portfolio, value: string | number) => void;
         addPortfolio: (portfolio: Portfolio) => void;
@@ -109,13 +111,17 @@ interface TradeContextType {
     
     // Translation
     t: Translation;
+
+    // Auto Execution
+    autoSyncParams: AutoSyncParams | null;
+    setAutoSyncParams: React.Dispatch<React.SetStateAction<AutoSyncParams | null>>;
 }
 
 const TradeContext = createContext<TradeContextType | undefined>(undefined);
 
 export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // 1. Auth
-    const { user, status: authStatus, db, login, logout } = useAuth();
+    const { user, status: authStatus, login, logout } = useAuth();
 
     // 2. Local Data
     const { 
@@ -196,6 +202,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [customRange, setCustomRange] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [autoSyncParams, setAutoSyncParams] = useState<AutoSyncParams | null>(null);
 
     // 5. Sync Logic
     const { 
@@ -327,21 +334,27 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } else {
             // MERGE LOGIC
             if (data.trades) {
-                setTrades(prev => {
-                    const tradeMap = new Map(prev.map(t => [t.id, t]));
-                    data.trades.forEach((t: Trade) => tradeMap.set(t.id, t));
-                    return Array.from(tradeMap.values()).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                });
+                const tradeMap = new Map(trades.map(t => [t.id, t]));
+                data.trades.forEach((t: Trade) => tradeMap.set(t.id, t));
+                const merged = Array.from(tradeMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                setTrades(merged);
             }
-            if (data.strategies) setStrategies(prev => Array.from(new Set([...prev, ...data.strategies])));
-            if (data.emotions) setEmotions(prev => Array.from(new Set([...prev, ...data.emotions])));
+            if (data.strategies) {
+                const merged = Array.from(new Set([...strategies, ...data.strategies]));
+                setStrategies(merged);
+            }
+            if (data.emotions) {
+                const merged = Array.from(new Set([...emotions, ...data.emotions]));
+                setEmotions(merged);
+            }
             if (data.portfolios && Array.isArray(data.portfolios)) {
-                setPortfolios(prev => {
-                    const portMap = new Map(prev.map(p => [p.id, p]));
-                    data.portfolios.forEach((p: Portfolio) => portMap.set(p.id, p));
-                    return Array.from(portMap.values());
-                });
-                setActivePortfolioIds(prev => Array.from(new Set([...prev, ...data.portfolios.map((p:any) => p.id)])));
+                const portMap = new Map(portfolios.map(p => [p.id, p]));
+                data.portfolios.forEach((p: Portfolio) => portMap.set(p.id, p));
+                const merged = Array.from(portMap.values());
+                setPortfolios(merged);
+                
+                const newActive = Array.from(new Set([...activePortfolioIds, ...data.portfolios.map((p: Portfolio) => p.id)]));
+                setActivePortfolioIds(newActive);
             }
             if (data.settings && data.settings.lossColor) setLossColor(data.settings.lossColor);
         }
@@ -350,27 +363,36 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const resetAllData = async (t: Translation) => {
-        if (window.confirm(t.resetConfirm)) {
-            try {
-                // Cloud Reset
+        console.log('🚀 Data Reset Started...');
+        try {
+                // Cloud Reset (Explicitly Clear)
                 if (user && authStatus === 'online') {
-                    // Logic similar to old useTradeData
-                    // We can just set empty here and let sync pick it up, or explicit delete
-                     await triggerCloudBackup(); // Use the sync hook logic to overwrite cloud with empty? 
-                     // Actually easier to just clear local and trigger sync, but standard is careful cloud manipulation
-                     // Let's stick to the direct ref logic or import from hook?
-                     // For simplicity: We cleared local data above, now we sync empty state.
+                     // 1. Explicitly clear user data in Firestore to prevent auto-restore
+                     console.log('🧹 Clearing Cloud Data...');
+                     await setDoc(doc(db, 'users', user.uid), {
+                         trades: [],
+                         strategies: [],
+                         emotions: [],
+                         portfolios: [], 
+                         settings: { lossColor: THEME.DEFAULT_LOSS },
+                         lastUpdated: new Date()
+                     });
+                     console.log('✅ Cloud Data Cleared');
                 }
 
-                localActions.clearLocalData();
+                // 2. Clear Local
+                console.log('🧹 Clearing Local Data...');
+                await localActions.clearLocalData();
+                
+                // 3. Reload
                 window.location.reload();
 
             } catch (error) {
                 console.error("Reset failed:", error);
+                // Fallback
                 localStorage.clear();
                 window.location.reload();
             }
-        }
     };
 
     const onResolveSyncConflict = (choice: 'merge' | 'discard') => {
@@ -391,6 +413,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isImportModalOpen: !!pendingImport,
         // Wrap actions that should trigger sync
         saveTrade: (t: Trade, id: string | null) => { localActions.saveTrade(t, id); setTimeout(triggerCloudBackup, 0); },
+        saveTrades: (ts: Omit<Trade, 'id' | 'timestamp'>[]) => { localActions.saveTrades(ts); setTimeout(triggerCloudBackup, 0); },
         deleteTrade: (id: string) => { localActions.deleteTrade(id); setTimeout(triggerCloudBackup, 0); },
         updatePortfolio: (id: string, k: any, v: any) => { localActions.updatePortfolio(id, k, v); setTimeout(triggerCloudBackup, 0); },
         addPortfolio: (p: Portfolio) => { 
@@ -450,7 +473,8 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         syncError, repairDatabase: resetFirestoreCache,
         actions: combinedActions,
         authStatus, user, login, logout,
-        t: I18N[lang] || I18N['zh']
+        t: I18N[lang] || I18N['zh'],
+        autoSyncParams, setAutoSyncParams
     };
 
     return (

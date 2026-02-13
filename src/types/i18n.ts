@@ -12,6 +12,13 @@ export interface Translation {
   trades: string; addTrade: string; editTrade: string; profit: string; loss: string;
   save: string; update: string; notePlaceholder: string; uncategorized: string;
   language: string; deleteTitle: string; deleteConfirm: string;
+  trade_code_placeholder: string;
+  trade_code_ph: string;
+  trade_pnl_ph: string;
+  trade_qty_ph: string;
+  trade_label_code: string;
+  trade_label_pnl: string;
+  trade_label_qty: string;
   cancel: string; delete: string; allStrategies: string; allEmotions: string; selected: string;
   filterByStrategy: string; selectStrategy: string; strategyAnalysis: string; riskSettings: string;
   ddThreshold: string; ddWarning: string; danger: string; warning: string;

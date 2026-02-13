@@ -64,4 +64,4 @@ export interface BrokerSyncResult {
   details: TransactionDetail[];
 }
 
-export type BackendStatus = 'ready' | 'server_only' | 'offline' | 'checking';
+export type BackendStatus = 'ready' | 'server_only' | 'offline' | 'checking' | 'sleeping';

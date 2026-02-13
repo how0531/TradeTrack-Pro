@@ -1,0 +1,21 @@
+[32m2026-02-10 16:33:43.181[0m | [33m[1mWARNING [0m | [36mimportlib._bootstrap[0m:[36m_call_with_frames_removed[0m:[36m488[0m - [33m[1mOptional: pip install shioaji[speed] for better performance.[0m
+=== Shioaji Simulation Status Check ===
+
+[Login] Authenticating with ID: R124731212...
+Response Code: 0 | Event Code: 0 | Info: host '210.59.255.161:80', hostname '210.59.255.161:80' IP 210.59.255.161:80 (host 1 of 1) (host connection attempt 1 of 1) (total connection attempt 1 of 1) | Event: Session up
+LOGIN SUCCESSFUL!
+[CA] Activating CA Certificate at C:\ekey\551\R124731212\S\Sinopac.pfx...
+CA ACTIVATED!
+
+[Account Status Report]
+Account ID      | Broker     | Type       | Signed (Passed?)    
+-----------------------------------------------------------------
+9162673         | F002000    | AccountType.Future | YES
+09800780        | 9A9J       | AccountType.H | NO
+9805600         | 9A92       | AccountType.Stock | NO
+9802004         | 9A9J       | AccountType.Stock | YES
+-----------------------------------------------------------------
+
+ACTION REQUIRED: You have accounts that are 'Not Signed'.
+You must complete the simulation test (Login + Place Order) for these accounts.
+Please refer to: https://sinotrade.github.io/zh/tutor/prepare/terms/#api_1

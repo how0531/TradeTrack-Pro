@@ -22,7 +22,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const [accountChoices, setAccountChoices] = useState<any[]>([]);
     
     // New state for backend health check
-    const [backendStatus, setBackendStatus] = useState<'ready' | 'server_only' | 'offline' | 'checking'>('checking');
+    const [backendStatus, setBackendStatus] = useState<'ready' | 'server_only' | 'offline' | 'checking' | 'sleeping'>('checking');
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [deleteTarget, setDeleteTarget] = useState<{configId: string, accountIndex: number} | null>(null);
     const [isVerifying, setIsVerifying] = useState<string | null>(null); // New: track verification per accountId
@@ -51,18 +51,30 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             const checkStatus = async () => {
                 setBackendStatus('checking');
                 const status = await validateBackendStatus();
-                setBackendStatus(status);
+                if (status === 'sleeping') {
+                    setBackendStatus('sleeping');
+                    const wake = await wakeUpBackend();
+                    setBackendStatus(wake.success ? 'ready' : 'offline');
+                } else {
+                    setBackendStatus(status);
+                }
             };
             checkStatus();
         } else {
-            setBackendStatus('ready'); // Default to ready when idle
+            setBackendStatus('ready');
         }
     }, [isEditing]);
 
     const handleManualPing = async () => {
         setBackendStatus('checking');
         const status = await validateBackendStatus();
-        setBackendStatus(status);
+        if (status === 'sleeping') {
+            setBackendStatus('sleeping');
+            const wake = await wakeUpBackend();
+            setBackendStatus(wake.success ? 'ready' : 'offline');
+        } else {
+            setBackendStatus(status);
+        }
     };
 
     const handleStartEdit = (id: string | 'new') => {
@@ -165,6 +177,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 brokerUsername: result.username,
                 environment: result.environment
             };
+
+            // Enhanced: Update verification status from single-login result
+            if (result.signedAccounts && result.signedAccounts.length > 0) {
+                updated.signedAccounts = result.signedAccounts.join(',');
+            }
             
             setLocalConfig(updated);
             if (isEditing === 'new') onAdd(updated);
@@ -308,9 +325,15 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         const masterConfig = configs.find(c => c.id === masterId);
                                         if (!masterConfig) return;
 
-                                        // Collect all unique accounts from all duplicates
+                                        // Collect all unique accounts and signed statuses
                                         const allAccounts = new Set<string>();
                                         const allBranches = new Map<string, string>(); // accId -> branchName
+                                        const allSigned = new Set<string>();
+
+                                        // Initial load from master
+                                        (masterConfig.signedAccounts || '').split(',').forEach(s => {
+                                            if (s.trim()) allSigned.add(s.trim());
+                                        });
 
                                         ids.forEach(id => {
                                             const cfg = configs.find(c => c.id === id);
@@ -321,6 +344,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             accs.forEach((accId, idx) => {
                                                 allAccounts.add(accId);
                                                 if (brs[idx]) allBranches.set(accId, brs[idx]);
+                                            });
+                                            
+                                            // Merge signed status
+                                            (cfg.signedAccounts || '').split(',').forEach(s => {
+                                                if (s.trim()) allSigned.add(s.trim());
                                             });
                                             
                                             // Delete the duplicates (except master)
@@ -335,7 +363,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             ...masterConfig,
                                             accounts: uniqueAccList.join(','),
                                             branchCode: uniqueAccList.join(','),
-                                            branch: uniqueBranchList.join(',')
+                                            branch: uniqueBranchList.join(','),
+                                            signedAccounts: Array.from(allSigned).join(',')
                                         });
                                     }
                                 });
@@ -480,7 +509,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 className={`
                                     group relative p-3.5 rounded-2xl border transition-all flex flex-col justify-center gap-2 overflow-hidden min-h-[80px]
                                     ${config.isConnected 
-                                        ? 'bg-gradient-to-br from-white/[0.08] to-zinc-950/40 border-white/20 shadow-[0_4px_16px_rgba(0,0,0,0.3),inset_0_1px_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl' 
+                                        ? isFuture
+                                            ? 'bg-gradient-to-br from-[#1E40AF]/20 to-zinc-950/50 border-[#1E40AF]/40 shadow-[0_4px_16px_rgba(30,64,175,0.15),inset_0_1px_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl'
+                                            : isSub
+                                                ? 'bg-gradient-to-br from-zinc-800/30 to-zinc-950/60 border-white/10 grayscale opacity-75 cursor-not-allowed shadow-none'
+                                                : 'bg-gradient-to-br from-[#D05A5A]/15 to-zinc-950/50 border-[#D05A5A]/30 shadow-[0_4px_16px_rgba(208,90,90,0.1),inset_0_1px_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl'
                                         : 'bg-white/[0.01] border-white/5 opacity-80'}
                                     hover:border-white/30 hover:bg-white/[0.04]
                                 `}
@@ -493,7 +526,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 <div className="flex justify-between items-center w-full h-full relative">
                                     <div className="flex flex-col gap-1 w-full items-center justify-center">
                                          {/* Row 1: Broker - Branch (Large) */}
-                                         <div className="flex items-center justify-center gap-2 w-full relative">
+                                         <div className="flex items-center justify-center gap-1 w-full relative">
                                              <h4 className="text-[13px] font-bold text-white/95 tracking-tight text-center">
                                                  {(() => {
                                                      const brokerName = '永豐金';
@@ -506,20 +539,20 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                      return `${brokerName} ${middle}`;
                                                  })()}
                                              </h4>
-                                             {/* Unsupported Badge (Next to Title) */}
-                                             {config.provider === 'shioaji' && config.signedAccounts !== undefined && !config.signedAccounts.includes(accId) && isSub && (
-                                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-500/10 border border-zinc-500/20 cursor-not-allowed transform scale-90 origin-left" title="目前 API 尚未支援複委託驗證">
-                                                    <span className="text-[8px] font-bold text-zinc-500 uppercase whitespace-nowrap">尚未支援</span>
+                                             {/* Unsupported Badge (Next to Title) - Always show for Sub-brokerage */}
+                                             {isSub && (
+                                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-500/10 border border-zinc-500/20 cursor-not-allowed">
+                                                    <span className="text-[9px] font-bold text-zinc-500 uppercase whitespace-nowrap">尚未支援</span>
                                                 </div>
                                              )}
                                          </div>
 
                                          {/* Row 2: Category - Account - Name (Small) */}
                                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                                            <span className={`px-1 rounded-[4px] text-[8px] font-bold border ${theme.fullClass} shadow-sm whitespace-nowrap h-[14px] flex items-center justify-center min-w-[24px]`}>
+                                            <span className={`px-1.5 rounded-[4px] text-[9px] font-bold border shadow-sm whitespace-nowrap h-[16px] flex items-center justify-center min-w-[32px] ${isSub ? 'border-zinc-700 text-zinc-600 bg-zinc-800/30' : theme.fullClass}`}>
                                                 {typeLabel}
                                             </span>
-                                            <span className="text-[10px] font-bold text-zinc-400 font-mono tracking-wide">
+                                            <span className={`text-[10px] font-bold font-mono tracking-wide ${isSub ? 'text-zinc-600' : 'text-zinc-400'}`}>
                                                 {accId}
                                             </span>
                                             <span className="text-[10px] font-medium text-zinc-500">
@@ -545,7 +578,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                      }}
                                                      disabled={isVerifying === accId}
                                                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 mt-0.5 hover:bg-amber-500/20 cursor-pointer transition-colors ${isVerifying === accId ? 'animate-pulse' : ''}`}
-                                                     title="點擊立即驗證"
+                                                     title={`點擊立即驗證 (ID: ${accId} | Signed: ${config.signedAccounts || 'None'})`}
                                                  >
                                                      {isVerifying === accId ? <Loader2 size={8} className="animate-spin text-amber-500" /> : <AlertCircle size={8} className="text-amber-500" />}
                                                      <span className="text-[8px] font-bold text-amber-500 uppercase">{isVerifying === accId ? '驗證中...' : '未驗證'}</span>
@@ -837,7 +870,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 {backendStatus === 'checking' && (
                                     <div className="flex items-center gap-1.5 text-zinc-500">
                                         <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-pulse"/>
-                                        <span className="uppercase tracking-tighter">喚醒中...</span>
+                                        <span className="uppercase tracking-tighter">連線中...</span>
+                                    </div>
+                                )}
+                                {backendStatus === 'sleeping' && (
+                                    <div className="flex items-center gap-1.5 text-amber-400">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.5)]"/>
+                                        <span>喚醒伺服器中... ⏳</span>
                                     </div>
                                 )}
                                 {backendStatus === 'ready' && (
@@ -855,7 +894,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 {backendStatus === 'offline' && (
                                     <div className="flex items-center gap-1.5 text-red-500">
                                         <div className="w-1.5 h-1.5 rounded-full bg-red-500"/>
-                                        <span>離線</span>
+                                        <span>無法連線</span>
                                     </div>
                                 )}
                                 <button 

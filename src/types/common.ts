@@ -19,3 +19,10 @@ export type Frequency = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 export type Lang = 'zh' | 'en';
 export type ViewMode = 'stats' | 'calendar' | 'logs' | 'settings';
 export type SyncStatus = 'synced' | 'saving' | 'error' | 'offline';
+
+export interface AutoSyncParams {
+    start: string;
+    end: string;
+    accounts: string[];
+    executed: boolean;
+}

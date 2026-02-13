@@ -343,7 +343,8 @@ export const calculateMetrics = (
         avgWin: wins > 0 ? gProfit/wins : 0, 
         avgLoss: losses > 0 ? gLoss/losses : 0, 
         totalTrades: sortedTrades.length,
-        maxStagnationDays
+        maxStagnationDays,
+        expectancy: sortedTrades.length > 0 ? netProfit / sortedTrades.length : 0
     };
 };
 

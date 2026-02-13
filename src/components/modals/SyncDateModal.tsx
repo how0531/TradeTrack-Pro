@@ -439,28 +439,39 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         if (isFuture) {
           const entry = d.entryPrice || 0;
           const exit = d.exitPrice || 0;
+          const absQty = Math.abs(d.quantity || 1) / 1; // futures qty
+          
           if (entry > 0 && exit > 0) {
-            // Case 1: Exact Prices Known -> Show real points (Gross)
-            const pts = Number(Math.abs(exit - entry).toFixed(2));
-            noteValue = `${d.pnl >= 0 ? '+' : '-'}${pts} pts`;
+            // Case 1: Exact Prices Known -> Show Total Points (Pts * Qty)
+            // Previous: const pts = Number(Math.abs(exit - entry).toFixed(2));
+            // New: Total Points = (Exit - Entry) * Qty
+            const diff = Math.abs(exit - entry);
+            const totalPts = Number((diff * absQty).toFixed(2));
+            noteValue = `${d.pnl >= 0 ? '+' : '-'}${totalPts} pts`;
           } else if (d.yield && d.yield !== 0) {
-            // Case 2: Yield Known (from API) -> Show ROI %
+            // Case 2: Yield Known -> Stick to ROI % if no price info (safest)
              const yieldVal = Number(d.yield);
              const y = yieldVal.toFixed(2);
              noteValue = `${yieldVal > 0 ? "+" : ""}${y}%`;
           } else {
-            // Case 3: Fallback -> Derive points from PnL / (multiplier * quantity)
+            // Case 3: Fallback -> Derive Total Points from PnL / Multiplier
+            // Legacy: Derived average points (PnL / Mult / Qty)
+            // New: Derive Total Points (PnL / Mult)
             const code = d.code || '';
             let multiplier = 200; // 台指期 default
             if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
             else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
             else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
-            const absQty = Math.abs(d.quantity || 1) / 1; // futures qty is already in lots
-            const guessedPts = Math.abs(d.pnl) / multiplier / absQty;
-            if (guessedPts > 0) {
-              noteValue = `${d.pnl >= 0 ? '+' : '-'}${Number(guessedPts.toFixed(0))} pts`;
+            else if (code.includes('XIF') || code.includes('東證')) multiplier = 200; // Guess
+            else if (code.includes('GTF') || code.includes('黃金')) multiplier = 100; // Guess
+            
+            // Total Points = Total PnL / Multiplier
+            const totalDerivedPts = Math.abs(d.pnl) / multiplier;
+            
+            if (totalDerivedPts > 0) {
+              noteValue = `${d.pnl >= 0 ? '+' : '-'}${Number(totalDerivedPts.toFixed(0))} pts`;
             } else {
-              noteValue = '0 pts';
+              noteValue = '0 pts'; // Should correspond to 0 PnL
             }
           }
         }
@@ -499,7 +510,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           configId: (d as any).configId,
           sourceKey: (d as any).sourceKey,
           entryPrice: d.entryPrice,
-          exitPrice: d.exitPrice
+          exitPrice: d.exitPrice,
+          points: noteValue // Phase 11: Persist points independently
         };
       });
 
@@ -555,7 +567,29 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
             const mergedSheets = mergedQtyValue.toFixed(0);
             
             const noteParts = existing.note.split("|");
-            if (noteParts.length >= 2) {
+            
+            // 🔧 FIX: Recalculate Points for Merged Futures
+            if (isFuture && noteParts.length >= 2) {
+                 // Try to recalculate points based on merged data
+                 let newPtsStr = noteParts[1].trim(); // default to old
+                 
+                 // Method A: PnL based (most robust for sum)
+                 if (existing.pnl !== 0) {
+                     const code = existing.code.toUpperCase();
+                     let multiplier = 200;
+                     if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
+                     else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
+                     else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
+                     else if (code.includes('XIF') || code.includes('東證')) multiplier = 200; 
+                     else if (code.includes('GTF') || code.includes('黃金')) multiplier = 100;
+
+                     const totalDerivedPts = Number((Math.abs(existing.pnl) / multiplier).toFixed(2));
+                     newPtsStr = `${existing.pnl >= 0 ? '+' : '-'}${totalDerivedPts} pts`;
+                 }
+                 
+                 existing.note = `${noteParts[0]} | ${newPtsStr} | ${mergedSheets}${unit}`.trim();
+
+            } else if (noteParts.length >= 2) {
               existing.note =
                 `${noteParts[0]} | ${noteParts[1]} | ${mergedSheets}${unit}`.trim();
             }
@@ -567,7 +601,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         processedTrades = Array.from(groupedMap.values());
       }
 
-      // 2. 重複交易檢測 (與現有交易比對)
+         // 2. 重複交易檢測 (與現有交易比對)
       // 判斷標準：同日期 + 同標的 (精確比對) + 同損益 (±1 容差)
       // 注意：這只是「標記」為重複並預設不勾選，不會刪除交易
       processedTrades = processedTrades.map((trade) => {
@@ -580,10 +614,20 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           const match = existingTrades.find((e) => {
             const sameDate = e.date === trade.date;
 
-            // 標的比對：更精確的匹配 - 使用正規表達式確保完整代號匹配
-            // 例如 "2890" 應該匹配 "2890 永豐金" 但不應該匹配 "28901"
-            const codeRegex = new RegExp(`\\b${tradeStockCode}\\b`);
-            const sameCode = e.note && codeRegex.test(e.note);
+            // 標的比對優先級：
+            // 1. 如果資料庫已有 code 欄位 (新版)，直接比對 code
+            // 2. 如果是舊資料 (無 code)，則比對 Note 中的代號 (Regex)
+            let sameCode = false;
+            
+            if (e.code) {
+                 // 新版邏輯：直接比對 Code (去除空白後)
+                 // e.g. "2890 永豐金" vs "2890 永豐金"
+                 sameCode = e.code.replace(/\s/g, '') === trade.code.replace(/\s/g, '');
+            } else {
+                 // 舊版備援：RegExp check on Note
+                 const codeRegex = new RegExp(`\\b${tradeStockCode}\\b`);
+                 sameCode = !!(e.note && codeRegex.test(e.note));
+            }
 
             // 損益比對 (允許浮點數微小誤差)
             const samePnl = Math.abs(e.pnl - trade.pnl) < 1;
@@ -593,7 +637,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
           if (match) {
             isDup = true;
-            dupReason = "日期、標的與損益重複";
+            dupReason = "日期、標的與損益重複 (自動偵測)";
           }
         }
 
@@ -601,7 +645,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           ...trade,
           isDuplicate: isDup,
           duplicateReason: dupReason,
-          selected: !isDup, // 若重複預設不勾選，但仍顯示供使用者決定
+          selected: !isDup, 
         };
       });
       console.log(
@@ -799,13 +843,15 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                       return (
                         <div
                           key={uniqueKey}
-                          onClick={() => toggleConfigSelection(config.id, bCode, subIdx)}
+                          onClick={() => !isSub && toggleConfigSelection(config.id, bCode, subIdx)}
                           className={`
-                                    relative p-4 rounded-xl border transition-all cursor-pointer backdrop-blur-xl backdrop-saturate-150 group select-none
+                                    relative p-4 rounded-xl border transition-all backdrop-blur-xl backdrop-saturate-150 group select-none
                                     ${
-                                      isSelected
-                                        ? "bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05),inset_0_1px_1px_rgba(255,255,255,0.1)]"
-                                        : "bg-[#1C1E22]/35 border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] hover:bg-white/[0.05] hover:border-white/20"
+                                      isSub 
+                                        ? "opacity-40 cursor-not-allowed bg-black/40 border-white/5 grayscale" 
+                                        : "cursor-pointer " + (isSelected
+                                            ? "bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05),inset_0_1px_1px_rgba(255,255,255,0.1)]"
+                                            : "bg-[#1C1E22]/35 border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] hover:bg-white/[0.05] hover:border-white/20")
                                     }
                                 `}
                         >
@@ -813,21 +859,22 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                {/* 1. Left Checkbox (New Position) */}
                                <div 
                                    className={`shrink-0 w-5 h-5 rounded-[6px] border transition-all flex items-center justify-center ${
-                                       isSelected 
-                                       ? "bg-[#C8B085] border-[#C8B085] shadow-[0_0_8px_rgba(200,176,133,0.4)]" 
-                                       : "bg-transparent border-white/20 group-hover:border-white/40"
+                                       isSub
+                                         ? "bg-transparent border-white/10"
+                                         : isSelected 
+                                            ? "bg-[#C8B085] border-[#C8B085] shadow-[0_0_8px_rgba(200,176,133,0.4)]" 
+                                            : "bg-transparent border-white/20 group-hover:border-white/40"
                                    }`}
                                >
-                                   {isSelected && <Check size={12} className="text-[#14161B] stroke-[4]" />}
+                                   {isSelected && !isSub && <Check size={12} className="text-[#14161B] stroke-[4]" />}
                                </div>
-
+                           
                                {/* 2. Info Content */}
                                <div className="flex-1 flex flex-col gap-1 min-w-0">
                                    <div className="flex items-center gap-2">
-                                        <span className={`text-[12px] font-bold tracking-wide truncate ${isSelected ? 'text-white' : 'text-zinc-200'}`}>
+                                        <span className={`text-[12px] font-bold tracking-wide truncate ${isSelected ? 'text-white' : 'text-zinc-200'} ${isSub ? 'text-zinc-500' : ''}`}>
                                            {(() => {
                                                const brokerName = '永豐金';
-                                               // 🔧 CRITICAL FIX: Strip redundant broker name from branch text to prevent "永豐金-永豐金-板新"
                                                let middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '');
                                                middle = middle.replace('永豐金-', '').replace('永豐金', '').trim();
                                                
@@ -838,10 +885,14 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                         </span>
                                    </div>
                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${typeColorClass} shadow-sm whitespace-nowrap min-w-[48px] w-auto flex items-center justify-center`}>
-                                           {typeLabel}
+                                       <span className={`rounded-full font-bold border shadow-sm whitespace-nowrap flex items-center justify-center ${
+                                            isSub 
+                                                ? 'px-1.5 py-0.5 text-[8px] min-w-[42px] border-zinc-700 text-zinc-600 bg-zinc-800/50' 
+                                                : `px-2 py-0.5 text-[9px] min-w-[48px] w-auto ${typeColorClass}`
+                                       }`}>
+                                           {isSub ? "尚未支援" : typeLabel}
                                        </span>
-                                        <span className="text-[10px] font-bold text-zinc-500 font-mono tracking-wide whitespace-nowrap">
+                                        <span className={`text-[10px] font-bold font-mono tracking-wide whitespace-nowrap ${isSub ? 'text-zinc-600' : 'text-zinc-500'}`}>
                                             {(() => {
                                                 const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
                                                 const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -1139,16 +1190,24 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                     if (isFuture) {
                                         const hasPrices = tx.entryPrice != null && tx.exitPrice != null && tx.entryPrice > 0 && tx.exitPrice > 0;
                                         if (hasPrices) {
-                                            const pts = Number(Math.abs(tx.exitPrice! - tx.entryPrice!).toFixed(2));
-                                            return `${tx.pnl >= 0 ? '+' : '-'}${pts.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
+                                            // 🔧 FIX: Show TOTAL Pts (Sum) = |Exit - Entry| * Abs(Qty)
+                                            const diff = Math.abs(tx.exitPrice! - tx.entryPrice!);
+                                            const absQty = Math.abs(tx.quantity || 1);
+                                            const totalPts = Number((diff * absQty).toFixed(2));
+                                            return `${tx.pnl >= 0 ? '+' : '-'}${totalPts.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
                                         } else if (tx.pnl !== 0) {
                                             const code = tx.code.toUpperCase();
                                             let multiplier = 200;
                                             if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
                                             else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
                                             else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
-                                            const guessedPts = Number((Math.abs(tx.pnl) / multiplier / Math.abs(tx.quantity || 1)).toFixed(2));
-                                            if (guessedPts > 0) return `${tx.pnl >= 0 ? '+' : '-'}${guessedPts.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
+                                            else if (code.includes('XIF') || code.includes('東證')) multiplier = 200; 
+                                            else if (code.includes('GTF') || code.includes('黃金')) multiplier = 100;
+                                            
+                                            // 🔧 FIX: Show TOTAL Pts (Sum) = Total PnL / Multiplier
+                                            // Removed division by Qty
+                                            const totalDerivedPts = Number((Math.abs(tx.pnl) / multiplier).toFixed(2));
+                                            if (totalDerivedPts > 0) return `${tx.pnl >= 0 ? '+' : '-'}${totalDerivedPts.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
                                         }
                                     }
                                     return (tx.pnl >= 0 ? "+" : "") + formatMoney(tx.pnl);

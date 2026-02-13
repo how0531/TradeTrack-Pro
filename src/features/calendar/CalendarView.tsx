@@ -25,8 +25,17 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
     const [pickerYear, setPickerYear] = useState(year);
 
     // Sync State
+    // Sync State
     const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
-    const { trades, activeBrokerConfig, updateBrokerConfig, actions, activePortfolioIds, activeBrokerId } = useTradeContext();
+    const { trades, activeBrokerConfig, updateBrokerConfig, actions, activePortfolioIds, activeBrokerId, autoSyncParams, setAutoSyncParams } = useTradeContext();
+
+    // Auto-Open Modal if params exist
+    useEffect(() => {
+        if (autoSyncParams && !autoSyncParams.executed && !isSyncModalOpen) {
+            console.log('🤖 [Calendar] Auto-Opening Sync Modal');
+            setIsSyncModalOpen(true);
+        }
+    }, [autoSyncParams, isSyncModalOpen]);
 
     useEffect(() => {
         setPickerYear(year);
@@ -60,26 +69,43 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
     }, [calendarDays]);
 
     // HANDLE SYNC SUCCESS (Wizard)
-    const handleSyncSuccess = (transactions: any[]) => {
+    const handleSyncSuccess = async (transactions: any[]) => {
+         console.group("📦 [IMPORT] Starting Bulk Import");
+         console.log(`Target: ${transactions.length} items`);
+         
          // Cleanup Legacy "Daily Summary" trades to prevent double counting
-         // If we are importing detailed trades for "2026-01-16", we should remove "sync-2026-01-16"
          const affectedDates = new Set(transactions.map(t => t.date));
          affectedDates.forEach(date => {
              actions.deleteTrade(`sync-${date}`);
          });
 
-         transactions.forEach(tx => {
-             const newTrade = {
-                 id: tx.id,
-                 date: tx.date,
-                 pnl: tx.pnl,
-                 strategy: tx.strategy || '',
-                 emotion: tx.emotion || '',
-                 note: tx.note, // Use the note from the modal (already formatted or edited)
-                 portfolioId: tx.portfolioId
-             };
-             actions.saveTrade(newTrade, null);
-         });
+         const newTrades = transactions.map(tx => ({
+             id: tx.id,
+             date: tx.date,
+             pnl: tx.pnl,
+             strategy: tx.strategy || '',
+             emotion: tx.emotion || '',
+             note: tx.note,
+             portfolioId: tx.portfolioId,
+             // 🛡️ Data Integrity Hardening: Persist Critical Fields
+             code: tx.code,
+             quantity: tx.quantity,
+             entryPrice: tx.entryPrice,
+             exitPrice: tx.exitPrice,
+             category: tx.category,
+             orderNo: tx.orderNo
+         }));
+
+         try {
+             await actions.saveTrades(newTrades);
+             console.log("✅ [IMPORT] Successfully saved all items to IndexedDB");
+             // Double check count in console for user verification
+             console.table(newTrades.map(t => ({ date: t.date, pnl: t.pnl, id: t.id })));
+         } catch (error) {
+             console.error("❌ [IMPORT] Failed to bulk save:", error);
+             alert("匯入失敗：資料庫寫入錯誤");
+         }
+         console.groupEnd();
     };
 
     // Enhanced Bubble Style with Rose/Emerald and Depth
@@ -231,6 +257,12 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
                     onSuccess={handleSyncSuccess}
                     lang={lang}
                     existingTrades={trades}
+                    autoSyncParams={autoSyncParams}
+                    onAutoSyncComplete={() => {
+                        if (autoSyncParams) {
+                            setAutoSyncParams({ ...autoSyncParams, executed: true });
+                        }
+                    }}
                 />
 
 

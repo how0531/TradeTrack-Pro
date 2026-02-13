@@ -104,6 +104,7 @@ def get_broker_profile():
             "username": result.get("username", "Unknown"),
             "branchCode": result.get("branch_code", "Unknown"),
             "environment": result.get("environment", "unknown"),
+            "signedAccounts": result.get("signed_accounts", []),
             "apiKeyHint": (
                 f"{data['apiKey'][:4]}...{data['apiKey'][-4:]}"
                 if data.get("apiKey")
@@ -181,6 +182,7 @@ def get_broker_pnl():
             "details": result.get("details", []),
             "username": result.get("username"),
             "branchCode": result.get("branch_code"),
+            "summary": result.get("summary", {})  # Pass through the new summary
         }
         return jsonify(response)
 
@@ -223,6 +225,35 @@ def verify_broker_account():
     except Exception as e:
         print(f"\n[EXCEPTION] Verification Error: {str(e)}", flush=True)
         traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/stock/info/<code_input>", methods=["GET"])
+def get_stock_info_route(code_input):
+    """
+    獲取股票資訊 (目前僅名稱)
+    """
+    try:
+        from core.stock_info import fetch_stock_name
+        
+        # Security check: Ensure code is alphanumeric only
+        if not code_input.isalnum():
+             return jsonify({"status": "error", "message": "Invalid code format"}), 400
+             
+        name = fetch_stock_name(code_input)
+        
+        if name:
+            return jsonify({
+                "status": "success",
+                "code": code_input,
+                "name": name
+            })
+        else:
+             # Try fallback to mocked database or common list if fetch fails?
+             # For now, just return not found
+             return jsonify({"status": "error", "message": "Stock not found"}), 404
+             
+    except Exception as e:
+        print(f"[StockInfo Error] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

@@ -11,7 +11,7 @@ export interface TradeModalProps {
   isOpen: boolean;
   onClose: () => void;
   form: Trade;
-  setForm: (t: Trade) => void;
+  setForm: React.Dispatch<React.SetStateAction<Trade>>;
   onSubmit: (e: React.FormEvent) => void;
   isEditing: boolean;
   // Context provided: strategies, emotions, portfolios, lang, metrics

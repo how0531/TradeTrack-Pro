@@ -33,6 +33,21 @@ export function useBrokerStatus(options: UseBrokerStatusOptions = {}) {
       setStatus(newStatus);
       setLastChecked(new Date());
       logger.success(`[useBrokerStatus] Status: ${newStatus}`);
+      
+      // 🔄 Auto wake-up: if sleeping, trigger wake without user action
+      if (newStatus === 'sleeping') {
+        logger.info('[useBrokerStatus] Server sleeping — auto waking up...');
+        setStatus('sleeping');
+        const result = await wakeUpBackend();
+        if (result.success) {
+          setStatus('ready');
+          logger.success('[useBrokerStatus] Auto wake-up successful!');
+        } else {
+          setStatus('offline');
+          logger.error('[useBrokerStatus] Auto wake-up failed', result.error);
+        }
+        setLastChecked(new Date());
+      }
     } catch (error) {
       logger.error('[useBrokerStatus] Status check failed', error);
       setStatus('offline');

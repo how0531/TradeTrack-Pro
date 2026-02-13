@@ -90,6 +90,16 @@ export const useIndexedDBData = () => {
       }
     },
 
+    saveTrades: async (trades: Omit<Trade, 'id' | 'timestamp'>[]) => {
+      const now = Date.now();
+      const newTrades = trades.map((t, index) => ({
+        ...t,
+        id: `trade-${now}-${index}`,
+        timestamp: new Date().toISOString()
+      }));
+      await db.trades.bulkAdd(newTrades as Trade[]);
+    },
+
     deleteTrade: async (id: string) => {
       await db.trades.delete(id);
     },

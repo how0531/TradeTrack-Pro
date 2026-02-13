@@ -277,14 +277,14 @@ export interface BrokerProfile {
  * Returns 'ready' if the backend can process API requests, 'server_only' if only health endpoint works,
  * or 'offline' if completely unreachable.
  */
-export const validateBackendStatus = async (): Promise<'ready' | 'server_only' | 'offline'> => {
+export const validateBackendStatus = async (): Promise<'ready' | 'server_only' | 'offline' | 'sleeping'> => {
     const startTime = performance.now();
     console.log('🔍 [BACKEND_CHECK] Starting comprehensive validation:', new Date().toISOString());
     
     try {
         // Step 1: Check if server is alive
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s for Render cold boot
         
         const healthResponse = await fetch(`${API_BASE}/health`, { signal: controller.signal });
         clearTimeout(timeoutId);
@@ -346,7 +346,8 @@ export const validateBackendStatus = async (): Promise<'ready' | 'server_only' |
     } catch (e: any) {
         const elapsed = performance.now() - startTime;
         if (e.name === 'AbortError') {
-            console.warn(`❌ [BACKEND_CHECK] Timeout after ${elapsed.toFixed(0)}ms`);
+            console.warn(`😴 [BACKEND_CHECK] Timeout after ${elapsed.toFixed(0)}ms — server likely sleeping`);
+            return 'sleeping';
         } else {
             console.warn(`❌ [BACKEND_CHECK] Failed: ${e.message} (${elapsed.toFixed(0)}ms)`);
         }
