@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw, ChevronRight, ArrowDown } from 'lucide-react';
+import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw, ChevronRight, ArrowDown, Upload } from 'lucide-react';
 import { BrokerConfig } from '../../../types';
 import { fetchBrokerProfile, pingBackend, validateBackendStatus, wakeUpBackend, verifyBrokerAccount } from '../../../services/brokerService';
 import { useEffect } from 'react';
@@ -799,18 +799,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     htmlFor="ca-upload"
                                                     className="relative group cursor-pointer block"
                                                 >
-                                                    <div className="w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 hover:border-[#C8B085]/50 rounded-xl px-4 py-6 flex flex-col items-center justify-center gap-2 transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(200,176,133,0.1)]">
-                                                        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                                                            <FileKey size={14} className="text-zinc-500 group-hover:text-[#C8B085] transition-colors" />
+                                                    {/* PRO MAX UI: Single-line input style for empty state */}
+                                                    <div className="w-full bg-black/40 border border-white/5 hover:border-[#C8B085]/50 rounded-xl px-4 py-3 flex items-center gap-3 transition-all duration-300 h-[46px] group-hover:shadow-[0_0_15px_rgba(200,176,133,0.05)]">
+                                                        <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
+                                                            <Upload size={10} className="text-zinc-500 group-hover:text-[#C8B085] transition-colors" />
                                                         </div>
-                                                        <div className="flex flex-col items-center gap-0.5">
-                                                            <span className="text-[11px] font-bold text-zinc-400 group-hover:text-white transition-colors">
-                                                                {lang === 'zh' ? '點擊上傳 .pfx 憑證' : 'Click to Upload .pfx'}
-                                                            </span>
-                                                            <span className="text-[9px] text-zinc-600 group-hover:text-zinc-500 transition-colors font-mono">
-                                                                {localConfig.caPath || (lang === 'zh' ? '尚未選擇檔案' : 'No file selected')}
-                                                            </span>
-                                                        </div>
+                                                        <span className="text-xs font-medium text-zinc-500 group-hover:text-zinc-300 transition-colors truncate">
+                                                            {lang === 'zh' ? '點擊上傳 .pfx 憑證' : 'Click to Upload .pfx'}
+                                                        </span>
                                                     </div>
                                                 </label>
                                             ) : (
