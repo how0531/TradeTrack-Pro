@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw, ChevronRight, ArrowDown, Upload, HelpCircle } from 'lucide-react';
 import { BrokerConfig } from '../../../types';
@@ -41,6 +41,26 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         message?: string,
         error?: string
     }>>({});
+
+    // ===== 優化新增狀態 =====
+    // Stepper：控制登入 Modal 顯示哪一步
+    const [loginStep, setLoginStep] = useState<1 | 2 | 3>(1);
+    // 結構化進度：替代簡單的 progressMsg 字串
+    const [loginProgress, setLoginProgress] = useState<{
+        phase: 'idle' | 'waking' | 'connecting' | 'authenticating' | 'listing' | 'done',
+        message: string,
+        startTime: number | null
+    }>({ phase: 'idle', message: '', startTime: null });
+    // 計時器：顯示已等待秒數
+    const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    // 登入成功結果摘要
+    const [loginResult, setLoginResult] = useState<{
+        show: boolean,
+        successCount: number,
+        failCount: number,
+        accounts: { name: string, success: boolean, error?: string }[]
+    } | null>(null);
 
     const emptyConfig: BrokerConfig = {
         id: '',
@@ -96,7 +116,60 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         setIsEditing(id);
         setErrorMsg(null);
         setAccountChoices([]);
+        setLoginStep(1); // 重置 Stepper 回第一步
+        setLoginResult(null); // 清除上次結果
     };
+
+    // ===== 錯誤分類器：將技術性錯誤轉為友善訊息 =====
+    const classifyError = useCallback((rawMsg: string): { message: string, action?: 'retry' | 'upload_ca' | 'sign_api' } => {
+        if (rawMsg.includes('Failed to fetch') || rawMsg.includes('NetworkError')) {
+            return {
+                message: '無法連接後端伺服器。服務可能正在冷啟動中（約 30 秒），請點擊重試。',
+                action: 'retry'
+            };
+        }
+        if (rawMsg.includes('key:') && rawMsg.includes('not exist')) {
+            return {
+                message: 'API Key 無效或不存在，請至永豐金管理頁面重新確認金鑰。',
+                action: 'retry'
+            };
+        }
+        if (rawMsg.includes('CA') || rawMsg.includes('憑證未啟動') || rawMsg.includes('找不到憑證')) {
+            return {
+                message: 'CA 憑證問題：請重新上傳 .pfx 憑證檔案。',
+                action: 'upload_ca'
+            };
+        }
+        if (rawMsg.includes('Account Not Acceptable')) {
+            return {
+                message: '帳號未授權，請先至永豐金網站簽署 API 風險預告同意書。',
+                action: 'sign_api'
+            };
+        }
+        if (rawMsg.includes('timeout') || rawMsg.includes('Timeout') || rawMsg.includes('AbortError')) {
+            return {
+                message: '伺服器回應超時，可能正在忙碌中。請稍等 10 秒後重試。',
+                action: 'retry'
+            };
+        }
+        return { message: rawMsg };
+    }, []);
+
+    // ===== 計時器控制 =====
+    const startElapsedTimer = useCallback(() => {
+        setElapsedSeconds(0);
+        if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+        elapsedTimerRef.current = setInterval(() => {
+            setElapsedSeconds(prev => prev + 1);
+        }, 1000);
+    }, []);
+
+    const stopElapsedTimer = useCallback(() => {
+        if (elapsedTimerRef.current) {
+            clearInterval(elapsedTimerRef.current);
+            elapsedTimerRef.current = null;
+        }
+    }, []);
 
     const handleChange = (key: keyof BrokerConfig, val: any) => {
         let finalVal = val;
@@ -123,6 +196,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         setIsTesting(true);
         setErrorMsg(null);
         setAccountChoices([]);
+        startElapsedTimer();
 
         // Validation
         const newErrors: Record<string, boolean> = {};
@@ -134,32 +208,50 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
-            setErrorMsg(lang === 'zh' ? '請填寫所有必填欄位' : '請填寫所有必填欄位 (Please fill all fields)');
+            setErrorMsg('請填寫所有必填欄位');
             setIsTesting(false);
+            stopElapsedTimer();
             return;
         }
         setErrors({});
 
         try {
-            // Step 1: Wake up backend if needed
-            setProgressMsg('正在喚醒後端伺服器 (Waking up backend)...');
-            setErrorMsg(null);
+            // 階段 1: 喚醒後端（如果已 ready 則跳過）
+            if (backendStatus !== 'ready') {
+                setLoginProgress({ phase: 'waking', message: '正在喚醒後端伺服器...', startTime: Date.now() });
+                setProgressMsg('🔄 正在喚醒後端伺服器...');
+                setErrorMsg(null);
 
-            const wakeResult = await wakeUpBackend();
-            if (!wakeResult.success) {
-                const specificError = wakeResult.error || 'Unknown Error';
-                console.error('[BrokerSettings] Wake Error:', specificError);
-                setErrorMsg(`後端服務喚醒失敗 (${specificError})。請檢查網路連線或稍後再試。`);
-                setIsTesting(false);
-                setProgressMsg('');
-                return;
+                const wakeResult = await wakeUpBackend();
+                if (!wakeResult.success) {
+                    const classified = classifyError(wakeResult.error || 'Backend unreachable');
+                    setErrorMsg(classified.message);
+                    setIsTesting(false);
+                    setProgressMsg('');
+                    setLoginProgress({ phase: 'idle', message: '', startTime: null });
+                    stopElapsedTimer();
+                    return;
+                }
+                setBackendStatus('ready');
             }
 
-            // Step 2: Attempt login with progress callback
-            setProgressMsg('正在連接券商 API...');
+            // 階段 2: 連接券商 API
+            setLoginProgress({ phase: 'connecting', message: '正在連接券商 API...', startTime: Date.now() });
+            setProgressMsg('🔑 正在驗證憑證與連線...');
+
+            // 短暫延遲讓狀態變化可見
+            await new Promise(r => setTimeout(r, 200));
+
+            // 階段 3: 驗證身份
+            setLoginProgress({ phase: 'authenticating', message: '正在驗證身份...', startTime: Date.now() });
+            setProgressMsg('🔐 正在驗證身份...');
+
             const result = await fetchBrokerProfile(localConfig, (msg) => {
                 setProgressMsg(msg);
             });
+
+            // 階段 4: 取得帳號列表
+            setLoginProgress({ phase: 'listing', message: '正在取得帳號列表...', startTime: Date.now() });
 
             if (result.status === 'multiple_accounts' && result.accounts) {
                 setAccountChoices(result.accounts);
@@ -168,13 +260,15 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 const signedIds = result.accounts.filter((a: any) => a.signed).map((a: any) => a.account_id).join(',');
                 if (localConfig) setLocalConfig({ ...localConfig, signedAccounts: signedIds });
 
-                setErrorMsg(lang === 'zh' ? "偵測到多個帳戶，請選擇一個分公司" : "偵測到多個帳戶，請選擇一個分公司 (Multiple accounts)");
+                setProgressMsg('');
+                setLoginProgress({ phase: 'done', message: '已取得帳號列表', startTime: null });
                 setIsTesting(false);
+                stopElapsedTimer();
                 return;
             }
 
             if (result.environment !== 'production') {
-                throw new Error(lang === 'zh' ? "僅支援正式環境 (Production)" : "僅支援正式環境 (Production required)");
+                throw new Error('僅支援正式環境 (Production)');
             }
 
             const updated: BrokerConfig = {
@@ -182,12 +276,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 isConnected: true,
                 branch: result.branch || localConfig.branch,
                 branchCode: result.branchCode,
-                accounts: result.accountId || result.branchCode, // Use accountId if available, fallback to branchCode
+                accounts: result.accountId || result.branchCode,
                 brokerUsername: result.username,
                 environment: result.environment
             };
 
-            // Enhanced: Update verification status from single-login result
             if (result.signedAccounts && result.signedAccounts.length > 0) {
                 updated.signedAccounts = result.signedAccounts.join(',');
             }
@@ -196,22 +289,25 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             if (isEditing === 'new') onAdd(updated);
             else onUpdate(localConfig.id, updated);
 
+            setLoginProgress({ phase: 'done', message: '登入成功', startTime: null });
             setIsEditing(null);
             setIsTesting(false);
             setAccountChoices([]);
             setProgressMsg('');
+            stopElapsedTimer();
         } catch (error: any) {
-            let msg = error?.message || '連線失敗 (Connection failed)';
-            if (msg.includes('Failed to fetch')) {
-                msg = lang === 'zh'
-                    ? "連線失敗：後端服務可能正在啟動中，請稍候 30 秒再試一次。"
-                    : "連線失敗：後端服務可能正在啟動中，請稍候 30 秒再試一次。 (Connection failed: Backend starting)";
-                // 再次嘗試 ping 以確保喚醒
+            const rawMsg = error?.message || '連線失敗 (Connection failed)';
+            const classified = classifyError(rawMsg);
+            setErrorMsg(classified.message);
+
+            // 網路錯誤時嘗試預喚醒
+            if (classified.action === 'retry') {
                 pingBackend();
             }
-            setErrorMsg(msg);
             setIsTesting(false);
             setProgressMsg('');
+            setLoginProgress({ phase: 'idle', message: '', startTime: null });
+            stopElapsedTimer();
         }
     };
 
@@ -663,8 +759,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             </div>
 
             {isEditing && localConfig && (
-                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-                    <div className="w-full max-w-md bg-[#1C1E22] rounded-3xl border border-white/10 shadow-3xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4">
+                    <div className="w-full max-w-[95vw] sm:max-w-md bg-[#1C1E22] rounded-3xl border border-white/10 shadow-3xl overflow-hidden flex flex-col max-h-[90vh]">
+                        {/* Modal Header */}
                         <div className="p-6 border-b border-zinc-800/50 flex justify-between items-center">
                             <h4 className="text-sm font-bold text-white uppercase tracking-wider">
                                 {isEditing === 'new' ? '新增券商帳號' : '編輯帳號資訊'}
@@ -672,226 +769,330 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             <button onClick={() => setIsEditing(null)} className="p-2 rounded-xl bg-white/5 text-zinc-600 hover:text-white transition-colors"><X size={20} /></button>
                         </div>
 
-                        <div className="p-5 space-y-6 overflow-y-auto custom-scrollbar">
+                        {/* ===== Stepper 進度條 ===== */}
+                        <div className="px-4 sm:px-6 pt-4 pb-2">
+                            <div className="flex items-center justify-between relative">
+                                {/* 背景連線 */}
+                                <div className="absolute top-4 left-[16%] right-[16%] h-[2px] bg-zinc-800" />
+                                <div className="absolute top-4 left-[16%] h-[2px] bg-gradient-to-r from-[#C8B085] to-[#C8B085] transition-all duration-500"
+                                    style={{ width: loginStep === 1 ? '0%' : loginStep === 2 ? '33%' : '68%' }} />
+                                {/* 步驟圓圈 */}
+                                {[
+                                    { num: 1, label: '取得金鑰' },
+                                    { num: 2, label: '填寫資訊' },
+                                    { num: 3, label: '上傳憑證' }
+                                ].map(({ num, label }) => (
+                                    <button
+                                        key={num}
+                                        type="button"
+                                        onClick={() => !isTesting && setLoginStep(num as 1 | 2 | 3)}
+                                        className="flex flex-col items-center gap-1.5 relative z-10 group"
+                                    >
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold transition-all duration-300 border-2
+                                            ${loginStep > num
+                                                ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'
+                                                : loginStep === num
+                                                    ? 'bg-[#C8B085]/20 border-[#C8B085] text-[#C8B085] shadow-[0_0_12px_rgba(200,176,133,0.3)]'
+                                                    : 'bg-zinc-900 border-zinc-700 text-zinc-600'
+                                            }`}
+                                        >
+                                            {loginStep > num ? <Check size={14} strokeWidth={3} /> : num}
+                                        </div>
+                                        <span className={`text-[9px] font-bold uppercase tracking-wider transition-colors
+                                            ${loginStep >= num ? 'text-zinc-300' : 'text-zinc-600'}
+                                        `}>{label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-3 sm:p-5 space-y-6 overflow-y-auto custom-scrollbar">
+                            {/* ===== 錯誤訊息（含快捷修復按鈕）===== */}
                             {errorMsg && (
-                                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-3 text-red-400 text-[11px] font-bold">
-                                    <AlertCircle size={14} /> {errorMsg}
+                                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-start gap-3">
+                                        <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-[11px] font-bold text-red-300 leading-relaxed block">{errorMsg}</span>
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                {/* 重試按鈕 */}
+                                                <button
+                                                    onClick={handleTestConnection}
+                                                    disabled={isTesting}
+                                                    className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-[9px] font-bold rounded-lg transition-colors flex items-center gap-1"
+                                                >
+                                                    <RefreshCw size={10} /> 重試
+                                                </button>
+                                                {/* CA 相關錯誤顯示上傳按鈕 */}
+                                                {errorMsg.includes('憑證') && (
+                                                    <label
+                                                        htmlFor="ca-upload"
+                                                        className="px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[9px] font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                                                    >
+                                                        <Upload size={10} /> 上傳憑證
+                                                    </label>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
 
-
-                            {/* STEP 1: 取得 API Key */}
-                            <div className="relative pl-10">
-                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">1</div>
-                                <div className="relative z-10 pt-1">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
-                                        <div className="flex items-start gap-2.5">
-                                            <div className="flex flex-col gap-0.5 min-w-0">
-                                                <span className="text-sm font-bold text-[#C8B085] uppercase">取得 API 金鑰與憑證</span>
-                                                <span className="text-[9px] text-amber-500/50 break-words font-medium">請保存好，下一步需要這些資訊</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => setShowApiHelper(true)}
-                                                className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-transparent hover:bg-white/5 border border-white/20 hover:border-white/50 text-zinc-300 hover:text-white text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group uppercase tracking-wider"
-                                            >
-                                                如何開通? <HelpCircle size={10} className="group-hover:scale-110 transition-transform" />
-                                            </button>
-                                            <button
-                                                onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
-                                                className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
-                                            >
-                                                管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* STEP 2: 輸入 API 資訊 */}
-                            <div className="relative pl-10">
-                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">2</div>
-                                <div className="relative z-10 pt-1">
-                                    <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">輸入用戶資訊</h5>
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-1 gap-4">
-                                            <div className="flex flex-col gap-2">
-                                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">身分證字號 (Person ID)</label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="A123456789"
-                                                    value={localConfig.personId}
-                                                    onChange={(e) => handleChange('personId', e.target.value.trim().toUpperCase())}
-                                                    className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div className="flex flex-col gap-2">
-                                            <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">API Key</label>
-                                            <input
-                                                type={showSecrets ? "text" : "password"}
-                                                value={localConfig.apiKey}
-                                                onChange={(e) => handleChange('apiKey', e.target.value.trim())}
-                                                className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
-                                            />
-                                        </div>
-
-                                        <div className="flex flex-col gap-2 relative">
-                                            <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">Secret Key</label>
-                                            <input
-                                                type={showSecrets ? "text" : "password"}
-                                                value={localConfig.apiSecret}
-                                                onChange={(e) => handleChange('apiSecret', e.target.value.trim())}
-                                                className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiSecret ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
-                                            />
-                                            <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
-                                        </div>
-
-                                        {/* API Risk Disclosure Link */}
-                                        <a
-                                            href="https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="group w-full bg-zinc-900/30 hover:bg-zinc-800/50 border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-300 -mt-1"
-                                        >
-                                            <span className="text-xs font-bold text-zinc-400 group-hover:text-zinc-200 transition-colors flex items-center gap-2">
-                                                前往簽署 API 風險預告同意書
-                                                <span className="text-[10px] font-medium text-zinc-600 group-hover:text-zinc-500 transition-colors hidden sm:inline-block">
-                                                    (若已簽署可忽略)
-                                                </span>
-                                            </span>
-                                            <ChevronRight size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors group-hover:translate-x-0.5 duration-300" />
-                                        </a>
-
-
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* STEP 3: 匯入憑證 */}
-                            <div className="relative pl-10">
-                                <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">3</div>
-                                <div className="relative z-10 pt-1">
-                                    <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">匯入憑證</h5>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="flex flex-col gap-2">
-                                            <div className="flex justify-between items-center h-[15px]">
-                                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter flex items-center gap-2">
-                                                    憑證檔案 (.pfx)
-                                                </label>
-                                            </div>
-
-                                            <input
-                                                id="ca-upload"
-                                                type="file"
-                                                accept=".pfx"
-                                                className="hidden"
-                                                onChange={(e) => {
-                                                    const file = e.target.files?.[0];
-                                                    if (file) {
-                                                        const reader = new FileReader();
-                                                        reader.onload = (ev) => {
-                                                            const raw = (ev.target?.result as string).split(',')[1];
-                                                            const cleanB64 = raw.replace(/\s/g, '');
-                                                            setLocalConfig(prev => prev ? ({ ...prev, caContent: cleanB64, caPath: file.name }) : null);
-                                                        };
-                                                        reader.readAsDataURL(file);
-                                                    }
-                                                    e.target.value = '';
-                                                }}
-                                            />
-
-                                            {/* Unified Certificate Input */}
-                                            {!localConfig.caContent ? (
-                                                <label
-                                                    htmlFor="ca-upload"
-                                                    className="relative group cursor-pointer block"
-                                                >
-                                                    {/* PRO MAX UI: Single-line input style for empty state */}
-                                                    <div className="w-full bg-black/40 border border-white/5 hover:border-[#C8B085]/50 rounded-xl px-4 py-3 flex items-center gap-3 transition-all duration-300 h-[46px] group-hover:shadow-[0_0_15px_rgba(200,176,133,0.05)]">
-                                                        <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
-                                                            <Upload size={10} className="text-zinc-500 group-hover:text-[#C8B085] transition-colors" />
-                                                        </div>
-                                                        <span className="text-xs font-medium text-zinc-500 group-hover:text-zinc-300 transition-colors truncate">
-                                                            {lang === 'zh' ? '點擊上傳 .pfx 憑證' : 'Click to Upload .pfx'}
-                                                        </span>
-                                                    </div>
-                                                </label>
-                                            ) : (
-                                                <div className="relative group animate-in fade-in zoom-in-95 duration-300">
-                                                    {/* PRO MAX UI: Mimic the exact style of the password input for alignment */}
-                                                    <div className="w-full bg-black/40 border border-emerald-500/30 rounded-xl px-4 py-3 flex items-center justify-between group-hover:border-emerald-500/50 transition-all h-[46px]">
-
-                                                        {/* Left: Icon + Filename */}
-                                                        <div className="flex items-center gap-3 overflow-hidden flex-1">
-                                                            {/* Icon with Glow Effect */}
-                                                            <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-                                                                <Check size={10} className="text-emerald-500" strokeWidth={3} />
-                                                            </div>
-
-                                                            {/* Filename with Gradient Text for Premium Feel */}
-                                                            <span className="text-xs font-medium text-zinc-200 truncate font-mono tracking-tight min-w-0">
-                                                                {localConfig.caPath}
-                                                            </span>
-                                                        </div>
-
-                                                        {/* Right: Size Badge + Delete Action */}
-                                                        <div className="flex items-center gap-3 shrink-0 pl-2">
-                                                            {/* Monospace Size Badge */}
-                                                            <span className="text-[10px] font-mono text-emerald-500/80 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/10">
-                                                                {(localConfig.caContent.length / 1024).toFixed(1)} KB
-                                                            </span>
-
-                                                            {/* Separator */}
-                                                            <div className="w-[1px] h-3 bg-white/10" />
-
-                                                            {/* Delete Button with Hover Effect */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.preventDefault();
-                                                                    e.stopPropagation();
-                                                                    handleChange('caPath', '');
-                                                                    handleChange('caContent', '');
-                                                                }}
-                                                                className="text-zinc-600 hover:text-red-400 transition-colors p-1 -mr-1"
-                                                                title="Remove"
-                                                            >
-                                                                <Trash2 size={13} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
+                            {/* STEP 1: 取得 API Key - 僅在 loginStep === 1 時顯示 */}
+                            {loginStep === 1 && (
+                                <div className="relative pl-6 sm:pl-10">
+                                    <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">1</div>
+                                    <div className="relative z-10 pt-1">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
+                                            <div className="flex items-start gap-2.5">
+                                                <div className="flex flex-col gap-0.5 min-w-0">
+                                                    <span className="text-xs sm:text-sm font-bold text-[#C8B085] uppercase">取得 API 金鑰與憑證</span>
+                                                    <span className="text-[9px] sm:text-[10px] text-amber-500/50 break-words font-medium">請保存好，下一步需要這些資訊</span>
                                                 </div>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col gap-2">
-                                            <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">憑證密碼</label>
-                                            <div className="relative">
-                                                <input
-                                                    type={showSecrets ? "text" : "password"}
-                                                    value={localConfig.caPassword}
-                                                    placeholder="預設為身分證字號"
-                                                    onChange={(e) => handleChange('caPassword', e.target.value)}
-                                                    className={`w-full bg-black/40 border rounded-xl pl-4 pr-20 py-3 text-sm text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPassword ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
-                                                />
+                                            </div>
+                                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                                 <button
-                                                    type="button"
-                                                    onClick={() => handleChange('caPassword', localConfig.personId)}
-                                                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/5 hover:bg-white/10 text-[#C8B085] hover:text-[#E0C8A0] text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1 backdrop-blur-sm border border-white/5"
-                                                    title={lang === 'zh' ? "使用身分證字號自動帶入" : "Auto-fill with Person ID"}
+                                                    onClick={() => setShowApiHelper(true)}
+                                                    className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-transparent hover:bg-white/5 border border-white/20 hover:border-white/50 text-zinc-300 hover:text-white text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group uppercase tracking-wider"
                                                 >
-                                                    {lang === 'zh' ? "ID 帶入" : "Use ID"}
+                                                    如何開通? <HelpCircle size={10} className="group-hover:scale-110 transition-transform" />
+                                                </button>
+                                                <button
+                                                    onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
+                                                    className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
+                                                >
+                                                    管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {/* STEP 2: 輸入 API 資訊 - 僅在 loginStep === 2 時顯示 */}
+                            {loginStep === 2 && (
+                                <div className="relative pl-6 sm:pl-10">
+                                    <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">2</div>
+                                    <div className="relative z-10 pt-1">
+                                        <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">輸入用戶資訊</h5>
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-1 gap-4">
+                                                <div className="flex flex-col gap-2">
+                                                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">身分證字號 (Person ID)</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="A123456789"
+                                                        value={localConfig.personId}
+                                                        onChange={(e) => handleChange('personId', e.target.value.trim().toUpperCase())}
+                                                        className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-col gap-2">
+                                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">API Key</label>
+                                                <input
+                                                    type={showSecrets ? "text" : "password"}
+                                                    value={localConfig.apiKey}
+                                                    onChange={(e) => handleChange('apiKey', e.target.value.trim())}
+                                                    className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                />
+                                            </div>
+
+                                            <div className="flex flex-col gap-2 relative">
+                                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">Secret Key</label>
+                                                <input
+                                                    type={showSecrets ? "text" : "password"}
+                                                    value={localConfig.apiSecret}
+                                                    onChange={(e) => handleChange('apiSecret', e.target.value.trim())}
+                                                    className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiSecret ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                />
+                                                <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
+                                            </div>
+
+                                            {/* API Risk Disclosure Link */}
+                                            <a
+                                                href="https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="group w-full bg-zinc-900/30 hover:bg-zinc-800/50 border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-300 -mt-1"
+                                            >
+                                                <span className="text-xs font-bold text-zinc-400 group-hover:text-zinc-200 transition-colors flex items-center gap-2">
+                                                    前往簽署 API 風險預告同意書
+                                                    <span className="text-[10px] font-medium text-zinc-600 group-hover:text-zinc-500 transition-colors hidden sm:inline-block">
+                                                        (若已簽署可忽略)
+                                                    </span>
+                                                </span>
+                                                <ChevronRight size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors group-hover:translate-x-0.5 duration-300" />
+                                            </a>
+
+
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 3: 匯入憑證 - 僅在 loginStep === 3 時顯示 */}
+                            {loginStep === 3 && (
+                                <div className="relative pl-6 sm:pl-10">
+                                    <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">3</div>
+                                    <div className="relative z-10 pt-1">
+                                        <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">匯入憑證</h5>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex justify-between items-center h-[15px]">
+                                                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter flex items-center gap-2">
+                                                        憑證檔案 (.pfx)
+                                                    </label>
+                                                </div>
+
+                                                <input
+                                                    id="ca-upload"
+                                                    type="file"
+                                                    accept=".pfx"
+                                                    className="hidden"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) {
+                                                            const reader = new FileReader();
+                                                            reader.onload = (ev) => {
+                                                                const raw = (ev.target?.result as string).split(',')[1];
+                                                                const cleanB64 = raw.replace(/\s/g, '');
+                                                                setLocalConfig(prev => prev ? ({ ...prev, caContent: cleanB64, caPath: file.name }) : null);
+                                                            };
+                                                            reader.readAsDataURL(file);
+                                                        }
+                                                        e.target.value = '';
+                                                    }}
+                                                />
+
+                                                {/* Unified Certificate Input */}
+                                                {!localConfig.caContent ? (
+                                                    <label
+                                                        htmlFor="ca-upload"
+                                                        className="relative group cursor-pointer block"
+                                                    >
+                                                        {/* PRO MAX UI: Single-line input style for empty state */}
+                                                        <div className="w-full bg-black/40 border border-white/5 hover:border-[#C8B085]/50 rounded-xl px-4 py-3 flex items-center gap-3 transition-all duration-300 h-[46px] group-hover:shadow-[0_0_15px_rgba(200,176,133,0.05)]">
+                                                            <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
+                                                                <Upload size={10} className="text-zinc-500 group-hover:text-[#C8B085] transition-colors" />
+                                                            </div>
+                                                            <span className="text-xs font-medium text-zinc-500 group-hover:text-zinc-300 transition-colors truncate">
+                                                                {lang === 'zh' ? '點擊上傳 .pfx 憑證' : 'Click to Upload .pfx'}
+                                                            </span>
+                                                        </div>
+                                                    </label>
+                                                ) : (
+                                                    <div className="relative group animate-in fade-in zoom-in-95 duration-300">
+                                                        {/* PRO MAX UI: Mimic the exact style of the password input for alignment */}
+                                                        <div className="w-full bg-black/40 border border-emerald-500/30 rounded-xl px-4 py-3 flex items-center justify-between group-hover:border-emerald-500/50 transition-all h-[46px]">
+
+                                                            {/* Left: Icon + Filename */}
+                                                            <div className="flex items-center gap-3 overflow-hidden flex-1">
+                                                                {/* Icon with Glow Effect */}
+                                                                <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                                                                    <Check size={10} className="text-emerald-500" strokeWidth={3} />
+                                                                </div>
+
+                                                                {/* Filename with Gradient Text for Premium Feel */}
+                                                                <span className="text-xs font-medium text-zinc-200 truncate font-mono tracking-tight min-w-0">
+                                                                    {localConfig.caPath}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Right: Size Badge + Delete Action */}
+                                                            <div className="flex items-center gap-3 shrink-0 pl-2">
+                                                                {/* Monospace Size Badge */}
+                                                                <span className="text-[10px] font-mono text-emerald-500/80 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/10">
+                                                                    {(localConfig.caContent.length / 1024).toFixed(1)} KB
+                                                                </span>
+
+                                                                {/* Separator */}
+                                                                <div className="w-[1px] h-3 bg-white/10" />
+
+                                                                {/* Delete Button with Hover Effect */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        handleChange('caPath', '');
+                                                                        handleChange('caContent', '');
+                                                                    }}
+                                                                    className="text-zinc-600 hover:text-red-400 transition-colors p-1 -mr-1"
+                                                                    title="Remove"
+                                                                >
+                                                                    <Trash2 size={13} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">憑證密碼</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type={showSecrets ? "text" : "password"}
+                                                        value={localConfig.caPassword}
+                                                        placeholder="預設為身分證字號"
+                                                        onChange={(e) => handleChange('caPassword', e.target.value)}
+                                                        className={`w-full bg-black/40 border rounded-xl pl-4 pr-20 py-3 text-sm text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPassword ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleChange('caPassword', localConfig.personId)}
+                                                        className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/5 hover:bg-white/10 text-[#C8B085] hover:text-[#E0C8A0] text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1 backdrop-blur-sm border border-white/5"
+                                                        title={lang === 'zh' ? "使用身分證字號自動帶入" : "Auto-fill with Person ID"}
+                                                    >
+                                                        {lang === 'zh' ? "ID 帶入" : "Use ID"}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
+                        {/* ===== 增強型進度面板 ===== */}
+                        {isTesting && (
+                            <div className="px-6 py-3 bg-black/30 border-t border-white/5">
+                                {/* 階段式進度模塊 */}
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="relative w-6 h-6 flex items-center justify-center">
+                                        <Loader2 size={18} className="animate-spin text-[#C8B085]" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <span className="text-xs font-bold text-[#C8B085] block">{progressMsg || '正在處理...'}</span>
+                                        <span className="text-[10px] text-zinc-500 font-mono">已等待 {elapsedSeconds} 秒</span>
+                                    </div>
+                                </div>
+                                {/* 超過 15 秒的安撫訊息 */}
+                                {elapsedSeconds > 15 && (
+                                    <div className="text-[10px] text-amber-400/70 bg-amber-500/5 rounded-lg px-3 py-1.5 border border-amber-500/10 animate-in fade-in duration-500">
+                                        ☕ 雲端伺服器冷啟動中，通常需要 20-30 秒，請稍候...
+                                    </div>
+                                )}
+                                {/* 階段視覺化進度條 */}
+                                <div className="flex items-center gap-1 mt-2">
+                                    {['waking', 'connecting', 'authenticating', 'listing'].map((phase, i) => (
+                                        <div
+                                            key={phase}
+                                            className={`h-1 flex-1 rounded-full transition-all duration-500 ${loginProgress.phase === phase
+                                                ? 'bg-[#C8B085] animate-pulse'
+                                                : ['waking', 'connecting', 'authenticating', 'listing'].indexOf(loginProgress.phase) > i
+                                                    ? 'bg-emerald-500/60'
+                                                    : 'bg-zinc-800'
+                                                }`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 後端狀態 + 計時器 */}
                         <div className="px-6 pb-2 flex items-center justify-between text-[10px] font-mono">
                             <div className="flex items-center gap-2">
                                 <span className="text-zinc-600 uppercase tracking-tighter font-bold">後端狀態:</span>
@@ -936,39 +1137,40 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             </div>
                         </div>
 
-                        <div className="p-6 border-t border-white/5 flex flex-col sm:flex-row items-center gap-3 bg-black/20 font-bold uppercase tracking-tight text-[10px]">
-                            <button onClick={handleSave} className="w-full sm:w-auto flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10 order-2 sm:order-1">僅儲存</button>
-                            {accountChoices.length === 0 && (
+                        {/* ===== Footer: 步驟導航按鈕 ===== */}
+                        <div className="p-4 sm:p-6 border-t border-white/5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 bg-black/20 font-bold uppercase tracking-tight text-[10px]">
+                            {/* 上一步 / 僅儲存 */}
+                            {loginStep === 1 ? (
+                                <button onClick={handleSave} className="w-full sm:w-auto flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10 order-2 sm:order-1">僅儲存</button>
+                            ) : (
                                 <button
-                                    disabled={isTesting}
-                                    onClick={handleTestConnection}
-                                    className="w-full sm:w-auto flex-[2] py-4 px-8 rounded-2xl bg-[#C8B085] text-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 order-1 sm:order-2"
+                                    onClick={() => setLoginStep(prev => Math.max(1, prev - 1) as 1 | 2 | 3)}
+                                    className="w-full sm:w-auto flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10 order-2 sm:order-1 flex items-center justify-center gap-1"
                                 >
-                                    {isTesting ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
-                                    <span>{isTesting ? '驗證中...' : '同步券商'}</span>
+                                    <ChevronRight size={12} className="rotate-180" /> 上一步
                                 </button>
                             )}
+                            {/* 下一步 / 同步券商 */}
+                            {accountChoices.length === 0 && (
+                                loginStep < 3 ? (
+                                    <button
+                                        onClick={() => setLoginStep(prev => Math.min(3, prev + 1) as 1 | 2 | 3)}
+                                        className="w-full sm:w-auto flex-[2] py-4 px-8 rounded-2xl bg-[#C8B085] text-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 order-1 sm:order-2"
+                                    >
+                                        <span>下一步</span> <ChevronRight size={14} />
+                                    </button>
+                                ) : (
+                                    <button
+                                        disabled={isTesting}
+                                        onClick={handleTestConnection}
+                                        className="w-full sm:w-auto flex-[2] py-4 px-8 rounded-2xl bg-[#C8B085] text-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 order-1 sm:order-2"
+                                    >
+                                        {isTesting ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
+                                        <span>{isTesting ? '驗證中...' : '同步券商'}</span>
+                                    </button>
+                                )
+                            )}
                         </div>
-
-                        {/* Progress & Error Messages */}
-                        {(progressMsg || errorMsg) && (
-                            <div className="px-6 pb-4 pt-2">
-                                {progressMsg && (
-                                    <div className="flex items-center gap-2 text-xs text-[#C8B085] animate-pulse">
-                                        <Loader2 size={14} className="animate-spin" />
-                                        <span>{progressMsg}</span>
-                                    </div>
-                                )}
-                                {errorMsg && !progressMsg && (
-                                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                                        <div className="flex items-start gap-2">
-                                            <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
-                                            <span className="text-xs text-red-300">{errorMsg}</span>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
                     </div>
                 </div>
             )}
@@ -993,143 +1195,212 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                         </div>
 
                         <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                            <p className="text-xs text-zinc-400 mb-2 leading-relaxed">
-                                您的憑證包含多個帳號，請選擇您希望同步的帳號(可多選)。
-                            </p>
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs text-zinc-400 leading-relaxed">
+                                    您的憑證包含多個帳號，請選擇想同步的帳號。
+                                </p>
+                                {/* 全選 / 取消全選按鈕 */}
+                                {(() => {
+                                    // 計算可選帳號（排除已連線與複委託）
+                                    const selectableAccounts = accountChoices.filter(acc => {
+                                        const isConnected = configs.some(c => {
+                                            const existing = (c.accounts || '').split(',').map(s => s.trim());
+                                            const existingCodes = (c.branchCode || '').split(',').map(s => s.trim());
+                                            return existing.includes(acc.account_id) || existingCodes.includes(acc.branch_code);
+                                        });
+                                        const isSub = (acc as any).category === 'SubBrokerage';
+                                        return !isConnected && !isSub;
+                                    });
+                                    const allSelected = selectableAccounts.length > 0 && selectableAccounts.every(a => selectedIds.includes(a.account_id));
+                                    return selectableAccounts.length > 1 && (
+                                        <button
+                                            onClick={() => {
+                                                if (allSelected) {
+                                                    setSelectedIds([]);
+                                                } else {
+                                                    setSelectedIds(selectableAccounts.map(a => a.account_id));
+                                                }
+                                            }}
+                                            className="text-[10px] font-bold text-[#C8B085] hover:underline transition-colors px-2 py-1 rounded-lg hover:bg-[#C8B085]/5"
+                                        >
+                                            {allSelected ? '取消全選' : '全選'}
+                                        </button>
+                                    );
+                                })()}
+                            </div>
 
-                            {accountChoices.map(acc => {
-                                // 1. Check if this account is already connected
-                                // We check against all existing configs to see if this account ID is present
-                                const isConnected = configs.some(c => {
-                                    const existingAccounts = (c.accounts || '').split(',').map(s => s.trim());
-                                    const existingCodes = (c.branchCode || '').split(',').map(s => s.trim());
-                                    // Robust check against ID or Branch Code
-                                    return existingAccounts.includes(acc.account_id) || existingCodes.includes(acc.branch_code);
+                            {/* 依 category 分組顯示 */}
+                            {(() => {
+                                // 將帳號依類別分組
+                                const groups: Record<string, typeof accountChoices> = {};
+                                accountChoices.forEach(acc => {
+                                    const cat = (acc as any).category || 'Stock';
+                                    if (!groups[cat]) groups[cat] = [];
+                                    groups[cat].push(acc);
                                 });
-
-                                const isSelected = selectedIds.includes(acc.account_id);
-
-                                const toggleLogic = () => {
-                                    if (isConnected) return; // Prevent toggling if already connected
-
-                                    if (isSelected) {
-                                        setSelectedIds(prev => prev.filter(id => id !== acc.account_id));
-                                    } else {
-                                        setSelectedIds(prev => [...prev, acc.account_id]);
-                                    }
+                                // 顯示順序：台股 → 期貨 → 複委託
+                                const order = ['Stock', 'Futures', 'SubBrokerage'];
+                                const groupLabels: Record<string, string> = {
+                                    'Stock': '📊 台股證券',
+                                    'Futures': '📈 期貨',
+                                    'SubBrokerage': '🌐 複委託'
                                 };
+                                return order.filter(cat => groups[cat]?.length > 0).map(cat => (
+                                    <div key={cat}>
+                                        {/* 分類標題 */}
+                                        {Object.keys(groups).length > 1 && (
+                                            <div className="flex items-center gap-2 mb-2 mt-1">
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{groupLabels[cat] || cat}</span>
+                                                <div className="flex-1 h-px bg-zinc-800" />
+                                            </div>
+                                        )}
+                                        {groups[cat].map(acc => {
+                                            // 1. Check if this account is already connected
+                                            // We check against all existing configs to see if this account ID is present
+                                            const isConnected = configs.some(c => {
+                                                const existingAccounts = (c.accounts || '').split(',').map(s => s.trim());
+                                                const existingCodes = (c.branchCode || '').split(',').map(s => s.trim());
+                                                // Robust check against ID or Branch Code
+                                                return existingAccounts.includes(acc.account_id) || existingCodes.includes(acc.branch_code);
+                                            });
 
-                                return (
-                                    <button
-                                        type="button"
-                                        key={acc.account_id}
-                                        disabled={isTesting || isConnected}
-                                        onClick={toggleLogic}
-                                        className={`
+                                            const isSelected = selectedIds.includes(acc.account_id);
+
+                                            const toggleLogic = () => {
+                                                if (isConnected) return; // Prevent toggling if already connected
+
+                                                if (isSelected) {
+                                                    setSelectedIds(prev => prev.filter(id => id !== acc.account_id));
+                                                } else {
+                                                    setSelectedIds(prev => [...prev, acc.account_id]);
+                                                }
+                                            };
+
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={acc.account_id}
+                                                    disabled={isTesting || isConnected}
+                                                    onClick={toggleLogic}
+                                                    className={`
                                             w-full p-4 rounded-3xl border flex items-center justify-between transition-all cursor-pointer group 
                                             ${isConnected
-                                                ? 'bg-zinc-900/50 border-white/5 opacity-60 cursor-not-allowed'
-                                                : isSelected
-                                                    ? 'bg-[#1C1E22] border-[#C8B085] shadow-[0_0_20px_rgba(200,176,133,0.1)]'
-                                                    : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}
+                                                            ? 'bg-zinc-900/50 border-white/5 opacity-60 cursor-not-allowed'
+                                                            : isSelected
+                                                                ? 'bg-[#1C1E22] border-[#C8B085] shadow-[0_0_20px_rgba(200,176,133,0.1)]'
+                                                                : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}
                                         `}
-                                    >
-                                        <div className="flex flex-col items-start gap-2">
-                                            <span className={`text-[14px] font-bold tracking-wide transition-colors ${isSelected && !isConnected ? 'text-white' : 'text-zinc-300 group-hover:text-white'}`}>
-                                                {(() => {
-                                                    // Backend已經返回完整的分公司名稱 (例如：永豐金-板新 (Stock))
-                                                    // 只需移除括號內的帳戶類型部分
-                                                    const branchName = acc.branch_name
-                                                        ? acc.branch_name
-                                                            .replace(/\s*\(.*\)/, '')
-                                                            .replace(/永豐金-永豐金/g, '永豐金') // Fix double SinoPac
-                                                            .trim()
-                                                        : '分公司';
-                                                    const userName = acc.username || '用戶';
-                                                    return `${branchName} | ${userName}`;
-                                                })()}
-                                            </span>
+                                                >
+                                                    <div className="flex flex-col items-start gap-2">
+                                                        <span className={`text-[14px] font-bold tracking-wide transition-colors ${isSelected && !isConnected ? 'text-white' : 'text-zinc-300 group-hover:text-white'}`}>
+                                                            {(() => {
+                                                                // Backend已經返回完整的分公司名稱 (例如：永豐金-板新 (Stock))
+                                                                // 只需移除括號內的帳戶類型部分
+                                                                const branchName = acc.branch_name
+                                                                    ? acc.branch_name
+                                                                        .replace(/\s*\(.*\)/, '')
+                                                                        .replace(/永豐金-永豐金/g, '永豐金') // Fix double SinoPac
+                                                                        .trim()
+                                                                    : '分公司';
+                                                                const userName = acc.username || '用戶';
+                                                                return `${branchName} | ${userName}`;
+                                                            })()}
+                                                        </span>
 
-                                            {/* Verification Status */}
-                                            {acc.signed === false && (
-                                                <div className="flex items-center gap-1.5 text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-                                                    <ShieldCheck size={12} />
-                                                    <span className="text-[10px] font-bold">需要模擬下單驗證</span>
-                                                </div>
-                                            )}
-
-                                            {/* Row 2: Details */}
-                                            <div className="flex items-center gap-3">
-                                                {(() => {
-                                                    const type = String(acc.account_type || '').toUpperCase();
-                                                    const branch = String(acc.branch_name || '');
-                                                    const desc = (acc as any).category; // New Backend Field
-
-                                                    // Priority: Explicit Category > Type String > Branch Name
-                                                    if (desc === 'SubBrokerage') {
-                                                        return (
-                                                            <div className="group/badge relative flex items-center justify-center">
-                                                                <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.SUB.fullClass} cursor-help`}>
-                                                                    {ACCOUNT_CATEGORY_THEMES.SUB.label}
-                                                                </span>
-                                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded border border-white/10 opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-50">
-                                                                    目前僅支援台股證券與期貨帳號，複委託尚未開放。
+                                                        {/* Verification Status - 加強未簽署引導 */}
+                                                        {acc.signed === false && (
+                                                            <div className="flex flex-col gap-1">
+                                                                <div className="flex items-center gap-1.5 text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                                                                    <ShieldCheck size={12} />
+                                                                    <span className="text-[10px] font-bold">需要模擬下單驗證</span>
                                                                 </div>
+                                                                <a
+                                                                    href="https://www.sinotrade.com.tw/newweb/PythonAPIKey/"
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-[9px] text-amber-400/70 hover:text-amber-400 underline underline-offset-2 transition-colors ml-0.5"
+                                                                    onClick={e => e.stopPropagation()}
+                                                                >
+                                                                    前往簽署 API 風險預告同意書 →
+                                                                </a>
                                                             </div>
-                                                        );
-                                                    }
-                                                    if (desc === 'Futures') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.FUTURES.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.FUTURES.label}</span>;
-                                                    if (desc === 'Stock') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.STOCK.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.STOCK.label}</span>;
+                                                        )}
 
-                                                    // Fallback Detection
-                                                    const isFuture = type.includes('F') || type.includes('FUTURE') || branch.includes('期貨');
-                                                    const isSub = type.includes('H') || type.includes('SUB') || branch.includes('複委託');
+                                                        {/* Row 2: Details */}
+                                                        <div className="flex items-center gap-3">
+                                                            {(() => {
+                                                                const type = String(acc.account_type || '').toUpperCase();
+                                                                const branch = String(acc.branch_name || '');
+                                                                const desc = (acc as any).category; // New Backend Field
 
-                                                    const theme = isSub ? ACCOUNT_CATEGORY_THEMES.SUB : isFuture ? ACCOUNT_CATEGORY_THEMES.FUTURES : ACCOUNT_CATEGORY_THEMES.STOCK;
+                                                                // Priority: Explicit Category > Type String > Branch Name
+                                                                if (desc === 'SubBrokerage') {
+                                                                    return (
+                                                                        <div className="group/badge relative flex items-center justify-center">
+                                                                            <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.SUB.fullClass} cursor-help`}>
+                                                                                {ACCOUNT_CATEGORY_THEMES.SUB.label}
+                                                                            </span>
+                                                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded border border-white/10 opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-50">
+                                                                                目前僅支援台股證券與期貨帳號，複委託尚未開放。
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                if (desc === 'Futures') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.FUTURES.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.FUTURES.label}</span>;
+                                                                if (desc === 'Stock') return <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${ACCOUNT_CATEGORY_THEMES.STOCK.fullClass}`}>{ACCOUNT_CATEGORY_THEMES.STOCK.label}</span>;
 
-                                                    return (
-                                                        <div className="group/badge relative flex items-center justify-center">
-                                                            <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${theme.fullClass} ${isSub ? 'cursor-help' : ''}`}>
-                                                                {theme.label}
-                                                            </span>
-                                                            {isSub && (
-                                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded border border-white/10 opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-50">
-                                                                    目前僅支援台股證券與期貨帳號，複委託尚未開放。
-                                                                </div>
-                                                            )}
+                                                                // Fallback Detection
+                                                                const isFuture = type.includes('F') || type.includes('FUTURE') || branch.includes('期貨');
+                                                                const isSub = type.includes('H') || type.includes('SUB') || branch.includes('複委託');
+
+                                                                const theme = isSub ? ACCOUNT_CATEGORY_THEMES.SUB : isFuture ? ACCOUNT_CATEGORY_THEMES.FUTURES : ACCOUNT_CATEGORY_THEMES.STOCK;
+
+                                                                return (
+                                                                    <div className="group/badge relative flex items-center justify-center">
+                                                                        <span className={`text-[10px] px-3 py-0.5 rounded-full border font-bold w-[52px] flex items-center justify-center ${theme.fullClass} ${isSub ? 'cursor-help' : ''}`}>
+                                                                            {theme.label}
+                                                                        </span>
+                                                                        {isSub && (
+                                                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-[200px] px-2 py-1 bg-zinc-800 text-zinc-300 text-[10px] rounded border border-white/10 opacity-0 group-hover/badge:opacity-100 transition-opacity pointer-events-none z-50">
+                                                                                目前僅支援台股證券與期貨帳號，複委託尚未開放。
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            <span className="text-[12px] font-mono font-bold text-zinc-500">{acc.account_id}</span>
                                                         </div>
-                                                    );
-                                                })()}
-                                                <span className="text-[12px] font-mono font-bold text-zinc-500">{acc.account_id}</span>
-                                            </div>
-                                        </div>
+                                                    </div>
 
-                                        {/* Right Side Check or Status */}
-                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${isConnected
-                                            ? 'bg-zinc-800 border-zinc-700'
-                                            : isSelected
-                                                ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)] border-2'
-                                                : 'border-2 border-zinc-700 group-hover:border-zinc-500'
-                                            }`}>
-                                            {isConnected ? (
-                                                <span className="text-[9px] font-bold text-zinc-500">已加</span>
-                                            ) : accountLoginStatus[acc.account_id]?.phase === 'connecting' ? (
-                                                <Loader2 size={14} className="animate-spin text-blue-400" />
-                                            ) : accountLoginStatus[acc.account_id]?.phase === 'authenticating' ? (
-                                                <Loader2 size={14} className="animate-spin text-yellow-400" />
-                                            ) : accountLoginStatus[acc.account_id]?.phase === 'fetching_data' ? (
-                                                <Loader2 size={14} className="animate-spin text-purple-400" />
-                                            ) : accountLoginStatus[acc.account_id]?.phase === 'success' ? (
-                                                <Check size={14} className="text-emerald-500 stroke-[4px]" />
-                                            ) : accountLoginStatus[acc.account_id]?.phase === 'error' ? (
-                                                <X size={14} className="text-red-500 stroke-[4px]" />
-                                            ) : (
-                                                isSelected && <Check size={14} className="text-black stroke-[4px]" />
-                                            )}
-                                        </div>
-                                    </button>
-                                );
-                            })}
+                                                    {/* Right Side Check or Status */}
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${isConnected
+                                                        ? 'bg-zinc-800 border-zinc-700'
+                                                        : isSelected
+                                                            ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)] border-2'
+                                                            : 'border-2 border-zinc-700 group-hover:border-zinc-500'
+                                                        }`}>
+                                                        {isConnected ? (
+                                                            <span className="text-[9px] font-bold text-zinc-500">已加</span>
+                                                        ) : accountLoginStatus[acc.account_id]?.phase === 'connecting' ? (
+                                                            <Loader2 size={14} className="animate-spin text-blue-400" />
+                                                        ) : accountLoginStatus[acc.account_id]?.phase === 'authenticating' ? (
+                                                            <Loader2 size={14} className="animate-spin text-yellow-400" />
+                                                        ) : accountLoginStatus[acc.account_id]?.phase === 'fetching_data' ? (
+                                                            <Loader2 size={14} className="animate-spin text-purple-400" />
+                                                        ) : accountLoginStatus[acc.account_id]?.phase === 'success' ? (
+                                                            <Check size={14} className="text-emerald-500 stroke-[4px]" />
+                                                        ) : accountLoginStatus[acc.account_id]?.phase === 'error' ? (
+                                                            <X size={14} className="text-red-500 stroke-[4px]" />
+                                                        ) : (
+                                                            isSelected && <Check size={14} className="text-black stroke-[4px]" />
+                                                        )}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ));
+                            })()}
                         </div>
 
                         {/* Error Message inside Modal */}
@@ -1370,30 +1641,30 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             });
                                         }
 
-                                        // Show result message
-                                        if (failedCount > 0) {
-                                            setProgressMsg(`✅ ${successfulResults.length} 個帳號成功，❌ ${failedCount} 個失敗`);
-                                            setTimeout(() => {
-                                                setProgressMsg('');
-                                                setErrorMsg('');
-                                                setIsEditing(null);
-                                                setIsTesting(false);
-                                                setAccountChoices([]);
-                                                setAccountLoginStatus({});
-                                            }, 2000);
-                                        } else {
-                                            setProgressMsg(`🎉 已成功登入全部 ${successfulResults.length} 個帳號！`);
-                                            setTimeout(() => {
-                                                setProgressMsg('');
-                                                setErrorMsg('');
-                                                setIsEditing(null);
-                                                setIsTesting(false);
-                                                setAccountChoices([]);
-                                                setAccountLoginStatus({});
-                                            }, 1500);
-                                        }
+                                        // 顯示結果摘要面板（而非直接 setTimeout 關閉）
+                                        const resultAccounts = selectedAccounts.map(acc => {
+                                            const status = accountLoginStatus[acc.account_id] || results.find(r => r.status === 'rejected');
+                                            const wasSuccess = successfulResults.some(sr => sr.account.account_id === acc.account_id);
+                                            const branchOnly = acc.branch_name?.split('(')[0]?.replace('永豐金-', '').replace('永豐金', '').trim() || '帳號';
+                                            return {
+                                                name: `${branchOnly} (${acc.account_id})`,
+                                                success: wasSuccess,
+                                                error: wasSuccess ? undefined : (accountLoginStatus[acc.account_id]?.error || '連線失敗')
+                                            };
+                                        });
+
+                                        setLoginResult({
+                                            show: true,
+                                            successCount: successfulResults.length,
+                                            failCount: failedCount,
+                                            accounts: resultAccounts
+                                        });
+
+                                        setProgressMsg('');
+                                        setIsTesting(false);
                                     } catch (error: any) {
-                                        setErrorMsg(error?.message || '連線失敗');
+                                        const classified = classifyError(error?.message || '連線失敗');
+                                        setErrorMsg(classified.message);
                                         setIsTesting(false);
                                         setAccountLoginStatus({});
                                     }
@@ -1408,6 +1679,78 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 </div>
             )
             }
+            {/* ===== LOGIN RESULT SUMMARY MODAL ===== */}
+            {loginResult?.show && (
+                <div className="fixed inset-0 z-[10006] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
+                    <div className="w-full max-w-sm bg-[#1C1E22] rounded-3xl border border-emerald-500/20 shadow-[0_0_40px_rgba(16,185,129,0.1)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                        {/* 成功圖示 */}
+                        <div className="p-8 flex flex-col items-center gap-4 text-center">
+                            <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-2 transition-all duration-700 ${loginResult.failCount === 0 ? 'bg-emerald-500/15 shadow-[0_0_40px_rgba(16,185,129,0.2)]' : 'bg-amber-500/15 shadow-[0_0_40px_rgba(245,158,11,0.2)]'}`}>
+                                {loginResult.failCount === 0 ? (
+                                    <Check size={40} className="text-emerald-400 animate-in zoom-in-50 duration-500" strokeWidth={3} />
+                                ) : (
+                                    <AlertCircle size={40} className="text-amber-400 animate-in zoom-in-50 duration-500" />
+                                )}
+                            </div>
+
+                            <h4 className="text-lg font-bold text-white">
+                                {loginResult.failCount === 0
+                                    ? `🎉 已成功連結 ${loginResult.successCount} 個帳號`
+                                    : `✅ ${loginResult.successCount} 個成功，❌ ${loginResult.failCount} 個失敗`
+                                }
+                            </h4>
+
+                            {/* 每帳號結果 */}
+                            <div className="w-full space-y-2 mt-2">
+                                {loginResult.accounts.map((acc, i) => (
+                                    <div
+                                        key={i}
+                                        className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all animate-in slide-in-from-bottom-2 ${acc.success
+                                            ? 'bg-emerald-500/5 border-emerald-500/20'
+                                            : 'bg-red-500/5 border-red-500/20'
+                                            }`}
+                                        style={{ animationDelay: `${i * 100}ms` }}
+                                    >
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-xs font-bold text-zinc-200 block truncate">{acc.name}</span>
+                                            {acc.error && (
+                                                <span className="text-[10px] text-red-400 block mt-0.5">{acc.error}</span>
+                                            )}
+                                        </div>
+                                        <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ml-2 ${acc.success ? 'bg-emerald-500/20' : 'bg-red-500/20'
+                                            }`}>
+                                            {acc.success ? (
+                                                <Check size={12} className="text-emerald-400" strokeWidth={3} />
+                                            ) : (
+                                                <X size={12} className="text-red-400" strokeWidth={3} />
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-5 border-t border-white/5 bg-zinc-900/50">
+                            <button
+                                onClick={() => {
+                                    setLoginResult(null);
+                                    setIsEditing(null);
+                                    setAccountChoices([]);
+                                    setAccountLoginStatus({});
+                                    setErrorMsg('');
+                                }}
+                                className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${loginResult.failCount === 0
+                                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                                    : 'bg-[#C8B085] hover:bg-[#E0C8A0] text-black shadow-[0_0_20px_rgba(200,176,133,0.2)]'
+                                    }`}
+                            >
+                                <Check size={16} /> 完成
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* DELETE CONFIRMATION MODAL */}
             {
                 deleteTarget && (

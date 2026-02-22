@@ -226,13 +226,15 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         console.log("✅ 使用快取資料,立即顯示");
         initialConfigs = cachedConfigs;
         setConfigs(cachedConfigs);
-        if (cachedConfigs.length > 0) {
-          // Fix Key Format: use pipe separator to match toggle logic
-          const firstC = cachedConfigs[0];
-          const codes = (firstC.branchCode || '').split(',');
-          const firstCode = codes[0] || '';
-          setSelectedConfigIds([`${firstC.id}|${firstCode}|0`]);
-        }
+        // ✅ 修復：預設全選所有帳號分支（避免每次只選第一個導致結果不一致）
+        const allKeys: string[] = [];
+        cachedConfigs.forEach(c => {
+          const codes = (c.branchCode || '').split(',');
+          codes.forEach((code, idx) => {
+            allKeys.push(`${c.id}|${code.trim()}|${idx}`);
+          });
+        });
+        setSelectedConfigIds(allKeys);
       } else {
         // 3. 沒有快取,從 localStorage 載入完整設定
         const savedConfigs = localStorage.getItem("broker_configs");
@@ -240,13 +242,15 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           const parsed = JSON.parse(savedConfigs);
           initialConfigs = parsed;
           setConfigs(parsed);
-          if (parsed.length > 0) {
-            // Fix Key Format
-            const firstC = parsed[0];
-            const codes = (firstC.branchCode || '').split(',');
-            const firstCode = codes[0] || '';
-            setSelectedConfigIds([`${firstC.id}|${firstCode}|0`]);
-          }
+          // ✅ 修復：預設全選所有帳號分支
+          const allKeys: string[] = [];
+          parsed.forEach((c: BrokerConfig) => {
+            const codes = (c.branchCode || '').split(',');
+            codes.forEach((code: string, idx: number) => {
+              allKeys.push(`${c.id}|${code.trim()}|${idx}`);
+            });
+          });
+          setSelectedConfigIds(allKeys);
           // 存入快取供下次使用
           setCache("broker_configs_cache", parsed, 5 * 60 * 1000);
         }

@@ -47,19 +47,19 @@ interface DashboardHeaderProps {
     user: User | null;
     t: any;
     retrySync: () => void;
-    onZoom?: (s: string, e: string) => void; 
+    onZoom?: (s: string, e: string) => void;
     showPurePnl: boolean;
     setShowPurePnl: (b: boolean) => void;
 }
 
-export const DashboardHeader: React.FC<DashboardHeaderProps> = ({ 
-    metrics, portfolios, activePortfolioIds, setActivePortfolioIds, 
-    frequency, setFrequency, lang, hideAmounts, setHideAmounts, 
-    chartHeight, setChartHeight, timeRange, setTimeRange, 
-    customRange, setCustomRange, setIsDatePickerOpen, 
+export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
+    metrics, portfolios, activePortfolioIds, setActivePortfolioIds,
+    frequency, setFrequency, lang, hideAmounts, setHideAmounts,
+    chartHeight, setChartHeight, timeRange, setTimeRange,
+    customRange, setCustomRange, setIsDatePickerOpen,
     setIsFilterOpen, isFilterOpen, hasActiveFilters,
-    availableStrategies, availableEmotions, filterStrategy, setFilterStrategy, 
-    filterEmotion, setFilterEmotion, 
+    availableStrategies, availableEmotions, filterStrategy, setFilterStrategy,
+    filterEmotion, setFilterEmotion,
     showFullEquity, setShowFullEquity, setIsShareModalOpen,
     syncStatus, authStatus, user, t, retrySync, onZoom,
     showPurePnl, setShowPurePnl
@@ -69,17 +69,17 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     // Derived Display Logic
     const getFormattedEquity = () => {
         const displayValue = showPurePnl ? metrics.netProfit : metrics.currentEq;
-        
+
         if (showFullEquity) {
             return { val: displayValue, unit: '', formatted: formatCurrency(displayValue, hideAmounts) };
         }
-        
+
         // Always format the number, even if hiding
         const raw = formatCompactNumber(displayValue, false);
         const match = raw.match(/^([0-9.,+-]+)(.*)$/);
-        
+
         const numericVal = parseFloat(match ? match[1].replace(/,/g, '') : '0');
-        
+
         return {
             val: numericVal,
             unit: match ? match[2] : '',
@@ -97,7 +97,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             return (
                 <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/5">
                     <CloudOff size={10} className="text-slate-500" />
-                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">{t.offline}</span>
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter truncate max-w-[70px] sm:max-w-none">{t.offline}</span>
                 </div>
             );
         }
@@ -110,7 +110,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             );
         }
         if (syncStatus === 'error') {
-             return (
+            return (
                 <button onClick={retrySync} className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors">
                     <AlertCircle size={10} className="text-red-400" />
                     <span className="text-[9px] font-bold text-red-400 uppercase tracking-tighter">{t.syncError}</span>
@@ -134,12 +134,12 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                         <SyncIndicator />
                     </div>
                     <div className="flex items-center gap-2 ml-auto sm:ml-0">
-                        <button 
+                        <button
                             onClick={() => { setShowPurePnl(!showPurePnl); vibrate('selection'); }}
                             className={`
                                 h-[32px] px-3 sm:px-4 flex items-center justify-center rounded-full border transition-all duration-300 backdrop-blur-md shrink-0 text-[10px] font-bold tracking-wider
-                                ${showPurePnl 
-                                    ? 'bg-[#C8B085]/10 text-[#C8B085] border-[#C8B085]/40 shadow-[0_0_15px_rgba(200,176,133,0.1)]' 
+                                ${showPurePnl
+                                    ? 'bg-[#C8B085]/10 text-[#C8B085] border-[#C8B085]/40 shadow-[0_0_15px_rgba(200,176,133,0.1)]'
                                     : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-slate-200'
                                 }
                             `}
@@ -155,7 +155,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                     <div className="flex justify-between items-baseline mb-1 gap-2">
                         {/* MAIN EQUITY */}
                         <div className="flex-1 min-w-0">
-                            <h1 
+                            <h1
                                 onClick={() => setShowFullEquity(!showFullEquity)}
                                 className={`
                                     ${eqFontSizeClass} font-bold font-barlow-numeric tracking-tight text-[#C8B085] flex items-baseline gap-1 cursor-pointer select-none active:opacity-80 transition-all whitespace-nowrap overflow-hidden
@@ -206,40 +206,40 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 <div className="flex items-center gap-1.5 mb-3 shrink-0 h-[28px] w-full relative z-20">
                     {/* Fixed Frequency Selector - Outside overflow to prevent clipping */}
                     <FrequencySelector currentFreq={frequency} setFreq={setFrequency} lang={lang} />
-                    
+
                     {/* Scrollable controls */}
                     <div className="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar h-full mask-gradient-right">
                         <div className="flex items-center gap-1.5 pr-8">
-                            <TimeRangeSelector 
-                                currentRange={timeRange} 
-                                setRange={(r: any) => { 
-                                    if(r === 'CUSTOM') setIsDatePickerOpen(true); 
-                                    else { setTimeRange(r); setCustomRange({start: null, end: null}); }
-                                }} 
-                                lang={lang} 
+                            <TimeRangeSelector
+                                currentRange={timeRange}
+                                setRange={(r: any) => {
+                                    if (r === 'CUSTOM') setIsDatePickerOpen(true);
+                                    else { setTimeRange(r); setCustomRange({ start: null, end: null }); }
+                                }}
+                                lang={lang}
                                 customRangeLabel={
                                     customRange.start && customRange.end ? (
                                         <div className="flex flex-col items-center justify-center leading-none -space-y-0.5">
-                                            <span className="text-[8px] font-barlow-numeric font-bold tracking-tighter">{customRange.start.slice(5).replace('-','/')}</span>
-                                            <span className="text-[8px] font-barlow-numeric font-bold tracking-tighter opacity-80">{customRange.end.slice(5).replace('-','/')}</span>
+                                            <span className="text-[8px] font-barlow-numeric font-bold tracking-tighter">{customRange.start.slice(5).replace('-', '/')}</span>
+                                            <span className="text-[8px] font-barlow-numeric font-bold tracking-tighter opacity-80">{customRange.end.slice(5).replace('-', '/')}</span>
                                         </div>
-                                    ) : (customRange.start ? customRange.start.slice(5).replace('-','/') : undefined)
-                                } 
+                                    ) : (customRange.start ? customRange.start.slice(5).replace('-', '/') : undefined)
+                                }
                             />
 
-                            <button 
+                            <button
                                 onClick={() => setIsShareModalOpen(true)}
                                 className="h-[28px] w-[28px] flex items-center justify-center rounded-lg border bg-[#C8B085]/10 border-[#C8B085]/20 text-[#C8B085] hover:bg-[#C8B085]/20 shrink-0 transition-colors"
                             >
                                 <Share2 size={12} />
                             </button>
 
-                            <button 
-                                onClick={() => { setIsFilterOpen(!isFilterOpen); vibrate('impactLight'); }} 
+                            <button
+                                onClick={() => { setIsFilterOpen(!isFilterOpen); vibrate('impactLight'); }}
                                 className={`
                                     h-[28px] w-[28px] flex items-center justify-center rounded-lg border transition-all shrink-0
-                                    ${isFilterOpen || hasActiveFilters 
-                                        ? 'bg-[#C8B085] text-black border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)]' 
+                                    ${isFilterOpen || hasActiveFilters
+                                        ? 'bg-[#C8B085] text-black border-[#C8B085] shadow-[0_0_10px_rgba(200,176,133,0.3)]'
                                         : 'bg-[#C8B085]/10 border-[#C8B085]/20 text-[#C8B085] hover:bg-[#C8B085]/20'
                                     }
                                 `}
@@ -257,19 +257,19 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                     </div>
                 )}
 
-                <StatsChart 
-                    metrics={metrics} 
-                    portfolios={portfolios} 
-                    activePortfolioIds={activePortfolioIds} 
-                    frequency={frequency} 
-                    lang={lang} 
-                    hideAmounts={hideAmounts} 
+                <StatsChart
+                    metrics={metrics}
+                    portfolios={portfolios}
+                    activePortfolioIds={activePortfolioIds}
+                    frequency={frequency}
+                    lang={lang}
+                    hideAmounts={hideAmounts}
                     chartHeight={chartHeight}
                     setChartHeight={setChartHeight}
-                    onZoom={(s, e) => { 
+                    onZoom={(s, e) => {
                         if (onZoom) onZoom(s, e);
-                        setCustomRange({ start: s, end: e }); 
-                        setTimeRange('CUSTOM'); 
+                        setCustomRange({ start: s, end: e });
+                        setTimeRange('CUSTOM');
                     }}
                     showPurePnl={showPurePnl}
                 />

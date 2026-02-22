@@ -1,18 +1,18 @@
 
 // [Manage] Last Updated: 2026-02-12
-export const APP_VERSION = 'V2.4.2';
+export const APP_VERSION = 'V2.4.8';
 export const THEME = {
-    GOLD: '#C8B085',       
-    GOLD_BG: '#2A2824',    
-    BLUE: '#526D82',       
-    RED: '#D05A5A',        
-    GREEN: '#5B9A8B', 
+    GOLD: '#C8B085',
+    GOLD_BG: '#2A2824',
+    BLUE: '#526D82',
+    RED: '#D05A5A',
+    GREEN: '#5B9A8B',
     GREEN_DARK: '#2C5F54',
-    BG_DARK: '#0B0C10',    
-    BG_CARD: '#141619',    
-    TEXT_MAIN: '#E0E0E0',  
-    DD_GRADIENT_TOP: '#5B9A8B',    
-    DD_GRADIENT_BOTTOM: '#2C5F54', 
+    BG_DARK: '#0B0C10',
+    BG_CARD: '#141619',
+    TEXT_MAIN: '#E0E0E0',
+    DD_GRADIENT_TOP: '#5B9A8B',
+    DD_GRADIENT_BOTTOM: '#2C5F54',
     DEFAULT_LOSS: '#28573f',
     LOSS_WHITE: '#CBD5E1',
     BLUE_LOSS: '#3B82F6',
@@ -100,8 +100,8 @@ export const I18N = {
         currentStreak: '目前連勝', bestStreak: '最長連勝', netProfit: '淨利', riskStatus: '風控',
         time_all: '全期間', time_1m: '近一月', time_3m: '近一季', time_ytd: '今年', time_custom: '自訂',
         selectDateRange: '選擇日期區間', startDate: '起始日', endDate: '結束日', confirm: '確認', reset: '重置',
-        dataManagement: '資料備份與還原', 
-        backupDownload: '匯出備份', 
+        dataManagement: '資料備份與還原',
+        backupDownload: '匯出備份',
         backupImport: '匯入備份',
         backupCloud: '立即備份',
         importSuccess: '匯入成功！', importError: '匯入失敗，請檢查格式。',
@@ -114,23 +114,23 @@ export const I18N = {
         preferences: '偏好設定', lossColor: '預設虧損色',
         strategyTip: '格式:「名稱_備註」（如：突破_早盤），底線後文字會自動變成備註。',
         mindsetTip: '分類交易類型有助績效剖析。',
-        
+
         // Portfolio Selector Translations
         allAccounts: '全部帳戶',
         multiple: '多個帳戶',
-        
+
         // Cloud Backup specific
-        syncTitle: 'Google 雲端備份', 
-        syncDesc: '登入以啟用自動備份，確保資料安全', 
-        syncing: '備份中...', 
-        synced: '已備份至 Google Cloud', 
+        syncTitle: 'Google 雲端備份',
+        syncDesc: '登入以啟用自動備份，確保資料安全',
+        syncing: '備份中...',
+        synced: '已備份至 Google Cloud',
         lastBackup: '最後備份',
-        offline: '離線模式 (僅本地)', 
-        saving: '上傳中...', 
-        saved: '已儲存', 
-        syncError: '備份失敗', 
+        offline: '離線模式 (僅本地)',
+        saving: '上傳中...',
+        saved: '已儲存',
+        syncError: '備份失敗',
         retry: '重試',
-        
+
         loginWithGoogle: '使用 Google 登入並備份', loginWithApple: '使用 Apple 登入', logout: '登出帳號',
         migrateConfirm: '發現本地有未同步的資料，是否要將其上傳至雲端？',
         sort_date: '日期', sort_pnl_high: '獲利優先', sort_pnl_low: '虧損優先',
@@ -140,7 +140,7 @@ export const I18N = {
         risk_dd_desc: '當總淨值自高點回撤超過閥值時警告。',
         risk_streak_desc: '當連續虧損次數超過設定數值時警告。',
         maxLossStreak: '連續虧損次數',
-        
+
         // Sync Conflict Modal
         syncConflictTitle: '發現資料衝突',
         syncConflictDesc: '我們發現您的裝置上有未同步的本地資料。請問您希望如何處理？',
@@ -155,7 +155,7 @@ export const I18N = {
         importConflictDesc: '您目前的裝置上已有交易紀錄。直接匯入將會覆蓋現有資料。您希望合併資料還是完全覆蓋？',
         overwriteOption: '覆蓋 (Overwrite)',
         mergeImportOption: '合併 (Merge)',
-        
+
         // Logs Filter
         filter_notes: '只顯示筆記',
 
@@ -202,8 +202,8 @@ export const I18N = {
         currentStreak: 'Current Streak', bestStreak: 'Best Streak', netProfit: 'Net Profit', riskStatus: 'Risk Status',
         time_all: 'All Time', time_1m: 'Last Month', time_3m: 'Last Quarter', time_ytd: 'YTD', time_custom: 'Custom',
         selectDateRange: 'Select Date Range', startDate: 'Start Date', endDate: 'End Date', confirm: 'Confirm', reset: 'Reset',
-        dataManagement: 'Backup & Restore', 
-        backupDownload: 'Export Backup', 
+        dataManagement: 'Backup & Restore',
+        backupDownload: 'Export Backup',
         backupImport: 'Import Backup',
         backupCloud: 'Backup Now',
         importSuccess: 'Import Successful!', importError: 'Import Failed. Check format.',
@@ -216,23 +216,23 @@ export const I18N = {
         preferences: 'Preferences', lossColor: 'Default Loss Color',
         strategyTip: 'Format: "Name_Note" (e.g. Breakout_AM). Text after underscore becomes a note.',
         mindsetTip: 'Categorizing trade types helps with performance analysis.',
-        
+
         // Portfolio Selector Translations
         allAccounts: 'All Accounts',
         multiple: 'Multiple',
 
         // Cloud Backup specific
-        syncTitle: 'Google Cloud Backup', 
-        syncDesc: 'Sign in to enable automatic real-time backup', 
-        syncing: 'Backing up...', 
-        synced: 'Backed up to Google Cloud', 
+        syncTitle: 'Google Cloud Backup',
+        syncDesc: 'Sign in to enable automatic real-time backup',
+        syncing: 'Backing up...',
+        synced: 'Backed up to Google Cloud',
         lastBackup: 'Last Backup',
-        offline: 'Offline Mode', 
-        saving: 'Uploading...', 
-        saved: 'Saved', 
-        syncError: 'Backup Error', 
+        offline: 'Offline Mode',
+        saving: 'Uploading...',
+        saved: 'Saved',
+        syncError: 'Backup Error',
         retry: 'Retry',
-        
+
         loginWithGoogle: 'Login & Backup', loginWithApple: 'Sign in with Apple', logout: 'Logout',
         migrateConfirm: 'Found local data. Would you like to sync it to the cloud?',
         sort_date: 'Date', sort_pnl_high: 'High PnL', sort_pnl_low: 'Low PnL',
@@ -257,7 +257,7 @@ export const I18N = {
         importConflictDesc: 'You have existing trades on this device. Importing will overwrite them. Do you want to merge or overwrite?',
         overwriteOption: 'Overwrite',
         mergeImportOption: 'Merge',
-        
+
         // Logs Filter
         filter_notes: 'Notes Only',
 
