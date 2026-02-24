@@ -41,47 +41,7 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
     };
 
     const priceDisplay = useMemo(() => {
-        // Futures/Options Logic (Points)
-        const category = trade.category || '';
-        const code = trade.code || '';
-        const isFutures = (
-            category === '期貨' || 
-            category === 'Option' || 
-            category.includes('Futures') ||
-            category.includes('台指') ||
-            code.includes('期') || 
-            code.includes('選') ||
-            code.includes('TX') || 
-            code.includes('MTX') ||
-            code.includes('TFE') ||
-            code.includes('TFO') ||
-            code.includes('TF')
-        );
-        
-        // 🔧 Robust Points Check: Must have both prices and they shouldn't be zero/null
-        const hasPrices = trade.entryPrice != null && trade.exitPrice != null && trade.entryPrice > 0 && trade.exitPrice > 0;
-
-        if (isFutures) {
-            if (hasPrices) {
-                const points = Number(Math.abs(trade.exitPrice! - trade.entryPrice!).toFixed(2));
-                const formatted = points.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-                return `${formatted} pts`;
-            } else if (trade.pnl !== 0) {
-                // Fallback for points calculation
-                let multiplier = 200;
-                if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
-                else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
-                else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
-                
-                const guessedPts = Number((Math.abs(trade.pnl) / multiplier / Math.abs(trade.quantity || 1)).toFixed(2));
-                if (guessedPts > 0) {
-                    const formatted = guessedPts.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-                    return `${formatted} pts`;
-                }
-            }
-        }
-        
-        // Default Logic (Currency)
+        // 膠囊統一顯示 NTD 金額
         return Math.abs(trade.pnl).toLocaleString('en-US');
     }, [trade]);
 
@@ -89,27 +49,57 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
         // 1. Priority: Construct Info from Independent Fields (New Data Structure)
         // Relaxed check: Show if ANY of the structural fields exist
         if (trade.code || trade.points || (trade.quantity && trade.quantity > 0)) {
-            const isFuture = trade.category === 'Futures' || trade.category === 'Option';
+            const category = trade.category || '';
+            const code = trade.code || '';
+            const isFuture = (
+                category === 'Futures' || category === 'Option' || category === '期貨' ||
+                category.includes('Futures') || category.includes('台指') ||
+                code.includes('期') || code.includes('選') ||
+                code.includes('TX') || code.includes('MTX') || code.includes('TF')
+            );
             const unit = isFuture ? '口' : '張';
-            
-            // Reconstruct Pts/Amt string based on trade data if possible, or simplified display
-            const ptsDisplay = formatPointsDisplay(trade.points);
-
-            // Strict Format: Name | Pts | Qty
-            // User requested: "台指期 | +100 pts | 7口" (Removing 【】 labels)
             
             // Extract Name
             let displayName = '';
             const codeStr = String(trade.code || '');
             if (codeStr) {
-                // Use centralized formatter to handle "TXFB6" -> "台指期02"
                 displayName = formatSymbolCode(codeStr);
             }
             
-            const qtyDisplay = trade.quantity ? `${trade.quantity}${unit}` : '';
+            const qtyDisplay = trade.quantity ? `${Math.abs(trade.quantity)}${unit}` : '';
+            
+            // 期貨/選擇權: 計算點數並顯示在 infoLine
+            let ptsDisplay = '';
+            if (isFuture) {
+                const hasPrices = trade.entryPrice != null && trade.exitPrice != null && trade.entryPrice > 0 && trade.exitPrice > 0;
+                if (hasPrices) {
+                    const points = Number(Math.abs(trade.exitPrice! - trade.entryPrice!).toFixed(2));
+                    const formatted = points.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                    ptsDisplay = `${formatted} pts`;
+                } else if (trade.pnl !== 0) {
+                    // Fallback: 從 NTD 反推點數
+                    let multiplier = 200;
+                    if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
+                    else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
+                    else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
+                    else if (code.includes('TXO') || code.includes('選')) multiplier = 50;
+                    const guessedPts = Number((Math.abs(trade.pnl) / multiplier / Math.abs(trade.quantity || 1)).toFixed(2));
+                    if (guessedPts > 0) {
+                        ptsDisplay = `${guessedPts.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} pts`;
+                    }
+                }
+            } else {
+                // 台股: 顯示報酬率 (yield) 或原本的 points 欄位
+                if (trade.yield !== undefined && trade.yield !== null) {
+                    const prefix = trade.yield > 0 ? '+' : '';
+                    ptsDisplay = `${prefix}${trade.yield}%`;
+                } else if (trade.points) {
+                    ptsDisplay = formatPointsDisplay(trade.points);
+                }
+            }
             
             // Filter out empty parts and join with pipe
-            const info = [displayName, ptsDisplay, qtyDisplay].filter(Boolean).join(' | ');
+            const info = [displayName, qtyDisplay, ptsDisplay].filter(Boolean).join(' | ');
 
             // Deduplication Logic:
             // If trade.note contains the legacy "Code | Pts | Qty" string, allow TradeModal to clean it permanently,

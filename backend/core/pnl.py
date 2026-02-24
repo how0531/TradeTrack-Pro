@@ -261,48 +261,74 @@ def login_and_fetch_pnl(
                 for item in pnl_data:
                     try:
                         code = getattr(item, "code", "Unknown")
-                        realized = round(float(getattr(item, "pnl", 0)), 4)
                         item_date = str(getattr(item, "date", ""))
                         if len(item_date) == 8:
                             item_date = f"{item_date[:4]}-{item_date[4:6]}-{item_date[6:]}"
                         
                         raw_qty = int(getattr(item, "quantity", 0))
-                        price = round(float(getattr(item, "price", 0)), 4)
-                        buy_amt = round(float(getattr(item, "buy_amt", 0)), 4)
-                        sell_amt = round(float(getattr(item, "sell_amt", 0)), 4)
+                        # pnl from Shioaji is ALWAYS in NTD for both Stock and Futures
+                        realized = round(float(getattr(item, "pnl", 0)), 4)
                         
-                        # Share quantity correction (Stock only)
-                        if not is_futures and not is_sub:
-                            cond_str = str(getattr(item, "cond", "")).upper()
-                            is_margin = any(x in cond_str for x in ["MARGIN", "SHORT", "融資", "融券"])
-                            if is_margin and 0 < raw_qty < 500: raw_qty *= 1000
-                            elif price > 0 and raw_qty > 0 and (max(buy_amt, sell_amt)) >= 500:
-                                 if ((max(buy_amt, sell_amt)) / price) > raw_qty * 800:
-                                     raw_qty *= 1000
-
-                        # Helper to resolve names
-                        def resolve_name(code, is_futures):
+                        # Initialize output fields
+                        price = 0.0
+                        buy_amt = 0.0
+                        sell_amt = 0.0
+                        pr_ratio_val = 0.0
+                        entry_price = 0.0
+                        exit_price = 0.0
+                        
+                        # Helper to resolve futures names
+                        def resolve_name(c, is_f):
                            FUTURES_NAMES = {
                                'TXF': '台指期', 'MTX': '小台指', 'TE': '電子期', 'MTE': '小電子期',
                                'TF': '金融期', 'T5F': '櫃買期', 'UNF': '非金電期', 'GTF': '黃金期',
                                'XIF': '東證期', 'SP': 'S&P期', 'ND': '那斯達克期',
                            }
-                           name = ""
-                           if is_futures and len(code) >= 2:
-                                for prefix in [code[:3].upper(), code[:2].upper()]:
+                           n = ""
+                           if is_f and len(c) >= 2:
+                                for prefix in [c[:3].upper(), c[:2].upper()]:
                                     if prefix in FUTURES_NAMES: 
-                                        name = FUTURES_NAMES[prefix]
+                                        n = FUTURES_NAMES[prefix]
                                         break
-                           if "臺股期" in name: name = "台指期"
-                           elif "小型臺指" in name: name = "小台指"
-                           return name
+                                if not n and len(c) > 3 and c.endswith('O'):
+                                    n = '選擇權'
+                           if "臺股期" in n: n = "台指期"
+                           elif "小型臺指" in n: n = "小台指"
+                           return n
 
                         name = getattr(item, "name", "") or resolve_name(code, is_futures)
+                        display_code = name if code in name else f"{code} {name}" if name else code
                         
-                        if name and name != code:
-                            display_code = name if code in name else f"{code} {name}"
-                        else:
-                            display_code = code
+                        if is_futures:
+                            # ═══════════════════════════════════════════
+                            # FutureProfitLoss 專線
+                            # 屬性: code, quantity, pnl(NTD), date, 
+                            #       direction, entry_price, cover_price, tax, fee
+                            # ═══════════════════════════════════════════
+                            entry_price = float(getattr(item, "entry_price", 0))
+                            exit_price = float(getattr(item, "cover_price", 0))
+                            price = entry_price  # 使用進場價格作為 price
+                            
+                            # 自行計算報酬率 (期貨沒有 pr_ratio)
+                            if entry_price > 0 and raw_qty > 0:
+                                # 用 pnl / (entry_price * qty) 來概估 %
+                                # 但期貨報酬率意義不大，這裡只提供參考
+                                denom = entry_price * raw_qty
+                                if denom > 0:
+                                    pr_ratio_val = round((realized / denom) * 100, 2)
+                            
+                        elif not is_sub:
+                            # ═══════════════════════════════════════════
+                            # StockProfitLoss 專線
+                            # 屬性: code, seqno, dseq, quantity, price,
+                            #       pnl(NTD), pr_ratio, cond, date
+                            # ═══════════════════════════════════════════
+                            price = round(float(getattr(item, "price", 0)), 4)
+                            pr_ratio_val = round(float(getattr(item, "pr_ratio", 0)) * 100, 2)
+                            
+                            # Shioaji unit=Common (default) 回傳的 quantity 已是「張」數
+                            # Cash/MarginTrading/ShortSelling/Netting 皆同，不需要 * 1000
+                            cond_str = str(getattr(item, "cond", "")).upper()
                         
                         acc_details.append({
                             "date": item_date, 
@@ -310,13 +336,13 @@ def login_and_fetch_pnl(
                             "price": price, 
                             "quantity": raw_qty, 
                             "pnl": realized, 
-                            "orderNo": getattr(item, "dseq", ""),
+                            "orderNo": getattr(item, "dseq", getattr(item, "seqno", "")),
                             "category": category,
                             "buyAmt": buy_amt,
                             "sellAmt": sell_amt,
-                            "entryPrice": float(getattr(item, "entry_price", 0)),
-                            "exitPrice": float(getattr(item, "cover_price", 0)),
-                            "yield": round(float(getattr(item, "pr_ratio", 0)) * 100, 2),
+                            "entryPrice": entry_price,
+                            "exitPrice": exit_price,
+                            "yield": pr_ratio_val,
                             "accountId": target_account.account_id
                         })
                         acc_pnl += realized

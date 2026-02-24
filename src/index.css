@@ -4,7 +4,9 @@
 
 @layer base {
   body {
-    @apply bg-black text-gray-200 overflow-x-hidden relative;
+    @apply text-gray-200 overflow-x-hidden relative;
+    background: radial-gradient(circle at 50% -10%, #1c1812 0%, #000000 80%);
+    background-attachment: fixed;
     overscroll-behavior-y: none;
   }
 
@@ -14,11 +16,61 @@
     inset: 0;
     pointer-events: none;
     z-index: 50;
-    opacity: 0.04;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
     mix-blend-mode: overlay;
   }
+
+  /* ── B1: Focus States — 金銅色 focus-visible ring ── */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(200, 176, 133, 0.5);
+    border-color: rgba(200, 176, 133, 0.4) !important;
+  }
+
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(200, 176, 133, 0.3), inset 0 0 0 1px rgba(200, 176, 133, 0.15);
+    border-color: rgba(200, 176, 133, 0.4) !important;
+  }
+
+  /* ── B2: Touch Optimization ── */
+  button,
+  a,
+  [role="button"],
+  input[type="submit"],
+  input[type="button"],
+  select {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(200, 176, 133, 0.1);
+  }
+
+  /* ── B2: Modal/drawer overscroll containment ── */
+  [role="dialog"],
+  .modal-content,
+  .drawer-content {
+    overscroll-behavior: contain;
+  }
+
+  /* ── B3: Interactive States — 強化 hover/active 對比 ── */
+  button:not(:disabled):hover {
+    filter: brightness(1.15);
+  }
+
+  button:not(:disabled):active {
+    filter: brightness(0.9);
+    transform: scale(0.98);
+  }
 }
+
+.stagger-1 { animation-delay: 50ms; animation-fill-mode: both; }
+.stagger-2 { animation-delay: 100ms; animation-fill-mode: both; }
+.stagger-3 { animation-delay: 150ms; animation-fill-mode: both; }
+.stagger-4 { animation-delay: 200ms; animation-fill-mode: both; }
+.stagger-5 { animation-delay: 250ms; animation-fill-mode: both; }
+.stagger-6 { animation-delay: 300ms; animation-fill-mode: both; }
 
 @layer utilities {
   .font-barlow-numeric {

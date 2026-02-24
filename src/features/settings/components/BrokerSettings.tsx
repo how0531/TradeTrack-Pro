@@ -882,6 +882,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                         placeholder="A123456789"
                                                         value={localConfig.personId}
                                                         onChange={(e) => handleChange('personId', e.target.value.trim().toUpperCase())}
+                                                        autoComplete="off"
+                                                        spellCheck={false}
                                                         className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                                     />
                                                 </div>
@@ -893,6 +895,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     type={showSecrets ? "text" : "password"}
                                                     value={localConfig.apiKey}
                                                     onChange={(e) => handleChange('apiKey', e.target.value.trim())}
+                                                    autoComplete="off"
+                                                    spellCheck={false}
                                                     className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                                 />
                                             </div>
@@ -903,6 +907,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                     type={showSecrets ? "text" : "password"}
                                                     value={localConfig.apiSecret}
                                                     onChange={(e) => handleChange('apiSecret', e.target.value.trim())}
+                                                    autoComplete="off"
+                                                    spellCheck={false}
                                                     className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiSecret ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                                 />
                                                 <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
@@ -1036,6 +1042,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                         value={localConfig.caPassword}
                                                         placeholder="預設為身分證字號"
                                                         onChange={(e) => handleChange('caPassword', e.target.value)}
+                                                        autoComplete="off"
+                                                        spellCheck={false}
                                                         className={`w-full bg-black/40 border rounded-xl pl-4 pr-20 py-3 text-sm text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.caPassword ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                                     />
                                                     <button

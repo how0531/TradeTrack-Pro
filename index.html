@@ -16,7 +16,7 @@
     <title>TradeTrack</title>
     <title>TradeTrack</title>
     <link
-      href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700;800&family=Bebas+Neue&family=Syncopate:wght@400;700&display=swap"
       rel="stylesheet"
     />
     <script type="importmap">
@@ -37,14 +37,14 @@
     </script>
     <script>
       // NUCLEAR CACHE PURGE V1.5.0
-      (function() {
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            for(let reg of regs) reg.unregister();
+      (function () {
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            for (let reg of regs) reg.unregister();
           });
         }
         if (window.caches) {
-          caches.keys().then(function(names) {
+          caches.keys().then(function (names) {
             for (let name of names) caches.delete(name);
           });
         }

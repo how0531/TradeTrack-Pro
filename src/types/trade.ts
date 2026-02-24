@@ -29,6 +29,7 @@ export interface Trade {
   quantity?: number;
   category?: string;
   raw_yield?: number;
+  yield?: number;
   points?: string; // e.g. "+150 pts" or "+5.2%"
 }
 

@@ -9,6 +9,8 @@ export default {
       fontFamily: {
         sans: ["Inter", "sans-serif"],
         "barlow-numeric": ["Barlow", "sans-serif"],
+        display: ["Bebas Neue", "sans-serif"],
+        accent: ["Syncopate", "sans-serif"],
       },
       colors: {
         gold: "#C8B085",

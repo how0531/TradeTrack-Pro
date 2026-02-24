@@ -48,14 +48,14 @@ const StatCard = ({ label, value, valueColor, subLabel, className, valueClassNam
         >
             <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
             <span 
-                className={`text-lg font-bold font-barlow-numeric tracking-tight mb-0.5 transition-all duration-300 ${valueClassName || ''} ${isHidden ? 'blur-[6px] select-none opacity-60' : ''}`} 
+                className={`text-2xl font-normal font-display tracking-widest mt-1 mb-0.5 transition-all duration-300 ${valueClassName || ''} ${isHidden ? 'blur-[6px] select-none opacity-60' : ''}`} 
                 style={{ color: valueColor || '#E0E0E0' }}
             >
                 {value}
             </span>
-            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+            <span className="text-[10px] font-accent text-slate-500 uppercase tracking-wider flex items-center gap-1">
                 {label}
-                {subLabel && <span className="opacity-50 text-[8px]">({subLabel})</span>}
+                {subLabel && <span className="opacity-50 text-[8px] font-sans">({subLabel})</span>}
             </span>
         </div>
     );
@@ -485,7 +485,7 @@ export const StatsChart = ({
     const chartMarginBottom = { top: 0, right: 20, left: 20, bottom: 0 };
 
     return (
-        <div className="w-full flex flex-col relative transition-none select-none" style={{ height: chartHeight, touchAction: 'none' }}>
+        <div className="w-full flex flex-col relative transition-none select-none stagger-1 animate-in fade-in slide-in-from-bottom-2 duration-700" style={{ height: chartHeight, touchAction: 'none' }}>
             {selection && selectionStats && (
                 <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[80] animate-in fade-in duration-100 pointer-events-none">
                     <div className="bg-[#050505]/30 backdrop-blur-md border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-4 min-w-[200px]">
@@ -603,8 +603,8 @@ export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, st
     else if (isDDWarning) { ddValueColor = THEME.GREEN; ddValueClass = "animate-pulse"; }
 
     return (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             <div className="flex flex-col gap-2">
+        <div className="space-y-4">
+             <div className="flex flex-col gap-2 stagger-2 animate-in fade-in slide-in-from-bottom-4 duration-700">
                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <StatCard hideAmounts={hideAmounts} label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate < 40 ? THEME.GREEN : THEME.RED} />
                     <StatCard hideAmounts={hideAmounts} label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
@@ -617,7 +617,7 @@ export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, st
                  </div>
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 stagger-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 <div className="flex justify-between items-center px-1">
                     <div className="flex items-center gap-2">
                          <div className="p-1 rounded bg-white/5"><List size={12} className="text-slate-400"/></div>

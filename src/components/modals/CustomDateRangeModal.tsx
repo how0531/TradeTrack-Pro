@@ -99,15 +99,16 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
                         >
                             <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block tracking-wider">{t.startDate}</label>
                             <input 
-                                type="text"
+                                type="date"
                                 value={startDate || ''}
-                                placeholder="YYYY-MM-DD"
                                 onChange={(e) => {
-                                    setStartDate(e.target.value);
-                                    handleDirectInput('start', e.target.value);
+                                    const val = e.target.value;
+                                    setStartDate(val);
+                                    handleDirectInput('start', val);
                                 }}
+                                onFocus={(e) => { e.stopPropagation(); setStep('start'); }}
                                 onClick={(e) => e.stopPropagation()}
-                                className={`w-full bg-transparent border-none p-0 text-sm font-barlow-numeric font-bold focus:ring-0 ${startDate ? 'text-white' : 'text-zinc-800'}`}
+                                className={`w-full bg-transparent border-none p-0 text-sm font-barlow-numeric font-bold focus:ring-0 focus:outline-none [color-scheme:dark] ${startDate ? 'text-white' : 'text-zinc-800'}`}
                             />
                         </div>
 
@@ -126,15 +127,16 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
                                 </button>
                             </div>
                             <input 
-                                type="text"
+                                type="date"
                                 value={endDate || ''}
-                                placeholder="YYYY-MM-DD"
                                 onChange={(e) => {
-                                    setEndDate(e.target.value);
-                                    handleDirectInput('end', e.target.value);
+                                    const val = e.target.value;
+                                    setEndDate(val);
+                                    handleDirectInput('end', val);
                                 }}
+                                onFocus={(e) => { e.stopPropagation(); setStep('end'); }}
                                 onClick={(e) => e.stopPropagation()}
-                                className={`w-full bg-transparent border-none p-0 text-sm font-barlow-numeric font-bold focus:ring-0 ${endDate ? 'text-white' : 'text-zinc-800'}`}
+                                className={`w-full bg-transparent border-none p-0 text-sm font-barlow-numeric font-bold focus:ring-0 focus:outline-none [color-scheme:dark] ${endDate ? 'text-white' : 'text-zinc-800'}`}
                             />
                         </div>
                     </div>

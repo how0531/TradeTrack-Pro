@@ -20,6 +20,18 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
     if (!isOpen) return null;
     const { strategies, emotions, portfolios, lang, metrics } = useTradeContext();
     const t = I18N[lang] || I18N['zh'];
+
+    // ── C3: beforeunload 防護 — 表單有未儲存資料時阻止離開 ──
+    React.useEffect(() => {
+        const hasUnsavedData = form.amount && String(form.amount).length > 0;
+        if (!hasUnsavedData) return;
+        const handler = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [form.amount]);
     
     // Real-time Stock Lookup (3-Tier: Local → Cache → TWSE)
     // 🆕 BIDIRECTIONAL: Code → Name OR Name → Code
