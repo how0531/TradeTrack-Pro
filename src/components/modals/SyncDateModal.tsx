@@ -784,7 +784,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#D05A5A]/5 rounded-full blur-[100px] pointer-events-none" />
 
       <div
-        className={`relative w-full ${step === 2 ? "max-w-4xl" : "max-w-md"} bg-[#14161B]/90 rounded-[40px] border border-white/10 shadow-[0_32px_80px_rgba(0,0,0,0.6)] backdrop-blur-3xl transition-all duration-500 flex flex-col my-auto overflow-hidden animate-in zoom-in-95`}
+        className={`relative w-full ${step === 2 ? "max-w-4xl" : "max-w-md"} max-h-[90vh] bg-[#14161B]/90 rounded-[40px] border border-white/10 shadow-[0_32px_80px_rgba(0,0,0,0.6)] backdrop-blur-3xl transition-all duration-500 flex flex-col my-auto overflow-hidden animate-in zoom-in-95`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -804,7 +804,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           </button>
         </div>
 
-        <div className="p-7">
+        <div className="p-7 overflow-y-auto custom-scrollbar flex-1">
           {/* STEP 1: CONFIG */}
           {step === 1 && (
             <div className="space-y-8 animate-in slide-in-from-bottom-3 duration-300">
@@ -912,6 +912,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                     </span>
                   </button>
                 </div>
+                <div className="flex flex-col gap-3 max-h-[280px] overflow-y-auto pr-2 overflow-x-hidden custom-scrollbar">
                 {configs.flatMap((config) => {
                   const branches = (config.branch || 'Unknown').split(',');
                   const codes = (config.branchCode || '').split(',');
@@ -1041,6 +1042,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                     );
                   });
                 })}
+                </div>
               </div>
 
               {/* Error or Login Prompt */}

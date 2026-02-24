@@ -27,21 +27,39 @@ interface StatsContentProps extends StatsCommonProps {
 }
 
 // --- INTERNAL COMPONENT: StatCard ---
-const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName, hideAmounts }: any) => (
-    <div className={`p-3 rounded-xl border flex flex-col items-center justify-center min-h-[72px] relative overflow-hidden group transition-colors shadow-lg shadow-black/20 backdrop-blur-md ${className || 'border-white/5 bg-[#1A1C20]/40 hover:bg-[#1A1C20]/60'}`}>
-        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-        <span 
-            className={`text-lg font-bold font-barlow-numeric tracking-tight mb-0.5 ${valueClassName || ''} ${hideAmounts ? 'blur-[6px] select-none opacity-60' : ''}`} 
-            style={{ color: valueColor || '#E0E0E0' }}
+const StatCard = ({ label, value, valueColor, subLabel, className, valueClassName, hideAmounts }: any) => {
+    const [isRevealed, setIsRevealed] = useState(false);
+
+    useEffect(() => {
+        if (!hideAmounts) setIsRevealed(false);
+    }, [hideAmounts]);
+
+    const isHidden = hideAmounts && !isRevealed;
+
+    return (
+        <div 
+            onClick={() => {
+                if (hideAmounts) {
+                    setIsRevealed(!isRevealed);
+                    vibrate('impactLight');
+                }
+            }}
+            className={`p-3 rounded-xl border flex flex-col items-center justify-center min-h-[72px] relative overflow-hidden group transition-all shadow-lg shadow-black/20 backdrop-blur-md ${className || 'border-white/5 bg-[#1A1C20]/40 hover:bg-[#1A1C20]/60'} ${hideAmounts ? 'cursor-pointer active:scale-95' : ''}`}
         >
-            {value}
-        </span>
-        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-            {label}
-            {subLabel && <span className="opacity-50 text-[8px]">({subLabel})</span>}
-        </span>
-    </div>
-);
+            <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <span 
+                className={`text-lg font-bold font-barlow-numeric tracking-tight mb-0.5 transition-all duration-300 ${valueClassName || ''} ${isHidden ? 'blur-[6px] select-none opacity-60' : ''}`} 
+                style={{ color: valueColor || '#E0E0E0' }}
+            >
+                {value}
+            </span>
+            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                {label}
+                {subLabel && <span className="opacity-50 text-[8px]">({subLabel})</span>}
+            </span>
+        </div>
+    );
+};
 
 // --- TOOLTIPS ---
 const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios, showPurePnl }: { active?: boolean, payload?: any[], hideAmounts: boolean, lang: 'zh' | 'en', portfolios: any[], showPurePnl?: boolean }) => {

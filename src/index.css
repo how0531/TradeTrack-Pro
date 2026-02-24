@@ -37,22 +37,23 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 4px;
+    background: transparent;
+    border-radius: 10px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
+    background: rgba(200, 176, 133, 0.2);
+    border-radius: 10px;
+    transition: background 0.2s ease-in-out;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(200, 176, 133, 0.5);
   }
 
   .mask-gradient {

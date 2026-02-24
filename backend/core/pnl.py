@@ -132,11 +132,19 @@ def login_and_fetch_pnl(
                     log(f"⚠️ [BRANCH_MAP] Unknown branch code: {bid} - Please update constants.py")
                     bname = f"未知分公司[{bid}] ({atype})"
 
-                # determine simplified category
+                # Shioaji AccountType enum values after replace("AccountType.", ""):
+                #   "Stock"  → AccountType.Stock: 'S'  (台股證券 or 複委託)
+                #   "Future" → AccountType.Future: 'F' (期貨)
+                # SubBrokerage uses Stock type but has different account_id prefix (starts with '0')
+                acc_id_str = str(getattr(acc, "account_id", ""))
                 category = "Stock"
-                if "FUTURE" in atype.upper() or "F" in atype.upper(): category = "Futures"
-                elif "SUB" in atype.upper() or "H" in atype.upper(): category = "SubBrokerage"
-                elif bid in ["F002", "9162"]: category = "Futures" # Fallback by known branch
+                atype_upper = atype.upper()
+                if atype_upper == "FUTURE" or atype_upper == "F":
+                    category = "Futures"
+                elif bid in ["F002", "9162"]:
+                    category = "Futures"  # Fallback by known futures branch
+                elif acc_id_str.startswith("0") or "SUB" in atype_upper or "H" in atype_upper:
+                    category = "SubBrokerage"
 
                 choices.append({
                     "branch_code": str(bid),
