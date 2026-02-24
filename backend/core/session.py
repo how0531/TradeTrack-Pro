@@ -43,16 +43,15 @@ class ShioajiSessionManager:
             self.last_used_time = datetime.now()
             return self.api
 
-        # 2. If valid session exists but credentials changed, logout first
+        # 2. If valid session exists but credentials changed, drop old session
         if self.api:
+            # WARNING: Calling self.api.logout() on Windows often causes a deadlock
+            # in the underlying Shioaji C++ core, freezing the entire backend.
+            # We safely drop the reference instead.
             print(
-                f"DEBUG: [SessionReuse] Credentials changed. Logging out...",
+                f"DEBUG: [Session] Dropping old session to avoid deadlock. Credentials changed.",
                 flush=True,
             )
-            try:
-                self.api.logout()
-            except Exception as e:
-                print(f"WARNING: Logout failed during switch: {e}", flush=True)
             self.api = None
             self.ca_activated = False  # Reset CA status
 

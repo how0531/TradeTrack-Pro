@@ -1,0 +1,48 @@
+081e721 fix: 移除後端期貨查詢多執行緒以防止 Shioaji C++ 核心崩潰 (502 CORS Error)
+2e1d0c5 fix: CORS 失敗訊息顯示在 UI、不再靜默吞掉 fetch 錯誤
+a33fad1 refactor: 後端架構整理 - 提取共用 API 配置、移除 Mock、統一 Logger
+f0bbffa v2.4.8: 匯入流程修復 - 帳號全選/重複賦值/ID精度/跨帳戶重複檢測
+6672723 v2.4.8: 版本號更新、匯入流程全選修復、手機 UI 優化 (SyncIndicator/NavBar)
+1af2fab V2.4.5: Fix login stability, manual retry, and allow empty import
+de3b034 style(broker): remove arrow icon from id import button
+006f462 feat(broker): remove env selector and relocate id import button
+974aa11 style(broker): enhance section titles with system yellow and larger font
+dd93af5 style(broker): reduce step number opacity to 30%
+a8112de fix(broker): remove duplicate div and adjust transparency
+a96ff1f style(broker): increase step number brightness to 70%
+39c67be style(broker): enhance step numbers visibility and renumber step 4
+274459d fix(broker): remove redundant step 1 and reorder UI
+2100349 fix(broker): update api consent url
+f7b540e fix(broker): sanitize credentials input and disable simulation verify for prod
+5d00ab8 feat: add api risk disclosure link to broker settings
+79235ea style: fix horizontal alignment of certificate and password inputs
+d98c79d style: refine empty certificate state ui
+e6f8b52 style: apply ui/ux pro max refinement to certificate input
+18c929c style: compact certificate display ui
+44313b3 style: optimize certificate input ui
+cb7fcd2 feat: add certificate debugging tools
+b52adfc fix: CORS issues and broker settings update bug
+ .env                                               |    6 +-
+ backend/app.py                                     |    3 +-
+ backend/core/pnl.py                                |   43 +-
+ backend/start_backend_fixed.ps1                    |   37 +
+ package-lock.json                                  |    4 +-
+ package.json                                       |    4 +-
+ src/assets/guide/api_mgmt_step.png                 |  Bin 0 -> 65063 bytes
+ src/assets/guide/create_key_step.png               |  Bin 0 -> 74235 bytes
+ src/assets/guide/login_step.png                    |  Bin 0 -> 226816 bytes
+ src/assets/guide/save_secret_step.png              |  Bin 0 -> 119697 bytes
+ src/components/NavigationBar.tsx                   |   28 +-
+ src/components/modals/SyncDateModal.tsx            | 1134 ++++++------
+ src/constants.ts                                   |   78 +-
+ src/context/TradeContext.tsx                       |  126 +-
+ .../dashboard/components/DashboardHeader.tsx       |   90 +-
+ src/features/settings/SettingsView.tsx             |  577 +++----
+ .../settings/components/BrokerGuideModal.tsx       |  162 ++
+ .../settings/components/BrokerSettings.tsx         | 1800 +++++++++++++-------
+ src/hooks/useIndexedDBData.ts                      |   46 +-
+ src/services/brokerService.ts                      |  406 ++---
+ src/services/stockService.ts                       |   46 +-
+ src/utils/apiConfig.ts                             |   22 +
+ src/utils/duplicateDetection.ts                    |   40 +-
+ 23 files changed, 2779 insertions(+), 1873 deletions(-)
