@@ -371,36 +371,29 @@ def login_and_fetch_pnl(
         total_open_pnl = 0    # New: 總未平倉損益
         final_empty_reason = None
         
-        # Threads
-        import concurrent.futures
-        max_workers = min(len(valid_accounts), 5) if len(valid_accounts) > 0 else 1
-        log(f"🚀 Starting Parallel Execution with {max_workers} workers...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-             future_to_acc = {executor.submit(fetch_worker, acc): acc for acc in valid_accounts}
-             
-             for future in concurrent.futures.as_completed(future_to_acc):
-                 acc = future_to_acc[future]
-                 try:
-                     # Unpack 5 values now
-                     pnl, acc_dets, equity, open_pnl, empty_reason = future.result()
-                     
-                     if pnl != 0 or acc_dets:
-                         total_pnl += pnl
-                         details.extend(acc_dets)
-                     elif empty_reason:
-                         # 優先記錄 ca_not_activated
-                         if empty_reason == "ca_not_activated":
-                             final_empty_reason = "ca_not_activated"
-                         elif not final_empty_reason:
-                             final_empty_reason = empty_reason
+        log(f"🚀 Starting Sequential Execution for {len(valid_accounts)} accounts...")
+        for acc in valid_accounts:
+            try:
+                # Unpack 5 values now
+                pnl, acc_dets, equity, open_pnl, empty_reason = fetch_worker(acc)
+                
+                if pnl != 0 or acc_dets:
+                    total_pnl += pnl
+                    details.extend(acc_dets)
+                elif empty_reason:
+                    # 優先記錄 ca_not_activated
+                    if empty_reason == "ca_not_activated":
+                        final_empty_reason = "ca_not_activated"
+                    elif not final_empty_reason:
+                        final_empty_reason = empty_reason
+                
+                # Aggregate Futures Data
+                total_equity += equity
+                total_open_pnl += open_pnl
+                log(f"✅ [Done] {acc.account_id} finished via {acc.broker_id}")
                     
-                     # Aggregate Futures Data
-                     total_equity += equity
-                     total_open_pnl += open_pnl
-                     log(f"✅ [Thread Done] {acc.account_id} finished via {acc.broker_id}")
-                         
-                 except Exception as exc:
-                     log(f"❌ [Thread Exception] {acc.account_id} generated an exception: {exc}")
+            except Exception as exc:
+                log(f"❌ [Exception] {acc.account_id} generated an exception: {exc}")
 
         if temp_ca_path and os.path.exists(temp_ca_path):
             try: os.unlink(temp_ca_path)

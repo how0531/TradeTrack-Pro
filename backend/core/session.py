@@ -5,8 +5,8 @@ from datetime import datetime
 # Global Session Manager Instance
 _SESSION_MANAGER = None
 
-# CA 啟動有效期（秒）：Shioaji 內部可能在長時間閒置後使 CA 失效
-_CA_EXPIRY_SECONDS = 30 * 60  # 30 分鐘
+# CA 啟動有效期（秒）：強制設為 0 以解決 Flask 多執行緒下的憑證遺失問題
+_CA_EXPIRY_SECONDS = 0 
 
 class ShioajiSessionManager:
     def __init__(self):
