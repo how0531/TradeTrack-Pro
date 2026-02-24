@@ -360,7 +360,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                     onUpdate(config.id, updated);
                 }
                 // 更新 accountChoices 中的 signed 狀態
-                setAccountChoices(prev => prev.map(a => 
+                setAccountChoices(prev => prev.map(a =>
                     a.account_id === accountId ? { ...a, signed: true } : a
                 ));
                 setProgressMsg('✅ 驗證成功！');
@@ -580,7 +580,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                 }}
             />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
                 {configs.flatMap(config => {
                     const branches = (config.branch || 'Unknown').split(',');
                     const codes = (config.branchCode || '').split(',');
@@ -841,99 +841,99 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             {/* STEP 1: 取得金鑰 + 填寫資訊（合併） - 僅在 loginStep === 1 時顯示 */}
                             {loginStep === 1 && (
                                 <>
-                                <div className="relative pl-6 sm:pl-10">
-                                    <div className="relative z-10 pt-1">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
-                                            <div className="flex items-start gap-2.5">
-                                                <div className="flex flex-col gap-0.5 min-w-0">
-                                                    <span className="text-xs sm:text-sm font-bold text-[#C8B085] uppercase">取得 API 金鑰與憑證</span>
-                                                    <span className="text-[9px] sm:text-[10px] text-amber-500/50 break-words font-medium">尚未申請？點擊下方按鈕前往開通</span>
+                                    <div className="relative pl-6 sm:pl-10">
+                                        <div className="relative z-10 pt-1">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
+                                                <div className="flex items-start gap-2.5">
+                                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                                        <span className="text-xs sm:text-sm font-bold text-[#C8B085] uppercase">取得 API 金鑰與憑證</span>
+                                                        <span className="text-[9px] sm:text-[10px] text-amber-500/50 break-words font-medium">尚未申請？點擊下方按鈕前往開通</span>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                                                <button
-                                                    onClick={() => setShowApiHelper(true)}
-                                                    className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-transparent hover:bg-white/5 border border-white/20 hover:border-white/50 text-zinc-300 hover:text-white text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group uppercase tracking-wider"
-                                                >
-                                                    如何開通? <HelpCircle size={10} className="group-hover:scale-110 transition-transform" />
-                                                </button>
-                                                <button
-                                                    onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
-                                                    className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
-                                                >
-                                                    管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
-                                                </button>
+                                                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                                    <button
+                                                        onClick={() => setShowApiHelper(true)}
+                                                        className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-transparent hover:bg-white/5 border border-white/20 hover:border-white/50 text-zinc-300 hover:text-white text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group uppercase tracking-wider"
+                                                    >
+                                                        如何開通? <HelpCircle size={10} className="group-hover:scale-110 transition-transform" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
+                                                        className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
+                                                    >
+                                                        管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
 
-                            {/* STEP 1 (續): 輸入 API 資訊 */}
-                                <div className="relative pl-6 sm:pl-10 mt-4">
-                                    <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">2</div>
-                                    <div className="relative z-10 pt-1">
-                                        <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">輸入用戶資訊</h5>
-                                        <div className="space-y-4">
-                                            <div className="grid grid-cols-1 gap-4">
+                                    {/* STEP 1 (續): 輸入 API 資訊 */}
+                                    <div className="relative pl-6 sm:pl-10 mt-4">
+                                        <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">2</div>
+                                        <div className="relative z-10 pt-1">
+                                            <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">輸入用戶資訊</h5>
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-1 gap-4">
+                                                    <div className="flex flex-col gap-2">
+                                                        <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">身分證字號 (Person ID)</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="A123456789"
+                                                            value={localConfig.personId}
+                                                            onChange={(e) => handleChange('personId', e.target.value.trim().toUpperCase())}
+                                                            autoComplete="off"
+                                                            spellCheck={false}
+                                                            className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                        />
+                                                    </div>
+                                                </div>
+
                                                 <div className="flex flex-col gap-2">
-                                                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">身分證字號 (Person ID)</label>
+                                                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">API Key</label>
                                                     <input
-                                                        type="text"
-                                                        placeholder="A123456789"
-                                                        value={localConfig.personId}
-                                                        onChange={(e) => handleChange('personId', e.target.value.trim().toUpperCase())}
+                                                        type={showSecrets ? "text" : "password"}
+                                                        value={localConfig.apiKey}
+                                                        onChange={(e) => handleChange('apiKey', e.target.value.trim())}
                                                         autoComplete="off"
                                                         spellCheck={false}
-                                                        className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                        className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
                                                     />
                                                 </div>
-                                            </div>
 
-                                            <div className="flex flex-col gap-2">
-                                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">API Key</label>
-                                                <input
-                                                    type={showSecrets ? "text" : "password"}
-                                                    value={localConfig.apiKey}
-                                                    onChange={(e) => handleChange('apiKey', e.target.value.trim())}
-                                                    autoComplete="off"
-                                                    spellCheck={false}
-                                                    className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
-                                                />
-                                            </div>
+                                                <div className="flex flex-col gap-2 relative">
+                                                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">Secret Key</label>
+                                                    <input
+                                                        type={showSecrets ? "text" : "password"}
+                                                        value={localConfig.apiSecret}
+                                                        onChange={(e) => handleChange('apiSecret', e.target.value.trim())}
+                                                        autoComplete="off"
+                                                        spellCheck={false}
+                                                        className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiSecret ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                    />
+                                                    <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
+                                                </div>
 
-                                            <div className="flex flex-col gap-2 relative">
-                                                <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">Secret Key</label>
-                                                <input
-                                                    type={showSecrets ? "text" : "password"}
-                                                    value={localConfig.apiSecret}
-                                                    onChange={(e) => handleChange('apiSecret', e.target.value.trim())}
-                                                    autoComplete="off"
-                                                    spellCheck={false}
-                                                    className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiSecret ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
-                                                />
-                                                <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
-                                            </div>
-
-                                            {/* API Risk Disclosure Link */}
-                                            <a
-                                                href="https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="group w-full bg-zinc-900/30 hover:bg-zinc-800/50 border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-300 -mt-1"
-                                            >
-                                                <span className="text-xs font-bold text-zinc-400 group-hover:text-zinc-200 transition-colors flex items-center gap-2">
-                                                    前往簽署 API 風險預告同意書
-                                                    <span className="text-[10px] font-medium text-zinc-600 group-hover:text-zinc-500 transition-colors hidden sm:inline-block">
-                                                        (若已簽署可忽略)
+                                                {/* API Risk Disclosure Link */}
+                                                <a
+                                                    href="https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="group w-full bg-zinc-900/30 hover:bg-zinc-800/50 border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-300 -mt-1"
+                                                >
+                                                    <span className="text-xs font-bold text-zinc-400 group-hover:text-zinc-200 transition-colors flex items-center gap-2">
+                                                        前往簽署 API 風險預告同意書
+                                                        <span className="text-[10px] font-medium text-zinc-600 group-hover:text-zinc-500 transition-colors hidden sm:inline-block">
+                                                            (若已簽署可忽略)
+                                                        </span>
                                                     </span>
-                                                </span>
-                                                <ChevronRight size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors group-hover:translate-x-0.5 duration-300" />
-                                            </a>
+                                                    <ChevronRight size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors group-hover:translate-x-0.5 duration-300" />
+                                                </a>
 
 
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
                                 </>
                             )}
 
@@ -1251,19 +1251,17 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     'SubBrokerage': '複委託'
                                 };
                                 return order.filter(cat => groups[cat]?.length > 0).map(cat => (
-                                    <div key={cat} className={`rounded-2xl border mb-3 overflow-hidden ${
-                                        cat === 'SubBrokerage' ? 'border-purple-500/30 bg-purple-500/5'
-                                        : cat === 'Futures' ? 'border-sky-500/30 bg-sky-500/5'
-                                        : 'border-rose-500/30 bg-rose-500/5'
-                                    }`}>
+                                    <div key={cat} className={`rounded-2xl border mb-3 overflow-hidden ${cat === 'SubBrokerage' ? 'border-purple-500/30 bg-purple-500/5'
+                                            : cat === 'Futures' ? 'border-sky-500/30 bg-sky-500/5'
+                                                : 'border-rose-500/30 bg-rose-500/5'
+                                        }`}>
                                         {/* 群組標題 列 */}
                                         <div className="flex items-center justify-between px-4 py-2 bg-black/40 border-b border-white/5">
                                             <div className="flex items-center gap-2">
-                                                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${
-                                                    cat === 'SubBrokerage' ? ACCOUNT_CATEGORY_THEMES.SUB.fullClass
-                                                    : cat === 'Futures' ? ACCOUNT_CATEGORY_THEMES.FUTURES.fullClass
-                                                    : ACCOUNT_CATEGORY_THEMES.STOCK.fullClass
-                                                }`}>
+                                                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${cat === 'SubBrokerage' ? ACCOUNT_CATEGORY_THEMES.SUB.fullClass
+                                                        : cat === 'Futures' ? ACCOUNT_CATEGORY_THEMES.FUTURES.fullClass
+                                                            : ACCOUNT_CATEGORY_THEMES.STOCK.fullClass
+                                                    }`}>
                                                     {groupLabels[cat] || cat}
                                                 </span>
                                             </div>
@@ -1334,11 +1332,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                                 </div>
                                                             ) : (
                                                                 <div
-                                                                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                                                                        isSelected
+                                                                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${isSelected
                                                                             ? 'bg-[#C8B085] border-[#C8B085] shadow-[0_0_8px_rgba(200,176,133,0.3)]'
                                                                             : 'border-zinc-600 hover:border-zinc-400'
-                                                                    }`}
+                                                                        }`}
                                                                 >
                                                                     {isSelected && <Check size={12} className="text-black stroke-[4px]" />}
                                                                 </div>
@@ -1783,7 +1780,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             }
                                         }
                                         // 清除 SyncDateModal 的帳號快取，避免顯示已刪除帳號
-                                        try { localStorage.removeItem('broker_configs_cache'); } catch(e) {}
+                                        try { localStorage.removeItem('broker_configs_cache'); } catch (e) { }
                                         setDeleteTarget(null);
                                     }}
                                     className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm shadow-[0_0_20px_rgba(239,68,68,0.2)] transition-all"

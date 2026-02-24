@@ -12,6 +12,11 @@ interface CustomDateRangeModalProps {
     lang: Lang;
 }
 
+/**
+ * 自訂日期範圍選擇器
+ * 使用自訂日曆 UI 取代原生 input[type=date]，
+ * 解決跨平台（特別是手機瀏覽器）顯示不一致的問題。
+ */
 export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, lang }: CustomDateRangeModalProps) => {
     const t = I18N[lang] || I18N['zh'];
     const [viewDate, setViewDate] = useState(new Date());
@@ -19,13 +24,24 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
     const [endDate, setEndDate] = useState<string | null>(initialRange.end);
     const [step, setStep] = useState<'start' | 'end'>('start');
 
-    useEffect(() => { 
-        if(isOpen) { 
-            setStartDate(initialRange.start); 
-            setEndDate(initialRange.end); 
-            setStep('start'); 
-        } 
-    }, [isOpen, initialRange]);
+    // 開啟時初始化，並將月曆定位到起始日所在月份
+    useEffect(() => {
+        if (isOpen) {
+            setStartDate(initialRange.start);
+            setEndDate(initialRange.end);
+            setStep('start');
+
+            // 根據起始日定位月曆顯示月份
+            if (initialRange.start) {
+                const d = new Date(initialRange.start);
+                if (!isNaN(d.getTime())) {
+                    setViewDate(new Date(d.getFullYear(), d.getMonth(), 1));
+                }
+            } else {
+                setViewDate(new Date());
+            }
+        }
+    }, [isOpen, initialRange.start, initialRange.end]);
 
     if (!isOpen) return null;
 
@@ -33,48 +49,56 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
     const month = viewDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
-    
-    const days: (Date | null)[] = [];
-    for(let i=0; i<firstDay; i++) days.push(null);
-    for(let i=1; i<=daysInMonth; i++) days.push(new Date(year, month, i));
 
+    const days: (Date | null)[] = [];
+    for (let i = 0; i < firstDay; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
+
+    // 統一的日期點擊處理
     const handleDateClick = (date: Date) => {
         const dateStr = getLocalDateStr(date);
-        if (step === 'start') { 
-            setStartDate(dateStr); 
-            if (endDate && dateStr > endDate) setEndDate(null); 
-            setStep('end'); 
-        } else { 
-            if (startDate && dateStr < startDate) { 
-                setStartDate(dateStr); 
-                setStep('end'); 
+        if (step === 'start') {
+            setStartDate(dateStr);
+            // 起始日超過結束日時，清除結束日
+            if (endDate && dateStr > endDate) setEndDate(null);
+            setStep('end');
+        } else {
+            if (startDate && dateStr < startDate) {
+                // 結束日早於起始日 → 當作新的起始日
+                setStartDate(dateStr);
+                setEndDate(null);
+                setStep('end');
             } else {
-                setEndDate(dateStr); 
+                setEndDate(dateStr);
+                // 選完結束日後，停留在 end 步驟（方便微調）
             }
         }
     };
 
-    const handleDirectInput = (type: 'start' | 'end', val: string) => {
-        if (val.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            if (type === 'start') {
-                setStartDate(val);
-                if (endDate && val > endDate) setEndDate(null);
-            } else {
-                if (startDate && val < startDate) {
-                    setStartDate(val);
-                    setEndDate(null);
-                } else {
-                    setEndDate(val);
-                }
-            }
-        }
-    };
-
+    // 點擊「今日」快捷按鈕
     const handleToday = (e: React.MouseEvent) => {
         e.stopPropagation();
         const today = getLocalDateStr(new Date());
         setEndDate(today);
+        // 同時將月曆切到今天所在月份
+        setViewDate(new Date());
     };
+
+    // 友善的日期顯示格式 (2026/02/24)
+    const formatDisplay = (dateStr: string | null): string => {
+        if (!dateStr) return '—';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+        const wd = weekDays[d.getDay()];
+        return `${y}/${m}/${day} (${wd})`;
+    };
+
+    // 今天的日期字串（用於標記今日）
+    const todayStr = getLocalDateStr(new Date());
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 animate-in fade-in duration-200 backdrop-blur-sm">
@@ -91,53 +115,36 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
                         </button>
                     </div>
 
+                    {/* 日期顯示區域 — 改為唯讀自訂顯示，點擊切換焦點 */}
                     <div className="flex gap-3">
                         {/* Start Date Box */}
-                        <div 
-                            onClick={() => setStep('start')} 
-                            className={`flex-1 p-3 rounded-2xl border transition-all cursor-pointer group ${step === 'start' ? `border-[#C8B085] bg-[#C8B085]/5 shadow-[0_0_20px_rgba(200,176,133,0.05)]` : 'border-white/5 bg-black/40'}`}
+                        <div
+                            onClick={() => setStep('start')}
+                            className={`flex-1 p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${step === 'start' ? 'border-[#C8B085] bg-[#C8B085]/5 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'border-white/5 bg-black/40 hover:border-white/10'}`}
                         >
-                            <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block tracking-wider">{t.startDate}</label>
-                            <input 
-                                type="date"
-                                value={startDate || ''}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    setStartDate(val);
-                                    handleDirectInput('start', val);
-                                }}
-                                onFocus={(e) => { e.stopPropagation(); setStep('start'); }}
-                                onClick={(e) => e.stopPropagation()}
-                                className={`w-full bg-transparent border-none p-0 text-sm font-barlow-numeric font-bold focus:ring-0 focus:outline-none [color-scheme:dark] ${startDate ? 'text-white' : 'text-zinc-800'}`}
-                            />
+                            <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1.5 block tracking-wider">{t.startDate}</label>
+                            <div className={`text-sm font-barlow-numeric font-bold tracking-wide ${startDate ? 'text-white' : 'text-zinc-700'}`}>
+                                {formatDisplay(startDate)}
+                            </div>
                         </div>
 
                         {/* End Date Box */}
-                        <div 
-                            onClick={() => setStep('end')} 
-                            className={`flex-1 p-3 rounded-2xl border transition-all cursor-pointer group relative ${step === 'end' ? `border-[#C8B085] bg-[#C8B085]/5 shadow-[0_0_20px_rgba(200,176,133,0.05)]` : 'border-white/5 bg-black/40'}`}
+                        <div
+                            onClick={() => setStep('end')}
+                            className={`flex-1 p-3.5 rounded-2xl border transition-all cursor-pointer select-none relative ${step === 'end' ? 'border-[#C8B085] bg-[#C8B085]/5 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'border-white/5 bg-black/40 hover:border-white/10'}`}
                         >
-                            <div className="flex justify-between items-center mb-1">
+                            <div className="flex justify-between items-center mb-1.5">
                                 <label className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">{t.endDate}</label>
-                                <button 
+                                <button
                                     onClick={handleToday}
-                                    className="text-[9px] font-bold text-[#C8B085] hover:underline px-1.5 py-0.5 rounded-md hover:bg-[#C8B085]/10"
+                                    className="text-[9px] font-bold text-[#C8B085] hover:underline px-1.5 py-0.5 rounded-md hover:bg-[#C8B085]/10 transition-colors"
                                 >
                                     今日
                                 </button>
                             </div>
-                            <input 
-                                type="date"
-                                value={endDate || ''}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    setEndDate(val);
-                                    handleDirectInput('end', val);
-                                }}
-                                onFocus={(e) => { e.stopPropagation(); setStep('end'); }}
-                                onClick={(e) => e.stopPropagation()}
-                                className={`w-full bg-transparent border-none p-0 text-sm font-barlow-numeric font-bold focus:ring-0 focus:outline-none [color-scheme:dark] ${endDate ? 'text-white' : 'text-zinc-800'}`}
-                            />
+                            <div className={`text-sm font-barlow-numeric font-bold tracking-wide ${endDate ? 'text-white' : 'text-zinc-700'}`}>
+                                {formatDisplay(endDate)}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -145,13 +152,13 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
                 {/* Calendar Body */}
                 <div className="p-6">
                     <div className="flex justify-between items-center mb-6">
-                        <button onClick={() => setViewDate(new Date(year, month-1, 1))} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all"><ChevronLeft size={20}/></button>
-                        <span className="font-bold text-white text-sm tracking-widest">{year} / {month+1}</span>
-                        <button onClick={() => setViewDate(new Date(year, month+1, 1))} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all"><ChevronRight size={20}/></button>
+                        <button onClick={() => setViewDate(new Date(year, month - 1, 1))} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all"><ChevronLeft size={20} /></button>
+                        <span className="font-bold text-white text-sm tracking-widest">{year} / {month + 1}</span>
+                        <button onClick={() => setViewDate(new Date(year, month + 1, 1))} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all"><ChevronRight size={20} /></button>
                     </div>
-                    
+
                     <div className="grid grid-cols-7 text-center mb-3">
-                        {'SMTWTFS'.split('').map((d,i) => (
+                        {['日', '一', '二', '三', '四', '五', '六'].map((d, i) => (
                             <div key={i} className="text-[10px] font-bold text-zinc-700 tracking-tighter">{d}</div>
                         ))}
                     </div>
@@ -162,31 +169,33 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
                             const isStart = dateStr === startDate;
                             const isEnd = dateStr === endDate;
                             const isSel = isStart || isEnd;
+                            const isToday = dateStr === todayStr;
                             const dInRange = d && startDate && endDate && dateStr > startDate && dateStr < endDate;
-                            
-                            // Calculate column position (0-6)
-                            const col = i % 7;
-                            
+                            // 起始日與結束日相同時不顯示 range 背景
+                            const isSameDay = startDate && endDate && startDate === endDate;
+
                             return (
                                 <div key={i} className="relative flex justify-center items-center h-10">
                                     {/* Range Background - Seamless */}
                                     {dInRange && (
                                         <div className="absolute inset-y-1.5 inset-x-0 bg-[#C8B085]/15 z-0" />
                                     )}
-                                    {isStart && endDate && (
+                                    {isStart && endDate && !isSameDay && (
                                         <div className="absolute inset-y-1.5 right-0 left-1/2 bg-[#C8B085]/15 z-0 rounded-l-md" />
                                     )}
-                                    {isEnd && startDate && (
+                                    {isEnd && startDate && !isSameDay && (
                                         <div className="absolute inset-y-1.5 left-0 right-1/2 bg-[#C8B085]/15 z-0 rounded-r-md" />
                                     )}
-                                    
-                                    <button 
-                                        onClick={() => d && handleDateClick(d)} 
+
+                                    <button
+                                        onClick={() => d && handleDateClick(d)}
                                         className={`
-                                            relative w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-barlow-numeric font-bold z-10 transition-all
+                                            relative w-8 h-8 rounded-xl flex items-center justify-center text-[11px] font-barlow-numeric font-bold z-10 transition-all
                                             ${!d ? 'invisible' : ''} 
-                                            ${isSel ? 'bg-[#C8B085] text-black shadow-lg shadow-[#C8B085]/40 scale-105' : 
-                                              dInRange ? 'text-[#C8B085] hover:bg-[#C8B085]/20' : 'text-zinc-500 hover:text-white hover:bg-white/5'}
+                                            ${isSel ? 'bg-[#C8B085] text-black shadow-lg shadow-[#C8B085]/40 scale-105' :
+                                                dInRange ? 'text-[#C8B085] hover:bg-[#C8B085]/20' :
+                                                    isToday ? 'text-[#C8B085] ring-1 ring-[#C8B085]/30 hover:bg-[#C8B085]/10' :
+                                                        'text-zinc-500 hover:text-white hover:bg-white/5'}
                                         `}
                                     >
                                         {d ? d.getDate() : ''}
@@ -199,15 +208,15 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
 
                 {/* Footer */}
                 <div className="p-6 border-t border-white/5 flex items-center justify-between bg-white/[0.01]">
-                    <button 
-                        onClick={() => { setStartDate(null); setEndDate(null); }} 
+                    <button
+                        onClick={() => { setStartDate(null); setEndDate(null); setStep('start'); }}
                         className="text-[10px] font-bold uppercase text-zinc-600 hover:text-zinc-300 transition-colors tracking-widest"
                     >
                         {t.reset}
                     </button>
-                    <button 
-                        onClick={() => onApply(startDate, endDate)} 
-                        disabled={!startDate || !endDate} 
+                    <button
+                        onClick={() => onApply(startDate, endDate)}
+                        disabled={!startDate || !endDate}
                         className={`
                             px-8 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all
                             ${startDate && endDate ? 'bg-[#C8B085] text-black shadow-[0_8px_16px_rgba(200,176,133,0.3)] hover:scale-[1.02] active:scale-95' : 'bg-[#25282C] text-zinc-700 cursor-not-allowed'}

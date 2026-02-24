@@ -183,6 +183,8 @@ def get_broker_pnl():
             "details": result.get("details", []),
             "username": result.get("username"),
             "branchCode": result.get("branch_code"),
+            "ca_status": result.get("ca_status"),           # 透傳 CA 狀態
+            "empty_reason": result.get("empty_reason"),     # 透傳空結果原因
             "summary": result.get("summary", {})  # Pass through the new summary
         }
         return jsonify(response)

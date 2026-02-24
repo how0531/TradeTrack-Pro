@@ -408,6 +408,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       let mergedDetails: any[] = [];
       const totalGroups = fetchGroups.size;
       let completedGroups = 0;
+      let anyCaNotActivated = false;
 
       // Iterate and fetch for each group
       for (const [key, group] of fetchGroups) {
@@ -422,9 +423,22 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         setLoadingProgress(progressPct);
 
         // Contextual loading message
-        // Extract a friendly name from branch if possible
-        const branchName = config.branch || '帳戶';
-        setLoadingMessage(`正在下載: ${branchName} (${type === 'F' ? '期貨' : '證券'})...`);
+        const allBranches = (config.branch || '帳戶').split(',');
+        const allCodes = (config.branchCode || '').split(',').map(c => c.trim());
+
+        // Find the first selected code's name
+        const firstSelectedCode = Array.from(codes)[0];
+        const selectedIdx = allCodes.indexOf(firstSelectedCode);
+        let firstBranchName = selectedIdx >= 0 ? allBranches[selectedIdx] : allBranches[0];
+
+        // Clean up the name by removing parentheses and trimming (e.g., "板新(台股)" -> "板新")
+        firstBranchName = (firstBranchName || '帳戶').replace(/\(.*\)/g, '').trim();
+        if (!firstBranchName) firstBranchName = '帳戶';
+
+        const branchSuffix = codes.size > 1 ? '等多筆' : '';
+        const typeName = type === 'F' ? '期貨' : '證券';
+
+        setLoadingMessage(`正在下載: ${firstBranchName}${branchSuffix} (${typeName})...`);
 
         const requestConfig = { ...config, branchCode: filterCodeStr, accountType: type };
 
@@ -432,6 +446,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           // Fetch
           const result = await fetchBrokerPnl(startD, endD, requestConfig);
           console.log(`✅ [DEBUG] Fetch Success: ${key} -> ${result.details?.length || 0} trades`);
+
+          if (result.emptyReason === 'ca_not_activated') {
+            anyCaNotActivated = true;
+          }
 
           // Assign Portfolio ID immediately
           if (result.details) {
@@ -474,7 +492,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         // Base transformation
         const isFuture = d.category === '期貨';
         const unit = isFuture ? '口' : '張';
-        const qtyValue = isFuture ? d.quantity : (d.quantity / 1000);
+        // Shioaji 原生回傳的 quantity 單位：期貨為口，台股為張 (Unit.Common)，直接取用即可
+        const qtyValue = d.quantity;
         const sheets = Math.abs(qtyValue).toFixed(0);
 
         // Calculate dynamic yield if not provided but buyAmt exists
@@ -748,7 +767,11 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       // stopLoadingAnimation removed
 
       if (processedTrades.length === 0) {
-        setResultMsg("此區間無交易紀錄");
+        if (anyCaNotActivated) {
+          setResultMsg("⚠️ 憑證未啟動或已失效，無法取得損益。請至「設定」重新上傳 .pfx 檔案。");
+        } else {
+          setResultMsg("此區間無交易紀錄");
+        }
         // Update: Allow proceeding to Step 2 even if empty, so user can confirm "No Data" sync
         // This is important for updating "Last Sync" time
         setStep(2);
@@ -913,95 +936,116 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                   </button>
                 </div>
                 <div className="flex flex-col gap-3 max-h-[280px] overflow-y-auto pr-2 overflow-x-hidden custom-scrollbar">
-                {configs.flatMap((config) => {
-                  const branches = (config.branch || 'Unknown').split(',');
-                  const codes = (config.branchCode || '').split(',');
+                  {configs.flatMap((config) => {
+                    const branches = (config.branch || 'Unknown').split(',');
+                    const codes = (config.branchCode || '').split(',');
 
-                  return branches.map((bRaw, subIdx) => {
-                    const bText = bRaw.trim();
-                    const bCode = codes[subIdx] || '';
+                    return branches.map((bRaw, subIdx) => {
+                      const bText = bRaw.trim();
+                      const bCode = codes[subIdx] || '';
 
-                    const uniqueKey = `${config.id}|${bCode}|${subIdx}`;
-                    const isSelected = selectedConfigIds.includes(uniqueKey);
+                      const uniqueKey = `${config.id}|${bCode}|${subIdx}`;
+                      const isSelected = selectedConfigIds.includes(uniqueKey);
 
-                    // Color Logic (Same as Settings)
-                    // Robust Identification (Stock default fallback)
-                    const isFuture = bText.includes('期貨') || bText.includes('Futures');
-                    const isSub = bText.includes('複委託') || bText.includes('Sub') || bText.includes('H-');
+                      // Color Logic (Same as Settings)
+                      // Robust Identification (Stock default fallback)
+                      const isFuture = bText.includes('期貨') || bText.includes('Futures');
+                      const isSub = bText.includes('複委託') || bText.includes('Sub') || bText.includes('H-');
 
-                    const theme = isFuture
-                      ? ACCOUNT_CATEGORY_THEMES.FUTURES
-                      : isSub
-                        ? ACCOUNT_CATEGORY_THEMES.SUB
-                        : ACCOUNT_CATEGORY_THEMES.STOCK;
+                      const theme = isFuture
+                        ? ACCOUNT_CATEGORY_THEMES.FUTURES
+                        : isSub
+                          ? ACCOUNT_CATEGORY_THEMES.SUB
+                          : ACCOUNT_CATEGORY_THEMES.STOCK;
 
-                    const typeColorClass = theme.fullClass;
-                    const typeLabel = theme.label;
+                      const typeColorClass = theme.fullClass;
+                      const typeLabel = theme.label;
 
-                    return (
-                      <div
-                        key={uniqueKey}
-                        onClick={() => !isSub && toggleConfigSelection(config.id, bCode, subIdx)}
-                        className={`
+                      return (
+                        <div
+                          key={uniqueKey}
+                          onClick={() => !isSub && toggleConfigSelection(config.id, bCode, subIdx)}
+                          className={`
                                     relative p-4 rounded-xl border transition-all backdrop-blur-xl backdrop-saturate-150 group select-none
                                     ${isSub
-                            ? "opacity-40 cursor-not-allowed bg-black/40 border-white/5 grayscale"
-                            : "cursor-pointer " + (isSelected
-                              ? "bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05),inset_0_1px_1px_rgba(255,255,255,0.1)]"
-                              : "bg-[#1C1E22]/35 border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] hover:bg-white/[0.05] hover:border-white/20")
-                          }
+                              ? "opacity-40 cursor-not-allowed bg-black/40 border-white/5 grayscale"
+                              : "cursor-pointer " + (isSelected
+                                ? "bg-[#C8B085]/10 border-[#C8B085]/40 shadow-[0_0_20px_rgba(200,176,133,0.05),inset_0_1px_1px_rgba(255,255,255,0.1)]"
+                                : "bg-[#1C1E22]/35 border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] hover:bg-white/[0.05] hover:border-white/20")
+                            }
                                 `}
-                      >
-                        <div className="flex items-center gap-4">
-                          {/* 1. Left Checkbox (New Position) */}
-                          <div
-                            className={`shrink-0 w-5 h-5 rounded-[6px] border transition-all flex items-center justify-center ${isSub
-                              ? "bg-transparent border-white/10"
-                              : isSelected
-                                ? "bg-[#C8B085] border-[#C8B085] shadow-[0_0_8px_rgba(200,176,133,0.4)]"
-                                : "bg-transparent border-white/20 group-hover:border-white/40"
-                              }`}
-                          >
-                            {isSelected && !isSub && <Check size={12} className="text-[#14161B] stroke-[4]" />}
+                        >
+                          <div className="flex items-center gap-4">
+                            {/* 1. Left Checkbox (New Position) */}
+                            <div
+                              className={`shrink-0 w-5 h-5 rounded-[6px] border transition-all flex items-center justify-center ${isSub
+                                ? "bg-transparent border-white/10"
+                                : isSelected
+                                  ? "bg-[#C8B085] border-[#C8B085] shadow-[0_0_8px_rgba(200,176,133,0.4)]"
+                                  : "bg-transparent border-white/20 group-hover:border-white/40"
+                                }`}
+                            >
+                              {isSelected && !isSub && <Check size={12} className="text-[#14161B] stroke-[4]" />}
+                            </div>
+
+                            {/* 2. Info Content */}
+                            <div className="flex-1 flex flex-col gap-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[12px] font-bold tracking-wide truncate ${isSelected ? 'text-white' : 'text-zinc-200'} ${isSub ? 'text-zinc-500' : ''}`}>
+                                  {(() => {
+                                    const brokerName = '永豐金';
+                                    let middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '');
+                                    middle = middle.replace('永豐金-', '').replace('永豐金', '').trim();
+
+                                    const name = config.alias || config.brokerUsername || 'User';
+                                    const cleanName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
+                                    return `${brokerName}-${middle} | ${cleanName}`;
+                                  })()}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`rounded-full font-bold border shadow-sm whitespace-nowrap flex items-center justify-center ${isSub
+                                  ? 'px-1.5 py-0.5 text-[8px] min-w-[42px] border-zinc-700 text-zinc-600 bg-zinc-800/50'
+                                  : `px-2 py-0.5 text-[9px] min-w-[48px] w-auto ${typeColorClass}`
+                                  }`}>
+                                  {isSub ? "尚未支援" : typeLabel}
+                                </span>
+                                <span className={`text-[10px] font-bold font-mono tracking-wide whitespace-nowrap ${isSub ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                                  {(() => {
+                                    const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
+                                    const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
+                                    const displayAcc = accList[subIdx] || (codeList[subIdx]?.length >= 7 ? codeList[subIdx] : '');
+                                    return displayAcc;
+                                  })()}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 3. Desktop Dropdown (Right) */}
+                            {isSelected && (
+                              <div
+                                className="hidden sm:block w-[130px] animate-in fade-in zoom-in-95 duration-200"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <GlassSelect
+                                  value={accountPortfolioMap[uniqueKey] || targetPortfolioId}
+                                  onChange={(val) => {
+                                    setAccountPortfolioMap(prev => ({ ...prev, [uniqueKey]: val }));
+                                  }}
+                                  options={portfolios.map(p => ({ value: p.id, label: p.name }))}
+                                  variant="capsule"
+                                  placeholder="匯入至..."
+                                  align="right"
+                                  className="text-[10px]"
+                                />
+                              </div>
+                            )}
                           </div>
 
-                          {/* 2. Info Content */}
-                          <div className="flex-1 flex flex-col gap-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[12px] font-bold tracking-wide truncate ${isSelected ? 'text-white' : 'text-zinc-200'} ${isSub ? 'text-zinc-500' : ''}`}>
-                                {(() => {
-                                  const brokerName = '永豐金';
-                                  let middle = typeLabel === '期貨' ? '期貨' : bText.replace(/\(.*\)/, '');
-                                  middle = middle.replace('永豐金-', '').replace('永豐金', '').trim();
-
-                                  const name = config.alias || config.brokerUsername || 'User';
-                                  const cleanName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
-                                  return `${brokerName}-${middle} | ${cleanName}`;
-                                })()}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`rounded-full font-bold border shadow-sm whitespace-nowrap flex items-center justify-center ${isSub
-                                ? 'px-1.5 py-0.5 text-[8px] min-w-[42px] border-zinc-700 text-zinc-600 bg-zinc-800/50'
-                                : `px-2 py-0.5 text-[9px] min-w-[48px] w-auto ${typeColorClass}`
-                                }`}>
-                                {isSub ? "尚未支援" : typeLabel}
-                              </span>
-                              <span className={`text-[10px] font-bold font-mono tracking-wide whitespace-nowrap ${isSub ? 'text-zinc-600' : 'text-zinc-500'}`}>
-                                {(() => {
-                                  const accList = (config.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
-                                  const codeList = (config.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
-                                  const displayAcc = accList[subIdx] || (codeList[subIdx]?.length >= 7 ? codeList[subIdx] : '');
-                                  return displayAcc;
-                                })()}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* 3. Desktop Dropdown (Right) */}
+                          {/* 4. Mobile Dropdown (Row 2) */}
                           {isSelected && (
                             <div
-                              className="hidden sm:block w-[130px] animate-in fade-in zoom-in-95 duration-200"
+                              className="sm:hidden mt-3 pt-3 border-t border-white/5 animate-in slide-in-from-top-1 duration-200"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <GlassSelect
@@ -1012,36 +1056,15 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                 options={portfolios.map(p => ({ value: p.id, label: p.name }))}
                                 variant="capsule"
                                 placeholder="匯入至..."
-                                align="right"
-                                className="text-[10px]"
+                                align="left"
+                                className="text-[11px] w-full"
                               />
                             </div>
                           )}
                         </div>
-
-                        {/* 4. Mobile Dropdown (Row 2) */}
-                        {isSelected && (
-                          <div
-                            className="sm:hidden mt-3 pt-3 border-t border-white/5 animate-in slide-in-from-top-1 duration-200"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <GlassSelect
-                              value={accountPortfolioMap[uniqueKey] || targetPortfolioId}
-                              onChange={(val) => {
-                                setAccountPortfolioMap(prev => ({ ...prev, [uniqueKey]: val }));
-                              }}
-                              options={portfolios.map(p => ({ value: p.id, label: p.name }))}
-                              variant="capsule"
-                              placeholder="匯入至..."
-                              align="left"
-                              className="text-[11px] w-full"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })}
+                      );
+                    });
+                  })}
                 </div>
               </div>
 

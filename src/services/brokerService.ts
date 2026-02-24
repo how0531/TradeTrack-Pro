@@ -26,6 +26,8 @@ export interface BrokerSyncResult {
     totalPnl: number;
     dailyResults: { date: string, pnl: number }[];
     details: TransactionDetail[];
+    caStatus?: 'activated' | 'not_activated';
+    emptyReason?: 'ca_not_activated' | 'no_trades_in_range' | string | null;
 }
 
 const generateMockPnl = (startDate: Date, endDate: Date): BrokerSyncResult => {
@@ -160,7 +162,9 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 return {
                     totalPnl: result.total_pnl || 0,
                     dailyResults: result.daily_results || [],
-                    details: result.details || []
+                    details: result.details || [],
+                    caStatus: result.ca_status,
+                    emptyReason: result.empty_reason
                 };
             }
 

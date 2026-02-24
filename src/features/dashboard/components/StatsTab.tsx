@@ -37,7 +37,7 @@ const StatCard = ({ label, value, valueColor, subLabel, className, valueClassNam
     const isHidden = hideAmounts && !isRevealed;
 
     return (
-        <div 
+        <div
             onClick={() => {
                 if (hideAmounts) {
                     setIsRevealed(!isRevealed);
@@ -47,8 +47,8 @@ const StatCard = ({ label, value, valueColor, subLabel, className, valueClassNam
             className={`p-3 rounded-xl border flex flex-col items-center justify-center min-h-[72px] relative overflow-hidden group transition-all shadow-lg shadow-black/20 backdrop-blur-md ${className || 'border-white/5 bg-[#1A1C20]/40 hover:bg-[#1A1C20]/60'} ${hideAmounts ? 'cursor-pointer active:scale-95' : ''}`}
         >
             <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <span 
-                className={`text-2xl font-normal font-display tracking-widest mt-1 mb-0.5 transition-all duration-300 ${valueClassName || ''} ${isHidden ? 'blur-[6px] select-none opacity-60' : ''}`} 
+            <span
+                className={`text-2xl font-normal font-display tracking-widest mt-1 mb-0.5 transition-all duration-300 ${valueClassName || ''} ${isHidden ? 'blur-[6px] select-none opacity-60' : ''}`}
                 style={{ color: valueColor || '#E0E0E0' }}
             >
                 {value}
@@ -68,7 +68,7 @@ const CustomTooltip = ({ active, payload, hideAmounts, lang, portfolios, showPur
         const t = I18N[lang];
         const systemKeys = ['date', 'equity', 'peak', 'pnl', 'isNewPeak', 'ddAmt', 'ddPct', 'fullDate', 'label', 'cumulativePnl', 'timestamp', 'crowding', 'escapeAngle', 'isCrowded'];
         const activePidsInPoint = Object.keys(data).filter(key => !systemKeys.includes(key) && !key.endsWith('_pos') && !key.endsWith('_neg') && data[key] !== 0);
-        
+
         const isAllTimeHigh = data.isNewPeak || Math.abs(data.ddPct) < 0.01;
         const displayLabel = showPurePnl ? "Net PnL" : t.currentEquity;
         const displayValue = showPurePnl ? data.cumulativePnl : data.equity;
@@ -127,20 +127,20 @@ const BubbleTooltip = ({ active, payload, hideAmounts, lang }: any) => {
         const data = payload[0].payload;
         return (
             <div className="p-3 rounded-xl border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.6)] bg-black/40 backdrop-blur-md text-xs z-50 pointer-events-none ring-1 ring-white/10">
-                 <div className="text-white mb-2 font-bold flex items-center gap-2 border-b border-white/10 pb-2">
+                <div className="text-white mb-2 font-bold flex items-center gap-2 border-b border-white/10 pb-2">
                     {data.name}
-                 </div>
-                 <div className="space-y-1.5">
+                </div>
+                <div className="space-y-1.5">
                     <div className="flex justify-between gap-6">
                         <span className="text-slate-400">Net PnL</span>
-                        <span className={`font-mono font-bold ${hideAmounts ? 'blur-sm select-none opacity-50' : ''}`} style={{color: getPnlColor(data.pnl)}}>
+                        <span className={`font-mono font-bold ${hideAmounts ? 'blur-sm select-none opacity-50' : ''}`} style={{ color: getPnlColor(data.pnl) }}>
                             {formatCurrency(data.pnl, false)}
                         </span>
                     </div>
                     <div className="flex justify-between gap-6"><span className="text-slate-400">Trades</span><span className="text-white font-mono">{data.trades}</span></div>
                     <div className="flex justify-between gap-6"><span className="text-slate-400">Win Rate</span><span className="text-white font-mono">{formatDecimal(data.x)}%</span></div>
                     <div className="flex justify-between gap-6"><span className="text-slate-400">R:R</span><span className="text-white font-mono">{!isFinite(data.y) ? '∞' : formatDecimal(data.y)}</span></div>
-                 </div>
+                </div>
             </div>
         );
     }
@@ -159,15 +159,15 @@ const CustomPeakDot = ({ cx, cy, payload, dataLength }: any) => {
 const StrategyBubble = (props: any) => {
     const { cx, cy, payload, size, onSelect } = props;
     if (!cx || !cy) return null;
-    
-    const radius = Math.sqrt(size || 0) * 0.25 + 3; 
+
+    const radius = Math.sqrt(size || 0) * 0.25 + 3;
     const isProfit = payload.pnl > 0;
     const fillColor = isProfit ? THEME.RED : THEME.GREEN;
-    
+
     // 使用父組件計算的 Force-Directed 位置
     const labelX = cx + (payload.labelOffsetX || 0);
     const labelY = cy + (payload.labelOffsetY || 0);
-    
+
     // 決定對齊方式
     let textAnchor: 'start' | 'middle' | 'end' = 'middle';
     if (labelX < cx - 5) {
@@ -175,39 +175,39 @@ const StrategyBubble = (props: any) => {
     } else if (labelX > cx + 5) {
         textAnchor = 'start';
     }
-    
+
     const label = (payload.name || '').split('_')[0];
-    
+
     // 計算實際距離
     const actualDistance = Math.sqrt(Math.pow(labelX - cx, 2) + Math.pow(labelY - cy, 2));
     const baseDistance = radius + 20;
-    
+
     // 智慧引線判斷：距離 > 基礎距離 * 1.2
     // 在緊湊模式下，只有被明顯推開時才顯示引線
     const needsLeaderLine = actualDistance > radius + 15;
-    
+
     // 引線起點（圓圈邊緣）
     const lineAngle = Math.atan2(labelY - cy, labelX - cx);
     const lineStartX = cx + Math.cos(lineAngle) * radius;
     const lineStartY = cy + Math.sin(lineAngle) * radius;
-    
+
     // 使用動態字體大小
     const fontSize = payload.dynamicFontSize || 10;
 
     return (
         <g onClick={() => onSelect && onSelect(payload.name)} style={{ cursor: 'pointer' }} className="group">
             {/* 氣泡 */}
-            <circle 
-                cx={cx} 
-                cy={cy} 
-                r={radius} 
-                fill={fillColor} 
-                fillOpacity={0.85} 
-                stroke={fillColor} 
-                strokeWidth={1} 
-                className="transition-all duration-300 group-hover:fill-opacity-100 group-hover:stroke-white group-hover:stroke-[2px]" 
+            <circle
+                cx={cx}
+                cy={cy}
+                r={radius}
+                fill={fillColor}
+                fillOpacity={0.85}
+                stroke={fillColor}
+                strokeWidth={1}
+                className="transition-all duration-300 group-hover:fill-opacity-100 group-hover:stroke-white group-hover:stroke-[2px]"
             />
-            
+
             {/* 引線（僅在需要時顯示） */}
             {needsLeaderLine && (
                 <line
@@ -223,25 +223,25 @@ const StrategyBubble = (props: any) => {
                     style={{ pointerEvents: 'none' }}
                 />
             )}
-            
+
             {/* 標籤文字（動態字體大小 + 視覺層次） */}
-            <text 
-                x={labelX} 
-                y={labelY} 
-                textAnchor={textAnchor} 
-                fill="#E0E0E0" 
+            <text
+                x={labelX}
+                y={labelY}
+                textAnchor={textAnchor}
+                fill="#E0E0E0"
                 fillOpacity={payload.labelOpacity || 1.0}
                 fontSize={fontSize}
                 fontWeight={payload.pnlLevel === 'large' ? '800' : '700'}
-                style={{ 
-                    paintOrder: 'stroke', 
-                    stroke: '#000000', 
-                    strokeWidth: '3px', 
-                    strokeLinecap: 'round', 
-                    strokeLinejoin: 'round', 
-                    pointerEvents: 'none', 
-                    userSelect: 'none', 
-                    filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' 
+                style={{
+                    paintOrder: 'stroke',
+                    stroke: '#000000',
+                    strokeWidth: '3px',
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                    pointerEvents: 'none',
+                    userSelect: 'none',
+                    filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))'
                 }}
             >
                 {label}
@@ -252,16 +252,16 @@ const StrategyBubble = (props: any) => {
 
 const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { name: string; stat: StrategyStat }[], onSelect: (name: string) => void, lang: Lang, hideAmounts: boolean }) => {
     const t = I18N[lang] || I18N['zh'];
-    
+
     const chartData = useMemo(() => {
         return data.map((d) => ({
             name: d.name,
             x: Number(d.stat.winRate),
             y: Number(d.stat.riskReward),
-            z: Math.abs(Number(d.stat.pnl)), 
+            z: Math.abs(Number(d.stat.pnl)),
             pnl: d.stat.pnl,
             trades: d.stat.trades
-        })).filter(d => d.trades > 0).sort((a,b) => b.z - a.z); 
+        })).filter(d => d.trades > 0).sort((a, b) => b.z - a.z);
     }, [data]);
 
     if (chartData.length === 0) return <div className="text-center py-8 text-slate-600 text-xs">{t.noData}</div>;
@@ -269,29 +269,29 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
     // Detect Max Finite Y for scaling
     const finiteYValues = chartData.map(d => d.y).filter(y => isFinite(y));
     const maxFiniteY = finiteYValues.length > 0 ? Math.max(...finiteYValues) : 0;
-    const axisMaxY = Math.max(maxFiniteY * 1.5, 5); 
+    const axisMaxY = Math.max(maxFiniteY * 1.5, 5);
 
     // Force-Directed Layout: 自動分散標籤防止重疊
     const plottedData = useMemo(() => {
         // 1. 初始化標籤位置（使用角度分散）
         const initialData = chartData.map((d, idx) => {
             const radius = Math.sqrt(d.z || 0) * 0.25 + 3;
-            
+
             // 視覺層次：根據 PnL 大小分級
             const pnlLevel = d.z > 100000 ? 'large' : d.z > 50000 ? 'medium' : 'small';
             const fontSize = pnlLevel === 'large' ? 11 : pnlLevel === 'medium' ? 10 : 9;
             const labelOpacity = pnlLevel === 'large' ? 1.0 : pnlLevel === 'medium' ? 0.95 : 0.85;
-            
+
             // 初始角度（均勻分散）
             const angleDirections = Math.max(32, chartData.length); // 增加到32個方向
             const angleSpread = (Math.PI * 2) / angleDirections;
             const angle = idx * angleSpread;
-            
+
             // 初始標籤位置
             const baseDistance = radius + 20;
             const labelX = Math.cos(angle) * baseDistance;
             const labelY = Math.sin(angle) * baseDistance;
-            
+
             return {
                 ...d,
                 yPlot: isFinite(d.y) ? d.y : axisMaxY,
@@ -306,62 +306,62 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
                 labelOffsetY: labelY
             };
         });
-        
+
         // 2. 力模擬：迭代調整標籤位置
         const simulatedData = [...initialData];
         const iterations = 50;
         const repulsionStrength = 8; // 降低互推 (10 -> 8)，允許更親密
         const attractionStrength = 1.5; // 強力吸附 (1.5)，標籤緊貼氣泡
-        const damping = 0.8; 
+        const damping = 0.8;
         const gravityStrength = 0.05;
-        
+
         for (let iter = 0; iter < iterations; iter++) {
             simulatedData.forEach((item, i) => {
                 let forceX = 0;
                 let forceY = 0;
-                
+
                 // A. 排斥力
                 simulatedData.forEach((other, j) => {
                     if (i === j) return;
                     const dx = item.labelOffsetX - other.labelOffsetX;
                     const dy = item.labelOffsetY - other.labelOffsetY;
                     const distance = Math.sqrt(dx * dx + dy * dy);
-                    
+
                     if (distance < 30) { // 縮小安全距離 (35 -> 30)
                         const force = repulsionStrength / (distance + 1);
                         forceX += (dx / distance) * force;
                         forceY += (dy / distance) * force;
                     }
                 });
-                
+
                 // B. 吸引力
                 const currentDistance = Math.sqrt(
-                    item.labelOffsetX * item.labelOffsetX + 
+                    item.labelOffsetX * item.labelOffsetX +
                     item.labelOffsetY * item.labelOffsetY
                 );
                 const idealDistance = item.radius + 8; // 緊湊距離 (radius + 8)
-                
+
                 if (currentDistance > idealDistance) {
                     const pullBack = (currentDistance - idealDistance) * attractionStrength;
                     forceX -= (item.labelOffsetX / currentDistance) * pullBack;
                     forceY -= (item.labelOffsetY / currentDistance) * pullBack;
                 }
-                
+
                 // C. 重力場
                 const verticalBias = item.labelOffsetY < 0 ? -1 : 1;
                 forceY += verticalBias * gravityStrength;
-                
+
                 // D. 阻尼
                 item.labelOffsetX += forceX * damping;
                 item.labelOffsetY += forceY * damping;
-                
+
                 // E. 嚴格邊界限制 (50 -> 40)
                 const maxOffset = 40;
                 item.labelOffsetX = Math.max(-maxOffset, Math.min(maxOffset, item.labelOffsetX));
                 item.labelOffsetY = Math.max(-maxOffset, Math.min(maxOffset, item.labelOffsetY));
             });
         }
-        
+
         return simulatedData;
     }, [chartData, axisMaxY]);
 
@@ -369,7 +369,7 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
         <div className="w-full h-[320px] bg-black/20 rounded-3xl border border-white/5 p-4 relative overflow-hidden backdrop-blur-sm">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.03),_transparent_70%)] pointer-events-none"></div>
             <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart 
+                <ScatterChart
                     margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
                 >
                     <XAxis type="number" dataKey="x" name="Win Rate" unit="%" domain={[0, 100]} tick={{ fill: '#525252', fontSize: 10, fontWeight: 500 }} tickLine={false} axisLine={{ stroke: '#333', strokeWidth: 1 }} ticks={[0, 25, 50, 75, 100]} />
@@ -378,11 +378,11 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
                     <Tooltip content={<BubbleTooltip hideAmounts={hideAmounts} lang={lang} />} cursor={{ strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.2)' }} />
                     <ReferenceLine x={50} stroke="#444" strokeOpacity={0.3} strokeDasharray="4 4" />
                     <ReferenceLine y={1.0} stroke="#444" strokeOpacity={0.3} strokeDasharray="4 4" />
-                    <Scatter 
-                        name="Strategies" 
-                        data={plottedData} 
-                        cursor="pointer" 
-                        shape={(props: any) => <StrategyBubble {...props} onSelect={onSelect} />} 
+                    <Scatter
+                        name="Strategies"
+                        data={plottedData}
+                        cursor="pointer"
+                        shape={(props: any) => <StrategyBubble {...props} onSelect={onSelect} />}
                     />
                 </ScatterChart>
             </ResponsiveContainer>
@@ -408,7 +408,7 @@ export const StatsChart = ({
     const [tempStart, setTempStart] = useState<string | null>(null);
     const [tempStartIdx, setTempStartIdx] = useState<number | null>(null);
     const [isLongPressing, setIsLongPressing] = useState(false);
-    
+
     const longPressTimer = useRef<any>(null);
 
     const cancelLongPress = () => {
@@ -417,7 +417,7 @@ export const StatsChart = ({
             longPressTimer.current = null;
         }
         if (isLongPressing && !tempStart) {
-             setIsLongPressing(false);
+            setIsLongPressing(false);
         }
     };
 
@@ -437,21 +437,21 @@ export const StatsChart = ({
             setTempStart(activeLabel);
             setTempStartIdx(activeIndex);
             vibrate('impactHeavy');
-        }, 1000); 
+        }, 1000);
     };
 
     const handleMouseMove = (state: any) => {
         if (isLongPressing && tempStart && state && state.activeLabel) {
-             const currentIdx = state.activeTooltipIndex;
-             let sIdx = tempStartIdx!;
-             let eIdx = currentIdx;
-             let sLabel = tempStart;
-             let eLabel = state.activeLabel;
-             if (sIdx > eIdx) {
-                 [sIdx, eIdx] = [eIdx, sIdx];
-                 [sLabel, eLabel] = [eLabel, sLabel];
-             }
-             setSelection({ start: sLabel, end: eLabel, startIdx: sIdx, endIdx: eIdx });
+            const currentIdx = state.activeTooltipIndex;
+            let sIdx = tempStartIdx!;
+            let eIdx = currentIdx;
+            let sLabel = tempStart;
+            let eLabel = state.activeLabel;
+            if (sIdx > eIdx) {
+                [sIdx, eIdx] = [eIdx, sIdx];
+                [sLabel, eLabel] = [eLabel, sLabel];
+            }
+            setSelection({ start: sLabel, end: eLabel, startIdx: sIdx, endIdx: eIdx });
         }
     };
 
@@ -463,7 +463,7 @@ export const StatsChart = ({
         if (!selection || !metrics.curve) return null;
         const startItem = metrics.curve[selection.startIdx];
         const endItem = metrics.curve[selection.endIdx];
-        if(!startItem || !endItem) return null;
+        if (!startItem || !endItem) return null;
         const pnlDiff = endItem.equity - startItem.equity;
         const pctDiff = startItem.equity !== 0 ? (pnlDiff / startItem.equity) * 100 : 0;
         return { pnl: pnlDiff, pct: pctDiff, startDate: startItem.fullDate, endDate: endItem.fullDate };
@@ -509,9 +509,9 @@ export const StatsChart = ({
                     <div className="flex-1 min-h-0 relative w-full z-10">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             {/* @ts-ignore */}
-                            <ComposedChart 
-                                data={metrics.curve} 
-                                margin={chartMarginTop} 
+                            <ComposedChart
+                                data={metrics.curve}
+                                margin={chartMarginTop}
                                 syncId="tradeTrackStats"
                                 onMouseDown={handleMouseDown}
                                 onMouseMove={handleMouseMove}
@@ -519,12 +519,12 @@ export const StatsChart = ({
                             >
                                 <defs>
                                     <filter id="glow-line" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" /><feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.32 0 0 0 0 0.43 0 0 0 0 0.51 0 0 0 0.5 0" result="coloredBlur" /><feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-                                    {activePortfolioIds.map((pid) => { 
-                                        const p = portfolios.find(x => x.id === pid); 
+                                    {activePortfolioIds.map((pid) => {
+                                        const p = portfolios.find(x => x.id === pid);
                                         return (
                                             <React.Fragment key={`grads-${pid}`}>
-                                                <linearGradient id={`gradP-pos-${pid}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={p?.profitColor || THEME.RED} stopOpacity={0.8}/><stop offset="100%" stopColor={p?.profitColor || THEME.RED} stopOpacity={0.1}/></linearGradient>
-                                                <linearGradient id={`gradP-neg-${pid}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={p?.lossColor || THEME.DEFAULT_LOSS} stopOpacity={0.1}/><stop offset="100%" stopColor={p?.lossColor || THEME.DEFAULT_LOSS} stopOpacity={0.8}/></linearGradient>
+                                                <linearGradient id={`gradP-pos-${pid}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={p?.profitColor || THEME.RED} stopOpacity={0.8} /><stop offset="100%" stopColor={p?.profitColor || THEME.RED} stopOpacity={0.1} /></linearGradient>
+                                                <linearGradient id={`gradP-neg-${pid}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={p?.lossColor || THEME.DEFAULT_LOSS} stopOpacity={0.1} /><stop offset="100%" stopColor={p?.lossColor || THEME.DEFAULT_LOSS} stopOpacity={0.8} /></linearGradient>
                                             </React.Fragment>
                                         )
                                     })}
@@ -541,31 +541,31 @@ export const StatsChart = ({
                                         <Bar dataKey={`${pid}_neg`} stackId="a" fill={`url(#gradP-neg-${pid})`} radius={barRadius} barSize={barSize} yAxisId="pnl" isAnimationActive={false} />
                                     </React.Fragment>
                                 ))}
-                                <Line 
-                                    type="monotone" 
-                                    dataKey={showPurePnl ? "cumulativePnl" : "equity"} 
-                                    stroke={THEME.BLUE} 
-                                    strokeWidth={2} 
-                                    dot={(props) => <CustomPeakDot {...props} dataLength={metrics.curve.length} />} 
-                                    activeDot={{ r: 4, strokeWidth: 0 }} 
-                                    yAxisId="equity" 
-                                    isAnimationActive={true} 
+                                <Line
+                                    type="monotone"
+                                    dataKey={showPurePnl ? "cumulativePnl" : "equity"}
+                                    stroke={THEME.BLUE}
+                                    strokeWidth={2}
+                                    dot={(props) => <CustomPeakDot {...props} dataLength={metrics.curve.length} />}
+                                    activeDot={{ r: 4, strokeWidth: 0 }}
+                                    yAxisId="equity"
+                                    isAnimationActive={true}
                                     animationDuration={500}
                                     animationEasing="ease-in-out"
-                                    filter="url(#glow-line)" 
+                                    filter="url(#glow-line)"
                                 />
                                 <YAxis yAxisId="pnl" hide domain={['auto', 'auto']} />
                                 <YAxis yAxisId="equity" orientation="right" hide domain={['auto', 'auto']} />
                             </ComposedChart>
                         </ResponsiveContainer>
-                        
+
                         {!selection && !isLongPressing && (<div className="absolute top-2 right-2 text-[8px] text-slate-600 uppercase tracking-wider opacity-0 hover:opacity-100 transition-opacity pointer-events-none">Long press to select range</div>)}
                     </div>
-                    
+
                     <div className="h-[25%] min-h-[40px] w-full relative opacity-60 mt-0">
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <BarChart data={metrics.drawdown} margin={chartMarginBottom} syncId="tradeTrackStats">
-                                <defs><linearGradient id="gradDDMain" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={THEME.DD_GRADIENT_TOP} stopOpacity={1}/><stop offset="100%" stopColor={THEME.DD_GRADIENT_BOTTOM} stopOpacity={0.7}/></linearGradient></defs>
+                                <defs><linearGradient id="gradDDMain" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={THEME.DD_GRADIENT_TOP} stopOpacity={1} /><stop offset="100%" stopColor={THEME.DD_GRADIENT_BOTTOM} stopOpacity={0.7} /></linearGradient></defs>
                                 <XAxis dataKey="timestamp" type="category" hide padding={{ left: 24, right: 24 }} />
                                 <YAxis hide domain={['dataMin', 0]} />
                                 <Tooltip cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} content={() => null} />
@@ -590,7 +590,7 @@ export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, st
     const strategyData = useMemo(() => {
         return Object.entries(metrics.stratStats)
             .map(([name, stat]) => ({ name, stat }))
-            .sort((a,b) => b.stat.pnl - a.stat.pnl);
+            .sort((a, b) => b.stat.pnl - a.stat.pnl);
     }, [metrics.stratStats]);
 
     const absDD = Math.abs(metrics.maxDD);
@@ -599,29 +599,29 @@ export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, st
     let ddCardClass = "";
     let ddValueClass = "";
     let ddValueColor = Math.abs(metrics.maxDD) > 20 ? THEME.GREEN : '#E0E0E0';
-    if (isDDBreach) { ddCardClass = "bg-[#5B9A8B]/10 border-[#5B9A8B]/30 shadow-[0_0_20px_rgba(91,154,139,0.2)]"; ddValueColor = THEME.GREEN; } 
+    if (isDDBreach) { ddCardClass = "bg-[#5B9A8B]/10 border-[#5B9A8B]/30 shadow-[0_0_20px_rgba(91,154,139,0.2)]"; ddValueColor = THEME.GREEN; }
     else if (isDDWarning) { ddValueColor = THEME.GREEN; ddValueClass = "animate-pulse"; }
 
     return (
         <div className="space-y-4">
-             <div className="flex flex-col gap-2 stagger-2 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="flex flex-col gap-2 stagger-2 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div className="grid grid-cols-3 gap-2">
                     <StatCard hideAmounts={hideAmounts} label={t.winRate} value={`${formatDecimal(metrics.winRate)}%`} valueColor={metrics.winRate < 40 ? THEME.GREEN : THEME.RED} />
                     <StatCard hideAmounts={hideAmounts} label={t.profitFactor} value={formatDecimal(metrics.pf)} valueColor={metrics.pf >= 1.5 ? THEME.RED : '#E0E0E0'} />
                     <StatCard hideAmounts={hideAmounts} label={t.sharpe} value={formatDecimal(metrics.sharpe)} valueColor={metrics.sharpe >= 1 ? THEME.RED : '#E0E0E0'} />
-                 </div>
-                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                </div>
+                <div className="grid grid-cols-3 gap-2">
                     <StatCard hideAmounts={hideAmounts} label={t.maxDD} value={`${formatDecimal(metrics.maxDD)}%`} valueColor={ddValueColor} className={ddCardClass} valueClassName={ddValueClass} />
                     <StatCard hideAmounts={hideAmounts} label={t.riskReward} value={formatDecimal(metrics.riskReward)} valueColor="#E0E0E0" />
                     <StatCard hideAmounts={hideAmounts} label={t.daysSincePeak} value={metrics.maxStagnationDays} valueColor={metrics.maxStagnationDays > 30 ? THEME.GREEN : '#E0E0E0'} />
-                 </div>
+                </div>
             </div>
 
             <div className="flex flex-col gap-2 stagger-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 <div className="flex justify-between items-center px-1">
                     <div className="flex items-center gap-2">
-                         <div className="p-1 rounded bg-white/5"><List size={12} className="text-slate-400"/></div>
-                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{t.strategies}</span>
+                        <div className="p-1 rounded bg-white/5"><List size={12} className="text-slate-400" /></div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{t.strategies}</span>
                     </div>
                     <div className="flex bg-white/5 rounded-lg p-0.5 border border-white/5">
                         <button onClick={() => setStratView('list')} className={`p-1.5 rounded-md transition-all ${stratView === 'list' ? 'bg-[#C8B085] text-black shadow-sm' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><List size={12} strokeWidth={2.5} /></button>

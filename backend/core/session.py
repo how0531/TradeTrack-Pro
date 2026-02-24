@@ -5,6 +5,9 @@ from datetime import datetime
 # Global Session Manager Instance
 _SESSION_MANAGER = None
 
+# CA 啟動有效期（秒）：Shioaji 內部可能在長時間閒置後使 CA 失效
+_CA_EXPIRY_SECONDS = 30 * 60  # 30 分鐘
+
 class ShioajiSessionManager:
     def __init__(self):
         self.api = None
@@ -12,7 +15,8 @@ class ShioajiSessionManager:
         self.current_api_key_suffix = None  # Store last 6 chars for validation
         self.last_used_time = None
         self.is_simulation = True
-        self.ca_activated = False  # 🔑 Track CA activation status
+        self.ca_activated = False
+        self.ca_activated_time = None  # 記錄 CA 最後啟動時間
 
     def get_api(
         self, api_key, secret_key, person_id, ca_path, ca_password, simulation=True
@@ -36,24 +40,19 @@ class ShioajiSessionManager:
                 flush=True,
             )
             
-            # 🔑 CRITICAL FIX: If CA was not activated, try to activate now
-            if not self.ca_activated and ca_path:
-                self._try_activate_ca(self.api, ca_path, ca_password, person_id)
-            
+            # Session reuse 時仍檢查 CA（由 ensure_ca_active 負責）
             self.last_used_time = datetime.now()
             return self.api
 
         # 2. If valid session exists but credentials changed, drop old session
         if self.api:
-            # WARNING: Calling self.api.logout() on Windows often causes a deadlock
-            # in the underlying Shioaji C++ core, freezing the entire backend.
-            # We safely drop the reference instead.
             print(
                 f"DEBUG: [Session] Dropping old session to avoid deadlock. Credentials changed.",
                 flush=True,
             )
             self.api = None
-            self.ca_activated = False  # Reset CA status
+            self.ca_activated = False
+            self.ca_activated_time = None
 
         # 3. Create new connection
         print(
@@ -65,7 +64,7 @@ class ShioajiSessionManager:
         accounts = new_api.login(
             api_key=api_key,
             secret_key=secret_key,
-            fetch_contract=True,  # Mandatory to resolve stock/contract names
+            fetch_contract=True,
         )
         print(f"DEBUG: Login successful. Found {len(accounts)} account(s).", flush=True)
 
@@ -80,6 +79,36 @@ class ShioajiSessionManager:
         self.last_used_time = datetime.now()
 
         return self.api
+
+    def ensure_ca_active(self, ca_path, ca_password, person_id):
+        """
+        每次 PnL 查詢前必須呼叫。確保 CA 處於活躍狀態。
+        - 從未啟動 → 嘗試啟動
+        - 已啟動但超過有效期 → 重新啟動（防止 Shioaji 內部超時）
+        回傳 True 表示 CA 已啟動，False 表示啟動失敗。
+        """
+        if not self.api:
+            print("WARNING: [CA] No API session, cannot activate CA.", flush=True)
+            return False
+
+        # 判斷是否需要重新啟動
+        needs_activation = False
+        reason = ""
+
+        if not self.ca_activated:
+            needs_activation = True
+            reason = "CA 從未成功啟動"
+        elif self.ca_activated_time:
+            elapsed = (datetime.now() - self.ca_activated_time).total_seconds()
+            if elapsed > _CA_EXPIRY_SECONDS:
+                needs_activation = True
+                reason = f"CA 已超過 {_CA_EXPIRY_SECONDS // 60} 分鐘有效期"
+
+        if needs_activation:
+            print(f"DEBUG: [CA] 重新啟動原因: {reason}", flush=True)
+            self._try_activate_ca(self.api, ca_path, ca_password, person_id)
+
+        return self.ca_activated
 
     def _try_activate_ca(self, api, ca_path, ca_password, person_id):
         """
@@ -104,9 +133,11 @@ class ShioajiSessionManager:
                 person_id=person_id,
             )
             self.ca_activated = True
+            self.ca_activated_time = datetime.now()
             print(f"DEBUG: [CA] ✅ CA Activated successfully! Result: {result}", flush=True)
         except Exception as e:
             self.ca_activated = False
+            self.ca_activated_time = None
             print(f"WARNING: [CA] ❌ CA Activation failed: {e}", flush=True)
 
 

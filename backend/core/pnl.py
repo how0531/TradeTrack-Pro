@@ -58,7 +58,9 @@ def login_and_fetch_pnl(
         )
 
         # 🔑 Check CA activation status and warn if not activated
-        if not manager.ca_activated:
+        ca_is_active = manager.ensure_ca_active(final_ca_path, ca_password, person_id)
+        
+        if not ca_is_active:
             log("⚠️ CA NOT ACTIVATED — PnL queries may return empty results!")
             if not ca_content and (not ca_path or not os.path.exists(ca_path)):
                 return {
@@ -180,6 +182,7 @@ def login_and_fetch_pnl(
             acc_details = []
             acc_equity = 0    # New: 權益數
             acc_open_pnl = 0  # New: 未平倉損益
+            empty_reason = None # New: 空結果的原因
             
             try:
                 acc_type_str = str(getattr(target_account, "account_type", "")).upper()
@@ -193,7 +196,7 @@ def login_and_fetch_pnl(
                 # 1. 複委託 (Sub-brokerage) - Skip (Not supported)
                 if is_sub:
                      log(f"ℹ️ [Skip PnL] Skipping PnL for Sub-brokerage account {target_account.account_id}")
-                     return 0, acc_details, 0, 0
+                     return 0, acc_details, 0, 0, "not_supported"
 
                 # 2. 期貨額外數據：權益數 (Equity) & 未平倉 (Open Positions)
                 if is_futures:
@@ -257,6 +260,9 @@ def login_and_fetch_pnl(
                 if candidates:
                     candidates.sort(key=len, reverse=True)
                     pnl_data = candidates[0]
+                else:
+                    # 如果抓不到資料，根據 CA 狀態給出原因
+                    empty_reason = "ca_not_activated" if not ca_is_active else "no_trades_in_range"
                 
                 for item in pnl_data:
                     try:
@@ -268,14 +274,6 @@ def login_and_fetch_pnl(
                         raw_qty = int(getattr(item, "quantity", 0))
                         # pnl from Shioaji is ALWAYS in NTD for both Stock and Futures
                         realized = round(float(getattr(item, "pnl", 0)), 4)
-                        
-                        # Initialize output fields
-                        price = 0.0
-                        buy_amt = 0.0
-                        sell_amt = 0.0
-                        pr_ratio_val = 0.0
-                        entry_price = 0.0
-                        exit_price = 0.0
                         
                         # Helper to resolve futures names
                         def resolve_name(c, is_f):
@@ -298,6 +296,14 @@ def login_and_fetch_pnl(
 
                         name = getattr(item, "name", "") or resolve_name(code, is_futures)
                         display_code = name if code in name else f"{code} {name}" if name else code
+                        
+                        # Initialize output fields BEFORE type-specific branch
+                        price = 0.0
+                        buy_amt = 0.0
+                        sell_amt = 0.0
+                        pr_ratio_val = 0.0
+                        entry_price = 0.0
+                        exit_price = 0.0
                         
                         if is_futures:
                             # ═══════════════════════════════════════════
@@ -350,19 +356,20 @@ def login_and_fetch_pnl(
                          log(f"❌ [Item Error] {getattr(item, 'code', '?')}: {item_e}")
                          continue
                          
-                return acc_pnl, acc_details, acc_equity, acc_open_pnl
+                return acc_pnl, acc_details, acc_equity, acc_open_pnl, empty_reason
 
             except Exception as e:
                 log(f"❌ [Worker Error] {target_account.account_id}: {e}")
                 import traceback
                 log(traceback.format_exc())
-                return 0, [], 0, 0
+                return 0, [], 0, 0, "error"
 
         
         total_pnl = 0
         details = []
         total_equity = 0      # New: 總權益數
         total_open_pnl = 0    # New: 總未平倉損益
+        final_empty_reason = None
         
         # Threads
         import concurrent.futures
@@ -374,12 +381,18 @@ def login_and_fetch_pnl(
              for future in concurrent.futures.as_completed(future_to_acc):
                  acc = future_to_acc[future]
                  try:
-                     # Unpack 4 values now
-                     pnl, acc_dets, equity, open_pnl = future.result()
+                     # Unpack 5 values now
+                     pnl, acc_dets, equity, open_pnl, empty_reason = future.result()
                      
                      if pnl != 0 or acc_dets:
                          total_pnl += pnl
                          details.extend(acc_dets)
+                     elif empty_reason:
+                         # 優先記錄 ca_not_activated
+                         if empty_reason == "ca_not_activated":
+                             final_empty_reason = "ca_not_activated"
+                         elif not final_empty_reason:
+                             final_empty_reason = empty_reason
                     
                      # Aggregate Futures Data
                      total_equity += equity
@@ -417,6 +430,8 @@ def login_and_fetch_pnl(
             "branch_code": branch_filter or ",".join(sorted(list(branch_codes))) or "ALL",
             "environment": "simulation" if simulation else "production",
             "signed_accounts": signed_ids,
+            "ca_status": "activated" if ca_is_active else "not_activated", # 新增 CA 狀態
+            "empty_reason": final_empty_reason if not details else None,   # 新增空結果原因
             # New Summary Fields
             "summary": {
                 "equity": total_equity,
@@ -429,7 +444,7 @@ def login_and_fetch_pnl(
         if accounts:
             result["username"] = getattr(accounts[0], "username", person_id)
 
-        log(f"✅ [Done] PnL: {total_pnl}, Items: {len(details)}, Equity: {total_equity}")
+        log(f"✅ [Done] PnL: {total_pnl}, Items: {len(details)}, Equity: {total_equity}, EmptyReason: {final_empty_reason}")
         
         return result
 
