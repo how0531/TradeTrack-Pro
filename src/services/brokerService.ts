@@ -71,7 +71,18 @@ const generateMockPnl = (startDate: Date, endDate: Date): BrokerSyncResult => {
 export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: BrokerConfig): Promise<BrokerSyncResult> => {
     const startTime = performance.now();
     console.log('🔍 [PERF] fetchBrokerPnl 開始:', new Date().toISOString());
-    console.log('📅 [PERF] 日期範圍:', startDate.toISOString().split('T')[0], '→', endDate.toISOString().split('T')[0]);
+    // Helper to avoid timezone shift when using toISOString() on local dates
+    const formatLocalYYYYMMDD = (d: Date) => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const startStr = formatLocalYYYYMMDD(startDate);
+    const endStr = formatLocalYYYYMMDD(endDate);
+
+    console.log('📅 [PERF] 日期範圍:', startStr, '→', endStr);
 
     if (!config.isConnected) {
         throw new Error('券商未連線 (Broker not connected)');
@@ -100,8 +111,8 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 branchCode: config.branchCode, // ✅ 傳遞分公司代碼
                 accountType: config.accountType, // ✅ 傳遞帳號類型 (S/F)
                 environment: config.environment || 'production', // ✅ 傳遞環境設定
-                startDate: startDate.toISOString().split('T')[0],
-                endDate: endDate.toISOString().split('T')[0]
+                startDate: startStr,
+                endDate: endStr
             };
 
             // ... (Logging omitted for brevity) ...
