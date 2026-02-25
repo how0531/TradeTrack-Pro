@@ -311,7 +311,7 @@ export const validateBackendStatus = async (
         try {
             // Step 1: Check if server is alive with health endpoint
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s for Render free-tier cold boot
+            const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s for Render free-tier cold boot
 
             const healthResponse = await fetch(`${API_BASE}/health`, { signal: controller.signal });
             clearTimeout(timeoutId);
@@ -463,8 +463,8 @@ export const wakeUpBackend = async (): Promise<{ success: boolean; error?: strin
     console.log(`🔔 [WAKE] Attempting to wake up backend at: ${url}`);
     try {
         const controller = new AbortController();
-        // 免費 tier 後端冷啟動可能需要 30-60 秒，給 65 秒 timeout
-        const timeoutId = setTimeout(() => controller.abort(), 65000);
+        // 免費 tier 後端冷啟動可能需要 30-90 秒，給 90 秒 timeout
+        const timeoutId = setTimeout(() => controller.abort(), 90000);
 
         const response = await fetch(url, {
             signal: controller.signal,
@@ -481,8 +481,8 @@ export const wakeUpBackend = async (): Promise<{ success: boolean; error?: strin
     } catch (e: any) {
         const errorMsg = e.message || 'Unknown network error';
         if (e.name === 'AbortError') {
-            console.warn('❌ [WAKE] Timeout waiting for backend (65s)');
-            return { success: false, error: 'Timeout (65s) - 後端可能正在冷啟動' };
+            console.warn('❌ [WAKE] Timeout waiting for backend (90s)');
+            return { success: false, error: 'Timeout (90s) - 後端可能正在冷啟動，請再次嘗試' };
         }
         console.warn('❌ [WAKE] Failed to wake backend:', errorMsg);
         return { success: false, error: errorMsg };

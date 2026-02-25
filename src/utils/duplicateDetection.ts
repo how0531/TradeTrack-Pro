@@ -39,19 +39,32 @@ export function detectDuplicates(
       if (useOrderNoOnly) return false;
 
       // 方法 2: 回退方案 - 同日期 + 同標的代號 + 同損益
-      // 使用 code + pnl 組合（amount 欄位在券商匯入流程中不會被填充）
-      const sameDate = new Date(trade.date).toDateString() ===
-        new Date(other.date).toDateString();
+      // qty/price 僅在「兩邊都有非零值」時才加入比對，避免舊資料缺欄位導致誤判
+      const sameDate = new Date(trade.date).toISOString().split('T')[0] ===
+        new Date(other.date).toISOString().split('T')[0];
+      if (!sameDate) return false;
 
       // 比對標的代號（提取純代號部分）
       const tradeCode = trade.code ? trade.code.split(' ')[0].trim() : '';
       const otherCode = other.code ? other.code.split(' ')[0].trim() : '';
-      const sameCode = tradeCode && otherCode && tradeCode === otherCode;
+      const sameCode = !!(tradeCode && otherCode && tradeCode === otherCode);
+      if (!sameCode) return false;
 
-      // 比對損益（±1 容差，與 SyncDateModal 一致）
-      const samePnl = Math.abs(trade.pnl - other.pnl) < 1;
+      // 比對損益 (±2 容差，容錯手續費差異)
+      const samePnl = Math.abs(trade.pnl - other.pnl) < 2;
+      if (!samePnl) return false;
 
-      return sameDate && sameCode && samePnl;
+      // 數量：僅當兩邊都有非零值時才要求相符
+      const tQty = trade.quantity ?? 0;
+      const oQty = other.quantity ?? 0;
+      if (tQty !== 0 && oQty !== 0 && Math.abs(tQty - oQty) >= 0.001) return false;
+
+      // 價格：僅當兩邊都有非零值時才要求相符
+      const tPrice = trade.price ?? 0;
+      const oPrice = other.price ?? 0;
+      if (tPrice !== 0 && oPrice !== 0 && Math.abs(tPrice - oPrice) >= 0.01) return false;
+
+      return true;
     });
 
     if (duplicates.length > 0) {

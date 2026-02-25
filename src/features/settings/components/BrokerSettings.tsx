@@ -686,7 +686,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     </div>
 
                                     {/* Action Buttons (Absolute Bottom Right on Hover, but slightly adjusted for centered layout) */}
-                                    <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-md rounded-lg p-0.5 border border-white/10 z-50">
+                                    <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity duration-200 bg-black/60 backdrop-blur-md rounded-lg p-0.5 border border-white/10 z-50">
                                         {config.provider === 'shioaji' && config.signedAccounts !== undefined && !(config.signedAccounts || '').split(',').map(s => s.trim()).includes(accId) && !isSub && (
                                             <>
                                                 <button

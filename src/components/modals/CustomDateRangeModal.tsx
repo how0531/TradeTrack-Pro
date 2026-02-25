@@ -23,6 +23,8 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
     const [startDate, setStartDate] = useState<string | null>(initialRange.start);
     const [endDate, setEndDate] = useState<string | null>(initialRange.end);
     const [step, setStep] = useState<'start' | 'end'>('start');
+    const [editMode, setEditMode] = useState<'start' | 'end' | null>(null);
+    const [tempInput, setTempInput] = useState('');
 
     // 開啟時初始化，並將月曆定位到起始日所在月份
     useEffect(() => {
@@ -84,6 +86,47 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
         setViewDate(new Date());
     };
 
+    const handleInputBlur = () => {
+        const input = tempInput.trim();
+        if (input === '') {
+            if (editMode === 'start') setStartDate(null);
+            if (editMode === 'end') setEndDate(null);
+        } else {
+            let normalized = input.replace(/\//g, '-').replace(/\./g, '-');
+            // Support formats like 20260225
+            if (normalized.length === 8 && !normalized.includes('-')) {
+                normalized = `${normalized.substring(0, 4)}-${normalized.substring(4, 6)}-${normalized.substring(6, 8)}`;
+            }
+            const d = new Date(normalized);
+            if (!isNaN(d.getTime())) {
+                const ds = getLocalDateStr(d);
+                if (editMode === 'start') {
+                    setStartDate(ds);
+                    if (endDate && ds > endDate) setEndDate(null);
+                    setViewDate(new Date(d.getFullYear(), d.getMonth(), 1));
+                    setStep('end');
+                } else if (editMode === 'end') {
+                    if (startDate && ds < startDate) {
+                        setStartDate(ds);
+                        setEndDate(null);
+                        setStep('end');
+                    } else {
+                        setEndDate(ds);
+                    }
+                    setViewDate(new Date(d.getFullYear(), d.getMonth(), 1));
+                }
+            }
+        }
+        // Use setTimeout to prevent onBlur from blocking clicks on calendar buttons
+        setTimeout(() => setEditMode(null), 150);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.currentTarget.blur();
+        }
+    };
+
     // 友善的日期顯示格式 (2026/02/24)
     const formatDisplay = (dateStr: string | null): string => {
         if (!dateStr) return '—';
@@ -115,36 +158,74 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
                         </button>
                     </div>
 
-                    {/* 日期顯示區域 — 改為唯讀自訂顯示，點擊切換焦點 */}
+                    {/* 日期顯示區域 — 加回輸入功能 */}
                     <div className="flex gap-3">
                         {/* Start Date Box */}
                         <div
-                            onClick={() => setStep('start')}
-                            className={`flex-1 p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${step === 'start' ? 'border-[#C8B085] bg-[#C8B085]/5 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'border-white/5 bg-black/40 hover:border-white/10'}`}
+                            onClick={() => {
+                                setStep('start');
+                                if (editMode !== 'start') {
+                                    setEditMode('start');
+                                    setTempInput(startDate ? startDate.replace(/-/g, '/') : '');
+                                }
+                            }}
+                            className={`flex-1 p-3.5 rounded-2xl border transition-all cursor-text select-none ${step === 'start' ? 'border-[#C8B085] bg-[#C8B085]/5 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'border-white/5 bg-black/40 hover:border-white/10'}`}
                         >
                             <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1.5 block tracking-wider">{t.startDate}</label>
-                            <div className={`text-sm font-barlow-numeric font-bold tracking-wide ${startDate ? 'text-white' : 'text-zinc-700'}`}>
-                                {formatDisplay(startDate)}
-                            </div>
+                            {editMode === 'start' ? (
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={tempInput}
+                                    onChange={(e) => setTempInput(e.target.value)}
+                                    onBlur={handleInputBlur}
+                                    onKeyDown={handleKeyDown}
+                                    placeholder="YYYY/MM/DD"
+                                    className="w-full bg-transparent text-sm font-barlow-numeric font-bold tracking-wide text-white outline-none placeholder:text-zinc-700"
+                                />
+                            ) : (
+                                <div className={`text-sm font-barlow-numeric font-bold tracking-wide ${startDate ? 'text-white' : 'text-zinc-700'}`}>
+                                    {formatDisplay(startDate)}
+                                </div>
+                            )}
                         </div>
 
                         {/* End Date Box */}
                         <div
-                            onClick={() => setStep('end')}
-                            className={`flex-1 p-3.5 rounded-2xl border transition-all cursor-pointer select-none relative ${step === 'end' ? 'border-[#C8B085] bg-[#C8B085]/5 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'border-white/5 bg-black/40 hover:border-white/10'}`}
+                            onClick={() => {
+                                setStep('end');
+                                if (editMode !== 'end') {
+                                    setEditMode('end');
+                                    setTempInput(endDate ? endDate.replace(/-/g, '/') : '');
+                                }
+                            }}
+                            className={`flex-1 p-3.5 rounded-2xl border transition-all cursor-text select-none relative ${step === 'end' ? 'border-[#C8B085] bg-[#C8B085]/5 shadow-[0_0_20px_rgba(200,176,133,0.05)]' : 'border-white/5 bg-black/40 hover:border-white/10'}`}
                         >
                             <div className="flex justify-between items-center mb-1.5">
                                 <label className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">{t.endDate}</label>
                                 <button
-                                    onClick={handleToday}
+                                    onClick={(e) => { e.stopPropagation(); handleToday(e); }}
                                     className="text-[9px] font-bold text-[#C8B085] hover:underline px-1.5 py-0.5 rounded-md hover:bg-[#C8B085]/10 transition-colors"
                                 >
                                     今日
                                 </button>
                             </div>
-                            <div className={`text-sm font-barlow-numeric font-bold tracking-wide ${endDate ? 'text-white' : 'text-zinc-700'}`}>
-                                {formatDisplay(endDate)}
-                            </div>
+                            {editMode === 'end' ? (
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={tempInput}
+                                    onChange={(e) => setTempInput(e.target.value)}
+                                    onBlur={handleInputBlur}
+                                    onKeyDown={handleKeyDown}
+                                    placeholder="YYYY/MM/DD"
+                                    className="w-full bg-transparent text-sm font-barlow-numeric font-bold tracking-wide text-white outline-none placeholder:text-zinc-700"
+                                />
+                            ) : (
+                                <div className={`text-sm font-barlow-numeric font-bold tracking-wide ${endDate ? 'text-white' : 'text-zinc-700'}`}>
+                                    {formatDisplay(endDate)}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

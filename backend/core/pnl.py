@@ -2,6 +2,7 @@ import os
 import time
 import base64
 import tempfile
+import threading
 from datetime import datetime, timedelta
 from .session import get_session_manager
 from .constants import BRANCH_MAP
@@ -19,6 +20,7 @@ def login_and_fetch_pnl(
     simulation=True,
     branch_filter=None,
     type_filter=None,
+    profile_only=False,
 ):
     """
     Main Logic with FILE LOGGING for debugging
@@ -41,7 +43,6 @@ def login_and_fetch_pnl(
 
     if ca_content:
         try:
-            import tempfile
             tf = tempfile.NamedTemporaryFile(delete=False, suffix=".pfx")
             tf.write(base64.b64decode(ca_content))
             tf.close()
@@ -73,9 +74,18 @@ def login_and_fetch_pnl(
         # 3. List Accounts
         try:
             accounts = api.list_accounts()
-        except:
+        except Exception as acc_err:
+            log(f"⚠️ [list_accounts] First attempt failed: {acc_err}")
             time.sleep(1)
-            accounts = api.list_accounts()
+            try:
+                accounts = api.list_accounts()
+            except Exception as acc_err2:
+                log(f"❌ [list_accounts] Second attempt also failed: {acc_err2}")
+                return {
+                    "status": "error",
+                    "message": f"無法取得帳號列表，連線可能已中斷：{str(acc_err2)}",
+                    "details": []
+                }
             
         log(f"API Returned {len(accounts)} accounts.")
         
@@ -108,73 +118,110 @@ def login_and_fetch_pnl(
                 else:
                     allowed = [x.strip() for x in str(branch_filter).split(",") if x.strip()]
                 
-                if acc_branch in allowed or acc_id in allowed:
+                # Normalize branch comparison (4 digits)
+                match = False
+                for b in allowed:
+                    if acc_branch.endswith(b[-4:]) or acc_id == b or b in acc_id:
+                        match = True
+                        break
+                
+                if match:
+                    log(f"MATCH: Found account {acc_id} for branch {acc_branch}")
                     valid_accounts.append(acc)
+                else:
+                    log(f"SKIP: ID={acc_id} Branch={acc_branch} not in {allowed}")
             else:
                 valid_accounts.append(acc)
         
         log(f"Filtered to {len(valid_accounts)} valid accounts.")
+        
+        if not valid_accounts:
+            msg = f"找不到符合條件的帳號 (Branch={branch_filter}, Type={type_filter})"
+            log(f"⚠️ {msg}")
+            return {"status": "error", "message": msg, "details": [], "details_count": 0}
 
-        if len(valid_accounts) > 1 and not branch_filter:
+        # M4: Profile-only 模式 — 只需登入並列出帳號，跳過 CA probe 和 PnL 抓取
+        if profile_only:
             choices = []
-            for acc in valid_accounts:
-                bid = str(getattr(acc, "broker_id", "Unknown")).strip()[:4]
-                raw_type = str(getattr(acc, "account_type", "??"))
-                atype = raw_type.replace("AccountType.", "")
-                
-                # Try to get username, fallback to masked person_id
-                acc_name = getattr(acc, "username", getattr(acc, "name", ""))
-                if not acc_name:
-                    acc_name = person_id[:3] + "*****" + person_id[-2:] if person_id else "User"
-
-                # Get branch name with logging for unknown codes
-                if bid in BRANCH_MAP:
-                    bname = BRANCH_MAP[bid] + f" ({atype})"
-                else:
-                    log(f"⚠️ [BRANCH_MAP] Unknown branch code: {bid} - Please update constants.py")
-                    bname = f"未知分公司[{bid}] ({atype})"
-
-                # Shioaji AccountType enum values after replace("AccountType.", ""):
-                #   "Stock"  → AccountType.Stock: 'S'  (台股證券 or 複委託)
-                #   "Future" → AccountType.Future: 'F' (期貨)
-                # SubBrokerage uses Stock type but has different account_id prefix (starts with '0')
+            acc_name = getattr(accounts[0], "username", person_id) if accounts else person_id
+            for acc in accounts:
+                bid = str(getattr(acc, "broker_id", "")).strip()[:4]
+                atype = str(getattr(acc, "account_type", "")).replace("AccountType.", "")
+                bname = BRANCH_MAP.get(bid, f"未知[{bid}]") + f" ({atype})"
                 acc_id_str = str(getattr(acc, "account_id", ""))
-                category = "Stock"
                 atype_upper = atype.upper()
-                if atype_upper == "FUTURE" or atype_upper == "F":
+                category = "Stock"
+                if atype_upper in ("FUTURE", "F"):
                     category = "Futures"
                 elif bid in ["F002", "9162"]:
-                    category = "Futures"  # Fallback by known futures branch
+                    category = "Futures"
                 elif acc_id_str.startswith("0") or "SUB" in atype_upper or "H" in atype_upper:
                     category = "SubBrokerage"
-
                 choices.append({
                     "branch_code": str(bid),
                     "branch_name": str(bname),
-                    "account_id": str(getattr(acc, "account_id", "")),
+                    "account_id": acc_id_str,
                     "account_type": str(atype),
-                    "category": category, # Explicit Category
+                    "category": category,
                     "username": str(acc_name),
-                    "signed": bool(getattr(acc, "signed", False)), # New field
+                    "signed": bool(getattr(acc, "signed", False)),
                     "environment": "simulation" if simulation else "production"
                 })
-            
-            log(f"Returning Choices: {choices}")
+            log(f"✅ [Profile] Returning {len(choices)} accounts (profile_only mode)")
             return {
                 "status": "multiple_accounts",
                 "accounts": choices,
                 "environment": "simulation" if simulation else "production"
             }
 
-        # 4. Fetch PnL (If logic reaches here, it means single account or filtered)
-        # 4. Fetch PnL Parallel Execution
+        # Optimization #18: Proactive CA Verification Probe
+        # Non-fatal check: verify CA is functional before PnL fetch
+        ca_is_active = manager.ensure_ca_active(final_ca_path, ca_password, person_id)
+        if ca_is_active and valid_accounts:
+            try:
+                api.margin(valid_accounts[0])
+                log("✅ [CA Probe] CA is active and functional.")
+            except Exception as probe_err:
+                log(f"⚠️ [CA Probe] CA active but probe failed: {probe_err}")
+                # Non-fatal: some accounts might fail probe but still allow PnL queries.
+
+        # 4. Fetch PnL — Sequential Execution
         # Default dates
         if not start_date:
             start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         if not end_date:
             end_date = datetime.now().strftime("%Y-%m-%d")
 
-        import concurrent.futures
+        # 日期格式標準化：確保為 "YYYY-MM-DD" 格式
+        def normalize_date(d):
+            d = str(d).strip()
+            if len(d) == 8 and d.isdigit():  # "20250401" → "2025-04-01"
+                return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+            return d
+        start_date = normalize_date(start_date)
+        end_date = normalize_date(end_date)
+        log(f"📅 Date range: {start_date} → {end_date}")
+
+        # 移除未使用的 concurrent.futures import
+        
+        # 帶 timeout 的 list_profit_loss wrapper——避免 API 永遠等待
+        def safe_list_profit_loss(account, start, end, timeout_sec=15):
+            """Calls api.list_profit_loss with a timeout to prevent indefinite hangs."""
+            result_holder = [None]
+            error_holder = [None]
+            def _call():
+                try:
+                    result_holder[0] = api.list_profit_loss(account, start, end)
+                except Exception as e:
+                    error_holder[0] = e
+            t = threading.Thread(target=_call, daemon=True)
+            t.start()
+            t.join(timeout=timeout_sec)
+            if t.is_alive():
+                raise TimeoutError(f"list_profit_loss 超時 ({timeout_sec}秒)")
+            if error_holder[0]:
+                raise error_holder[0]
+            return result_holder[0]
         
         # Internal Worker Function (Closure to capture log/api context)
         def fetch_worker(target_account):
@@ -222,47 +269,60 @@ def login_and_fetch_pnl(
                     except Exception as me:
                         log(f"⚠️ [Futures Margin/Pos Error] {me}")
 
-                candidates = []
-                max_attempts = 2
-                import random
-                time.sleep(random.uniform(0.1, 0.5))
-
                 # 3. 核心 PnL 抓取 (Unified Logic for Stock & Futures)
-                # 使用 list_profit_loss (已驗證期貨也有資料)
-                for attempt in range(max_attempts):
+                # 使用 list_profit_loss — 單次查詢 + 錯誤時才重試
+                pnl_data = None  # None = 尚未取得, [] = 確認無資料
+                for attempt in range(2):
                     try:
                         try:
-                            current_pnl = api.list_profit_loss(target_account, start_date, end_date)
+                            raw_result = safe_list_profit_loss(target_account, start_date, end_date)
                         except Exception as api_e:
                             err_str = str(api_e)
                             if "406" in err_str or "Account Not Acceptable" in err_str:
                                 log(f"ℹ️ [Skip 406] Account {target_account.account_id} not supported by list_profit_loss.")
-                                current_pnl = []
+                                pnl_data = []
+                                break  # 406 不需重試
                             else:
                                 raise api_e 
-                        
-                        count = len(current_pnl) if current_pnl else 0
-                        log(f"🔍 [API Fetch] {target_account.account_id} Attempt {attempt+1}/{max_attempts}: Found {count} records.")
-                        
-                        if current_pnl and count > 0:
-                            candidates.append(current_pnl)
-                            
-                        if attempt < max_attempts - 1:
-                            time.sleep(0.5) 
+
+                        # 區分 None（異常）和 []（真的沒資料）
+                        if raw_result is None:
+                            log(f"⚠️ [API Fetch] {target_account.account_id} Attempt {attempt+1}: Returned None (abnormal)")
+                            if attempt == 0:
+                                time.sleep(1.5)  # None 表示連線可能有問題，多等一下
+                                continue
+                            else:
+                                pnl_data = []  # 第二次仍 None，視為無資料
+                        else:
+                            pnl_data = raw_result
+                            count = len(pnl_data)
+                            log(f"🔍 [API Fetch] {target_account.account_id} Attempt {attempt+1}: Found {count} records.")
+                            if count > 0:
+                                break  # 成功取得資料，不再重試
+                            elif attempt == 0:
+                                time.sleep(1)  # 第一次空值，等 1 秒後重試一次
 
                     except Exception as e:
                         if "406" in str(e): break
                         log(f"❌ [API Error] {target_account.account_id} Attempt {attempt+1}: {str(e)}")
-                        time.sleep(0.5)
+                        if attempt == 0:
+                            time.sleep(1)
 
-                # Decision Logic
-                pnl_data = [] 
-                if candidates:
-                    candidates.sort(key=len, reverse=True)
-                    pnl_data = candidates[0]
-                else:
-                    # 如果抓不到資料，根據 CA 狀態給出原因
+                if pnl_data is None:
+                    pnl_data = []
+                if not pnl_data:
                     empty_reason = "ca_not_activated" if not ca_is_active else "no_trades_in_range"
+                
+                # 🔍 診斷日誌：列出 API 回傳的所有原始資料（含海外期貨）
+                log(f"📊 [Raw PnL Data] Account {target_account.account_id}: {len(pnl_data)} items returned")
+                for idx, item in enumerate(pnl_data):
+                    item_code = getattr(item, "code", "?")
+                    item_pnl = getattr(item, "pnl", 0)
+                    item_date = getattr(item, "date", "?")
+                    item_currency = getattr(item, "currency", "N/A")
+                    item_entry = getattr(item, "entry_price", "N/A")
+                    item_cover = getattr(item, "cover_price", "N/A")
+                    log(f"  [{idx}] code={item_code}, pnl={item_pnl}, date={item_date}, currency={item_currency}, entry={item_entry}, cover={item_cover}")
                 
                 for item in pnl_data:
                     try:
@@ -307,33 +367,32 @@ def login_and_fetch_pnl(
                         
                         if is_futures:
                             # ═══════════════════════════════════════════
-                            # FutureProfitLoss 專線
-                            # 屬性: code, quantity, pnl(NTD), date, 
-                            #       direction, entry_price, cover_price, tax, fee
+                            # FutureProfitLoss (官方文件)
+                            # 屬性: code, quantity, pnl, date, direction,
+                            #       entry_price, cover_price, tax, fee
                             # ═══════════════════════════════════════════
                             entry_price = float(getattr(item, "entry_price", 0))
                             exit_price = float(getattr(item, "cover_price", 0))
-                            price = entry_price  # 使用進場價格作為 price
+                            price = entry_price
                             
                             # 自行計算報酬率 (期貨沒有 pr_ratio)
                             if entry_price > 0 and raw_qty > 0:
-                                # 用 pnl / (entry_price * qty) 來概估 %
-                                # 但期貨報酬率意義不大，這裡只提供參考
                                 denom = entry_price * raw_qty
                                 if denom > 0:
                                     pr_ratio_val = round((realized / denom) * 100, 2)
                             
                         elif not is_sub:
                             # ═══════════════════════════════════════════
-                            # StockProfitLoss 專線
-                            # 屬性: code, seqno, dseq, quantity, price,
-                            #       pnl(NTD), pr_ratio, cond, date
+                            # StockProfitLoss (官方文件)
+                            # 屬性: code, seqno, dseq, quantity(張), price,
+                            #       pnl, pr_ratio(小數), cond, date
                             # ═══════════════════════════════════════════
                             price = round(float(getattr(item, "price", 0)), 4)
+                            # pr_ratio 是小數 (如 0.1237)，需乘 100 轉為百分比
                             pr_ratio_val = round(float(getattr(item, "pr_ratio", 0)) * 100, 2)
                             
-                            # Shioaji unit=Common (default) 回傳的 quantity 已是「張」數
-                            # Cash/MarginTrading/ShortSelling/Netting 皆同，不需要 * 1000
+                            # Unit.Common (預設) 回傳的 quantity 已是「張」數
+                            # 不需要除以 1000
                             cond_str = str(getattr(item, "cond", "")).upper()
                         
                         acc_details.append({
@@ -444,15 +503,22 @@ def login_and_fetch_pnl(
     except Exception as e:
         import traceback
         log(f"Exception: {str(e)}")
-        if temp_ca_path and os.path.exists(temp_ca_path):
-             try: os.unlink(temp_ca_path)
-             except: pass
+        log(traceback.format_exc())
         return {
             "status": "error", 
+            "message": str(e),
             "error": str(e), 
             "details": [],
             "environment": "simulation" if simulation else "production"
         }
+    finally:
+        # M1: 確保暫存 CA 檔案無論成功或失敗都會清理
+        if temp_ca_path and os.path.exists(temp_ca_path):
+            try:
+                os.unlink(temp_ca_path)
+                log(f"🗑️ [Cleanup] Temp CA file removed: {temp_ca_path}")
+            except Exception:
+                pass
 
 def verify_simulation_account(
     api_key,

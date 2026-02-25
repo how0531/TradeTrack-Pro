@@ -1,21 +1,24 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  X,
-  RefreshCw,
-  Calendar as CalendarIcon,
-  CheckCircle2,
   AlertTriangle,
-  ShieldCheck,
-  MessageSquare,
-  Check,
+  ArrowRight,
+  Calendar as CalendarIcon,
   CalendarDays,
+  Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Copy,
-  Wifi,
+  MessageSquare,
+  MonitorCheck,
   Power,
-  ArrowRight,
+  RefreshCw,
+  ShieldCheck,
+  Wifi,
+  Zap,
+  Activity,
+  X,
 } from "lucide-react";
 import { Trade, BrokerConfig, Portfolio, AutoSyncParams } from "../../types";
 import {
@@ -48,6 +51,30 @@ interface SyncDateModalProps {
 }
 
 // --- Internal Component: GlassSelect Moved to common/GlassSelect.tsx ---
+
+// --- Constants & Animations ---
+const NEBULA_THEMES: Record<string, { flare1: string; flare2: string; pulse: string }> = {
+  online: { 
+    flare1: "bg-[#C8B085]/10", 
+    flare2: "bg-[#D05A5A]/5",
+    pulse: "animate-[pulse_8s_ease-in-out_infinite]" 
+  },
+  sleeping: { 
+    flare1: "bg-[#50C8FF]/15", 
+    flare2: "bg-[#7042FF]/10",
+    pulse: "animate-[pulse_4s_ease-in-out_infinite]" 
+  },
+  checking: { 
+    flare1: "bg-white/10", 
+    flare2: "bg-zinc-500/5",
+    pulse: "animate-pulse" 
+  },
+  offline: { 
+    flare1: "bg-red-500/10", 
+    flare2: "bg-orange-500/5",
+    pulse: "animate-[pulse_2s_ease-in-out_infinite]" 
+  }
+};
 
 export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   isOpen,
@@ -96,6 +123,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   // 🎨 視覺回饋優化
   const [loadingMessage, setLoadingMessage] = useState("");
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [showMapping, setShowMapping] = useState(false);
 
   // --- Effects ---
   useEffect(() => {
@@ -207,8 +235,24 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
     checkAndWake();
 
-    return () => { mounted = false; };
-  }, [isOpen]);
+    // 🔄 Auto-Polling Logic: If sleeping, check every 5s until online or modal closed
+    const pollInterval = setInterval(async () => {
+      if (!isOpen || backendStatus === 'online') return;
+      
+      console.log('🔄 [POLL] Checking backend status...');
+      const status = await validateBackendStatus(0); // 0 retries for fast poll
+      if (status === 'ready') {
+        setBackendStatus('online');
+      } else if (status === 'sleeping') {
+        setBackendStatus('sleeping');
+      }
+    }, 5000);
+
+    return () => { 
+      mounted = false; 
+      clearInterval(pollInterval);
+    };
+  }, [isOpen, backendStatus]);
 
   /**
    * ✅ 樂觀更新策略載入帳號設定
@@ -409,6 +453,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       const totalGroups = fetchGroups.size;
       let completedGroups = 0;
       let anyCaNotActivated = false;
+      const fetchErrors: string[] = []; // C3: 累積每個 group 的錯誤訊息
 
       // Iterate and fetch for each group
       for (const [key, group] of fetchGroups) {
@@ -464,9 +509,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
             mergedDetails.push(...taggedDetails);
           }
         } catch (err: any) {
+          const errMsg = err?.message || '未知錯誤';
           console.error(`❌ [DEBUG] Fetch Failed for ${key}:`, err);
-          // ⚠️ Partial Failure: Log it but allow others to continue
-          // We could append a warning to resultMsg later, or just console warn for now.
+          fetchErrors.push(`${firstBranchName}(${typeName}): ${errMsg}`);
         }
       }
 
@@ -514,50 +559,39 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           const absQty = Math.abs(d.quantity || 1) / 1; // futures qty
 
           if (entry > 0 && exit > 0) {
-            // Case 1: Exact Prices Known -> Show Total Points (Pts * Qty)
-            // Previous: const pts = Number(Math.abs(exit - entry).toFixed(2));
-            // New: Total Points = (Exit - Entry) * Qty
             const diff = Math.abs(exit - entry);
             const totalPts = Number((diff * absQty).toFixed(2));
             noteValue = `${d.pnl >= 0 ? '+' : '-'}${totalPts} pts`;
           } else if (d.yield && d.yield !== 0) {
-            // Case 2: Yield Known -> Stick to ROI % if no price info (safest)
             const yieldVal = Number(d.yield);
             const y = yieldVal.toFixed(2);
             noteValue = `${yieldVal > 0 ? "+" : ""}${y}%`;
           } else {
-            // Case 3: Fallback -> Derive Total Points from PnL / Multiplier
-            // Legacy: Derived average points (PnL / Mult / Qty)
-            // New: Derive Total Points (PnL / Mult)
             const code = d.code || '';
-            let multiplier = 200; // 台指期 default
+            let multiplier = 200;
             if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
             else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
             else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
-            else if (code.includes('XIF') || code.includes('東證')) multiplier = 200; // Guess
-            else if (code.includes('GTF') || code.includes('黃金')) multiplier = 100; // Guess
+            else if (code.includes('XIF') || code.includes('東證')) multiplier = 200;
+            else if (code.includes('GTF') || code.includes('黃金')) multiplier = 100;
 
-            // Total Points = Total PnL / Multiplier
             const totalDerivedPts = Math.abs(d.pnl) / multiplier;
 
             if (totalDerivedPts > 0) {
               noteValue = `${d.pnl >= 0 ? '+' : '-'}${Number(totalDerivedPts.toFixed(0))} pts`;
             } else {
-              noteValue = '0 pts'; // Should correspond to 0 PnL
+              noteValue = '0 pts';
             }
           }
         }
 
-        // 🔧 STABLE ID logic - 增強 code 欄位處理
-        // 確保 stockCode 不為空，提供 fallback 機制
+        // 🔧 STABLE ID logic
         const stockCode = d.code ? d.code.split(' ')[0].trim() : 'UNKNOWN';
         if (!stockCode || stockCode === '') {
           console.warn(`⚠️ [ID生成] 交易缺少有效 code 欄位:`, { date: d.date, pnl: d.pnl, originalCode: d.code });
         }
 
         const orderNo = d.orderNo || '';
-
-        // 檢查 orderNo 是否為有效的券商單號
         const isValidOrderNo = orderNo &&
           !orderNo.startsWith('unknown-') &&
           orderNo.trim() !== '' &&
@@ -594,34 +628,28 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           sourceKey: (d as any).sourceKey,
           entryPrice: d.entryPrice,
           exitPrice: d.exitPrice,
-          points: noteValue // Phase 11: Persist points independently
+          points: noteValue
         };
       });
 
       // 1. 合併分筆交易整合 (Aggregation)
-      // 只有當 autoMerge=true 時，才合併「同 orderNo + 同標的」的交易
       if (autoMerge) {
         const groupedMap = new Map<string, (typeof processedTrades)[0]>();
 
         processedTrades.forEach((trade) => {
-          // 產生複合 key: orderNo + 標的代號，確保只有同標的才會合併
           const stockCode = trade.code.split(" ")[0];
           const orderNo = trade.orderNo;
 
-          // 無有效 orderNo，不合併
           if (!orderNo || orderNo.startsWith("unknown")) {
             groupedMap.set(trade.id, trade);
             return;
           }
 
-          // 複合 key = orderNo + stockCode
           const compositeKey = `${orderNo}_${stockCode}`;
 
           if (groupedMap.has(compositeKey)) {
-            // 執行合併
             const existing = groupedMap.get(compositeKey)!;
             const totalQty = existing.quantity + trade.quantity;
-            // 計算平均價格 (加權平均)
             const avgPrice =
               totalQty !== 0
                 ? (existing.price * existing.quantity +
@@ -631,11 +659,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
             existing.quantity = totalQty;
             existing.price = avgPrice;
-            existing.quantity = totalQty;
-            existing.price = avgPrice;
             existing.pnl += trade.pnl;
 
-            // Update Entry/Exit Prices (Weighted Average)
             if (existing.entryPrice && trade.entryPrice) {
               existing.entryPrice = ((existing.entryPrice * existing.quantity) + (trade.entryPrice * trade.quantity)) / totalQty;
             }
@@ -643,7 +668,6 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               existing.exitPrice = ((existing.exitPrice * existing.quantity) + (trade.exitPrice * trade.quantity)) / totalQty;
             }
 
-            // 更新備註中的張數/口數
             const isFuture = existing.category === '期貨';
             const unit = isFuture ? '口' : '張';
             const mergedQtyValue = isFuture ? Math.abs(totalQty) : Math.abs(totalQty / 1000);
@@ -651,12 +675,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
             const noteParts = existing.note.split("|");
 
-            // 🔧 FIX: Recalculate Points for Merged Futures
             if (isFuture && noteParts.length >= 2) {
-              // Try to recalculate points based on merged data
-              let newPtsStr = noteParts[1].trim(); // default to old
+              let newPtsStr = noteParts[1].trim();
 
-              // Method A: PnL based (most robust for sum)
               if (existing.pnl !== 0) {
                 const code = existing.code.toUpperCase();
                 let multiplier = 200;
@@ -685,76 +706,84 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       }
 
       // 2. 重複交易檢測 (與現有交易比對)
-      // 判斷標準：同日期 + 同標的 (精確比對) + 同損益 (±1 容差)
-      // 注意：這只是「標記」為重複並預設不勾選，不會刪除交易
+      // 判斷標準優先序：
+      //   方法A: orderNo 完全相同 (最準確，券商唯一單號)
+      //   方法B: 同日期 + 同標的代號 + 同損益 (±1 容差)
+      //          qty/price 僅在「兩邊都有非零值」時才加入比對，避免舊資料缺欄位導致誤判
       processedTrades = processedTrades.map((trade) => {
         let isDup = false;
         let dupReason = "";
 
         if (existingTrades && existingTrades.length > 0) {
-          // 🔧 增強：提取純股票代號，增加容錯處理
           const tradeStockCode = trade.code ? trade.code.split(" ")[0].trim() : '';
 
-          // 如果 trade.code 無效，跳過重複檢測（避免誤判）
           if (!tradeStockCode) {
-            console.warn(`⚠️ [重複檢測] 跳過無效 code 的交易:`, { date: trade.date, pnl: trade.pnl, code: trade.code });
-            return {
-              ...trade,
-              isDuplicate: false,
-              duplicateReason: "",
-              selected: true,
-            };
+            console.warn(`⚠️ [重複檢測] 跳過無效 code:`, { date: trade.date, pnl: trade.pnl });
+            return { ...trade, isDuplicate: false, duplicateReason: "", selected: true };
           }
 
           const match = existingTrades.find((e) => {
-            const sameDate = e.date === trade.date;
-
-            // 標的比對優先級（增強版）：
-            // 1. 如果雙方都有 code 欄位，提取純代號精確比對
-            // 2. 如果現有交易無 code，則比對 Note 中的代號 (Regex)
-            let sameCode = false;
-
-            if (e.code && trade.code) {
-              // 🔧 新版邏輯：提取純代號比對（更嚴謹）
-              const eStockCode = e.code.split(' ')[0].trim();
-              const tStockCode = trade.code.split(' ')[0].trim();
-
-              // 必須兩者都有效且完全相等
-              if (eStockCode && tStockCode) {
-                sameCode = eStockCode === tStockCode;
-              }
-            } else if (e.note && trade.code) {
-              // 舊版備援：RegExp check on Note（僅在 e.code 不存在時使用）
-              if (tradeStockCode) {
-                const codeRegex = new RegExp(`\\b${tradeStockCode}\\b`);
-                sameCode = codeRegex.test(e.note);
-              }
+            // --- 方法A: orderNo 比對 ---
+            if (trade.orderNo && e.orderNo && trade.orderNo === e.orderNo) {
+              return true;
             }
 
-            // 損益比對 (允許浮點數微小誤差)
-            const samePnl = Math.abs(e.pnl - trade.pnl) < 1;
+            // --- 方法B: 日期 + 代號 + 損益 主要比對 ---
+            const sameDate = e.date === trade.date;
+            if (!sameDate) return false;
 
-            return sameDate && sameCode && samePnl;
+            // 代號比對：優先用 code 欄位，備援用 note
+            let sameCode = false;
+            if (e.code && trade.code) {
+              const eCode = e.code.split(' ')[0].trim();
+              const tCode = trade.code.split(' ')[0].trim();
+              sameCode = !!(eCode && tCode && eCode === tCode);
+            } else if (e.note && tradeStockCode) {
+              sameCode = new RegExp(`\\b${tradeStockCode}\\b`).test(e.note);
+            }
+            if (!sameCode) return false;
+
+            // 損益比對 (±2 容差，容錯手續費差異)
+            const samePnl = Math.abs((e.pnl ?? 0) - (trade.pnl ?? 0)) < 2;
+            if (!samePnl) return false;
+
+            // 數量/價格：僅當兩邊都有非零值時才要求相符
+            const eQty = e.quantity ?? 0;
+            const tQty = trade.quantity ?? 0;
+            if (eQty !== 0 && tQty !== 0 && Math.abs(eQty - tQty) >= 0.001) return false;
+
+            const ePrice = e.price ?? 0;
+            const tPrice = trade.price ?? 0;
+            if (ePrice !== 0 && tPrice !== 0 && Math.abs(ePrice - tPrice) >= 0.01) return false;
+
+            return true;
           });
 
           if (match) {
             isDup = true;
-            dupReason = `日期、標的 [${tradeStockCode}] 與損益重複 (自動偵測)`;
-            console.log(`🔍 [重複檢測] 發現重複交易:`, {
-              date: trade.date,
-              code: tradeStockCode,
-              pnl: trade.pnl,
-              matchedWith: match.id
+            const method = match.orderNo && trade.orderNo && match.orderNo === trade.orderNo
+              ? 'orderNo'
+              : '日期+代號+損益';
+            dupReason = `偵測到重複 [${tradeStockCode}] — 比對方式: ${method}`;
+            console.log(`🔍 [重複檢測] 命中:`, { date: trade.date, code: tradeStockCode, pnl: trade.pnl, method });
+          } else {
+            const nearMatch = existingTrades.find(e => {
+              if (e.date !== trade.date) return false;
+              const eCode = (e.code || '').split(' ')[0].trim();
+              const tCode = tradeStockCode;
+              return eCode === tCode;
             });
+            if (nearMatch) {
+              console.warn(`⚠️ [重複檢測] 代號相同但損益不符:`, {
+                date: trade.date, code: tradeStockCode,
+                incoming_pnl: trade.pnl, existing_pnl: nearMatch.pnl,
+                diff: Math.abs(trade.pnl - nearMatch.pnl)
+              });
+            }
           }
         }
 
-        return {
-          ...trade,
-          isDuplicate: isDup,
-          duplicateReason: dupReason,
-          selected: !isDup,
-        };
+        return { ...trade, isDuplicate: isDup, duplicateReason: dupReason, selected: !isDup };
       });
       console.log(
         `✅ [PERF] 步驟3 - 資料處理完成: ${(performance.now() - step3Start).toFixed(0)}ms`,
@@ -763,19 +792,22 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       setTransactions(processedTrades);
       setStatus("idle");
 
-      // 🎨 停止載入動畫
-      // stopLoadingAnimation removed
-
+      // C3: 顯示有意義的錯誤訊息而非空白的「查無交易紀錄」
       if (processedTrades.length === 0) {
-        if (anyCaNotActivated) {
+        if (fetchErrors.length > 0) {
+          // 有 API 錯誤才是真正的問題
+          setResultMsg(`同步失敗：${fetchErrors.join('；')}`);
+        } else if (anyCaNotActivated) {
           setResultMsg("⚠️ 憑證未啟動或已失效，無法取得損益。請至「設定」重新上傳 .pfx 檔案。");
         } else {
-          setResultMsg("此區間無交易紀錄");
+          setResultMsg(`此區間（${effectiveStart} ~ ${effectiveEnd}）查無交易紀錄。請確認券商帳號是否有未平倉或已實作損益。`);
         }
-        // Update: Allow proceeding to Step 2 even if empty, so user can confirm "No Data" sync
-        // This is important for updating "Last Sync" time
         setStep(2);
       } else {
+        if (fetchErrors.length > 0) {
+          // 部分成功、部分失敗
+          setResultMsg(`⚠️ 部分帳號同步失敗：${fetchErrors.join('；')}`);
+        }
         setStep(2);
       }
 
@@ -800,11 +832,51 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   if (!isOpen) return null;
   if (typeof document === "undefined") return null;
 
+  const currentTheme = NEBULA_THEMES[backendStatus] || NEBULA_THEMES.checking;
+
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0A0B0F]/85 backdrop-blur-2xl animate-in fade-in duration-300 p-4 overflow-hidden">
-      {/* Ambient Background Flares (Design Premium Touch) */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#C8B085]/5 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#D05A5A]/5 rounded-full blur-[100px] pointer-events-none" />
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0A0B0F]/85 backdrop-blur-2xl animate-in fade-in duration-300 p-4 overflow-hidden font-inter">
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes orbit {
+          0% { transform: rotate(0deg) translateX(12px) rotate(0deg); opacity: 0.2; }
+          50% { opacity: 1; }
+          100% { transform: rotate(360deg) translateX(12px) rotate(-360deg); opacity: 0.2; }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
+        }
+        @keyframes stagger-in {
+          0% { opacity: 0; transform: translateY(12px) scale(0.98); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes pulse-ring {
+          0% { transform: scale(0.8); opacity: 0.5; }
+          50% { transform: scale(1.15); opacity: 0; }
+          100% { transform: scale(0.8); opacity: 0; }
+        }
+        @keyframes pulse-ring-outer {
+          0% { transform: scale(0.6); opacity: 0.3; }
+          60% { transform: scale(1.3); opacity: 0; }
+          100% { transform: scale(0.6); opacity: 0; }
+        }
+        @keyframes shimmer-bar {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(200%); }
+        }
+        @keyframes breathe {
+          0%, 100% { opacity: 0.4; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.05); }
+        }
+        .stagger-1 { animation: stagger-in 0.6s cubic-bezier(.16,1,.3,1) forwards 0.1s; opacity: 0; }
+        .stagger-2 { animation: stagger-in 0.6s cubic-bezier(.16,1,.3,1) forwards 0.25s; opacity: 0; }
+        .stagger-3 { animation: stagger-in 0.6s cubic-bezier(.16,1,.3,1) forwards 0.4s; opacity: 0; }
+        .stagger-4 { animation: stagger-in 0.6s cubic-bezier(.16,1,.3,1) forwards 0.55s; opacity: 0; }
+      `}} />
+      
+      {/* Ambient Background Flares (Dynamic) */}
+      <div className={`absolute top-[-10%] left-[-10%] w-[60%] h-[60%] ${currentTheme.flare1} rounded-full blur-[140px] pointer-events-none transition-all duration-1000 ${currentTheme.pulse}`} />
+      <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] ${currentTheme.flare2} rounded-full blur-[120px] pointer-events-none transition-all duration-1000 ${currentTheme.pulse}`} />
 
       <div
         className={`relative w-full ${step === 2 ? "max-w-4xl" : "max-w-md"} max-h-[90vh] bg-[#14161B]/90 rounded-[40px] border border-white/10 shadow-[0_32px_80px_rgba(0,0,0,0.6)] backdrop-blur-3xl transition-all duration-500 flex flex-col my-auto overflow-hidden animate-in zoom-in-95`}
@@ -828,8 +900,89 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         </div>
 
         <div className="p-7 overflow-y-auto custom-scrollbar flex-1">
-          {/* STEP 1: CONFIG */}
-          {step === 1 && (
+
+          {/* ====== FULL-SCREEN SLEEPING OVERLAY ====== */}
+          {step === 1 && backendStatus === 'sleeping' && status !== 'loading' && (
+            <div className="flex flex-col items-center justify-center py-10 gap-8 animate-in fade-in zoom-in-95 duration-500">
+              {/* Concentric Pulse Rings */}
+              <div className="relative w-28 h-28 flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full border-2 border-blue-400/30 animate-[pulse-ring_3s_ease-out_infinite]" />
+                <div className="absolute inset-[-12px] rounded-full border border-blue-500/15 animate-[pulse-ring-outer_3.5s_ease-out_infinite_0.5s]" />
+                <div className="absolute inset-[-24px] rounded-full border border-indigo-500/10 animate-[pulse-ring-outer_4s_ease-out_infinite_1s]" />
+                <div className="w-20 h-20 rounded-[28px] bg-gradient-to-br from-blue-500/20 to-indigo-600/10 border border-blue-400/20 flex items-center justify-center shadow-[0_0_60px_rgba(59,130,246,0.15)] backdrop-blur-xl">
+                  <Zap size={28} className="text-blue-400 animate-[breathe_2s_ease-in-out_infinite]" />
+                </div>
+              </div>
+
+              {/* Status Text */}
+              <div className="text-center space-y-3 max-w-[280px]">
+                <h3 className="text-[13px] font-black uppercase tracking-[0.3em] text-blue-400 stagger-1">
+                  ESTABLISHING CONNECTION
+                </h3>
+                <p className="text-[11px] text-zinc-500 leading-relaxed font-medium stagger-2">
+                  雲端伺服器正在從休眠狀態中甚醒。此過程通常需要
+                  <span className="text-blue-400 font-black mx-1">60–90</span>秒。
+                </p>
+              </div>
+
+              {/* Shimmer Progress Bar */}
+              <div className="w-48 stagger-3">
+                <div className="h-[3px] bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-blue-500/60 to-transparent animate-[shimmer-bar_2s_ease-in-out_infinite] rounded-full" />
+                </div>
+                <p className="text-center mt-3 text-[9px] font-mono text-zinc-600 uppercase tracking-widest">
+                  AUTO-RETRY ACTIVE
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ====== FULL-SCREEN ERROR OVERLAY ====== */}
+          {step === 1 && status === 'error' && (
+            <div className="flex flex-col items-center justify-center py-10 gap-7 animate-in fade-in zoom-in-95 duration-500">
+              {/* Error Icon */}
+              <div className="relative">
+                <div className="w-20 h-20 rounded-[28px] bg-gradient-to-br from-red-500/15 to-orange-600/10 border border-red-500/20 flex items-center justify-center shadow-[0_0_50px_rgba(239,68,68,0.12)]">
+                  <AlertTriangle size={28} className="text-red-500 animate-[float_3s_ease-in-out_infinite]" />
+                </div>
+                <div className="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center border-[3px] border-[#14161B] shadow-lg">
+                  <X size={12} strokeWidth={3} />
+                </div>
+              </div>
+
+              {/* Error Content */}
+              <div className="text-center space-y-3 max-w-[300px]">
+                <h3 className="text-[13px] font-black uppercase tracking-[0.3em] text-red-500 stagger-1">
+                  CONNECTION FAILED
+                </h3>
+                <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl stagger-2">
+                  <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">
+                    {resultMsg || "同步失敗，可能是雲端伺服器未回應或權限驗證失敗。"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Recovery Actions */}
+              <div className="flex flex-col gap-3 w-full max-w-[220px] stagger-3">
+                <button
+                  onClick={() => { setStatus('idle'); setResultMsg(''); handleManualPing(); }}
+                  className="w-full py-3.5 bg-white/10 hover:bg-white/15 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-white transition-all active:scale-[0.97] flex items-center justify-center gap-2"
+                >
+                  <RefreshCw size={12} />
+                  RETRY CONNECTION
+                </button>
+                <button
+                  onClick={() => { setStatus('idle'); setResultMsg(''); }}
+                  className="w-full py-2.5 text-[10px] font-bold text-zinc-600 hover:text-zinc-400 transition-colors uppercase tracking-widest"
+                >
+                  DISMISS
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 1: CONFIG (only when NOT sleeping/error) */}
+          {step === 1 && backendStatus !== 'sleeping' && status !== 'error' && (
             <div className="space-y-8 animate-in slide-in-from-bottom-3 duration-300">
               {/* Date Selection */}
               <div className="space-y-3">
@@ -899,27 +1052,21 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                     <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
                     選擇券商帳號
                   </label>
-
                   <button
                     onClick={handleManualPing}
                     disabled={backendStatus === "checking"}
                     className={`
                                             flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-bold transition-all
-                                            ${backendStatus === "online"
+                            ${backendStatus === "online"
                         ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500 cursor-default"
                         : backendStatus === "checking"
                           ? "bg-slate-500/10 border-slate-500/20 text-slate-400 cursor-wait"
-                          : backendStatus === "sleeping"
-                            ? "bg-amber-500/10 border-amber-500/20 text-amber-500 cursor-wait"
-                            : "bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20 cursor-pointer active:scale-95"
+                          : "bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20 cursor-pointer active:scale-95"
                       }
                                         `}
                   >
                     {backendStatus === "checking" && (
                       <RefreshCw size={8} className="animate-spin" />
-                    )}
-                    {backendStatus === "sleeping" && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                     )}
                     {backendStatus === "online" && <Wifi size={8} />}
                     {backendStatus === "offline" && <Power size={8} />}
@@ -929,9 +1076,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                         ? "已連線"
                         : backendStatus === "checking"
                           ? "連線中..."
-                          : backendStatus === "sleeping"
-                            ? "喚醒中..."
-                            : "喚醒後端"}
+                          : "喚醒後端"}
                     </span>
                   </button>
                 </div>
@@ -1105,114 +1250,153 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               {/* Target Portfolio Selector */}
               {/* Target Portfolio Selector */}
               {/* Target Portfolio Selector */}
-              <div className="bg-black/20 p-4 rounded-2xl border border-white/5 flex flex-col gap-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex flex-col gap-3 w-full">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-[#C8B085]/10 flex items-center justify-center text-[#C8B085]">
-                        <ShieldCheck size={16} />
-                      </div>
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-1">
-                        匯入帳戶對應 (ACCOUNT MAPPING)
+              <div className="flex flex-col gap-2">
+                {/* 💊 Account Mapping Capsule (Collapsible) */}
+                <button 
+                  onClick={() => setShowMapping(!showMapping)}
+                  className={`
+                    w-full py-2.5 px-4 rounded-full border transition-all duration-300 flex items-center justify-between group
+                    ${showMapping 
+                      ? "bg-[#C8B085]/10 border-[#C8B085]/30 shadow-[0_4px_20px_rgba(200,176,133,0.05)]" 
+                      : "bg-white/[0.03] border-white/5 hover:bg-white/[0.08] hover:border-white/10 shadow-sm"
+                    }
+                  `}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`
+                      w-7 h-7 rounded-full flex items-center justify-center transition-colors
+                      ${showMapping ? "bg-[#C8B085] text-black" : "bg-white/5 text-slate-500"}
+                    `}>
+                      <ShieldCheck size={14} />
+                    </div>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className={`text-[9px] font-bold uppercase tracking-widest ${showMapping ? "text-[#C8B085]" : "text-slate-500"}`}>
+                        匯入帳戶對應 (Account Mapping)
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-400/60">
+                        {selectedConfigIds.length} 個帳號已連接 • {portfolios.find(p => p.id === targetPortfolioId)?.name || '預設錢包'}
                       </span>
                     </div>
-
-                    {/* Summary Logic with Selectors */}
-                    {(() => {
-                      // Generate a unique list of sources to render rows for
-                      return (
-                        <div className="flex flex-col gap-2 mt-1 w-full pl-11 pr-2">
-                          {selectedConfigIds.map(key => {
-                            const [confId, code, subIdxStr] = key.split('|');
-                            const subIdx = parseInt(subIdxStr || '0', 10);
-                            const conf = configs.find(c => c.id === confId);
-                            const branches = (conf?.branch || '').split(',');
-                            const branchName = branches[subIdx] || conf?.branch || 'Unknown';
-
-                            // Color Logic
-                            const bText = branchName;
-                            const isFuture = bText.includes('期貨') || bText.includes('Futures');
-                            const isSub = bText.includes('複委託') || bText.includes('Sub') || bText.includes('H-');
-
-                            const theme = isFuture
-                              ? ACCOUNT_CATEGORY_THEMES.FUTURES
-                              : isSub
-                                ? ACCOUNT_CATEGORY_THEMES.SUB
-                                : ACCOUNT_CATEGORY_THEMES.STOCK;
-
-                            const typeColorClass = theme.fullClass;
-                            const typeLabel = theme.label;
-
-                            // Display Name Logic
-                            const name = conf?.alias || conf?.brokerUsername || 'User';
-                            const displayName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
-                            const middle = typeLabel === '期貨' ? '期貨' : branchName.replace(/\(.*\)/, '').replace('分公司', '');
-
-                            const currentTargetId = accountPortfolioMap[key] || targetPortfolioId;
-
-                            return (
-                              <div key={key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-white/5 pb-3 sm:pb-2 last:border-0 last:pb-0">
-                                {/* Source Label */}
-                                <div className="flex-1 flex flex-col gap-1.5">
-                                  {/* Row 1: Header */}
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[11px] font-bold text-white tracking-tight">
-                                      永豐金-{middle} | {displayName}
-                                    </span>
-                                  </div>
-                                  {/* Row 2: Badge + Account */}
-                                  <div className="flex items-center gap-3 pl-0.5">
-                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeColorClass} shadow-sm whitespace-nowrap w-[52px] flex items-center justify-center`}>
-                                      {typeLabel}
-                                    </span>
-                                    <span className="text-[12px] font-bold text-zinc-500 font-mono tracking-wide">
-                                      {(() => {
-                                        const accList = (conf?.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
-                                        const codeList = (conf?.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
-                                        const idx = branches.indexOf(branchName);
-
-                                        // Robust Fallback
-                                        const displayAcc = accList[idx] || (codeList[idx]?.length >= 7 ? codeList[idx] : '');
-                                        return displayAcc;
-                                      })()}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto shrink-0">
-                                  <ArrowRight className="text-zinc-600 w-4 h-4 rotate-90 sm:rotate-0" />
-                                  {/* Target Selector */}
-                                  <div className="w-full sm:w-[160px]">
-                                    <GlassSelect
-                                      value={currentTargetId}
-                                      onChange={(val) => {
-                                        setAccountPortfolioMap(prev => ({ ...prev, [key]: val }));
-                                        setTransactions(prev => prev.map(t => {
-                                          // @ts-ignore
-                                          if (t.sourceKey === key) return { ...t, portfolioId: val };
-                                          return t;
-                                        }));
-                                      }}
-                                      options={portfolios.map(p => ({ value: p.id, label: p.name }))}
-                                      variant="capsule"
-                                      placeholder="選擇錢包"
-                                      className="text-[10px]"
-                                      align="right"
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
                   </div>
-                </div>
+                  <div className={`p-1 rounded-full transition-transform duration-300 ${showMapping ? "rotate-180 bg-[#C8B085]/20 text-[#C8B085]" : "text-slate-600 group-hover:text-slate-400"}`}>
+                    <ChevronDown size={14} />
+                  </div>
+                </button>
+
+                {/* Expanded Mapping Content */}
+                {showMapping && (
+                  <div className="bg-black/20 p-4 rounded-[24px] border border-white/5 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex flex-col gap-2 w-full pr-1">
+                      {selectedConfigIds.map(key => {
+                        const [confId, code, subIdxStr] = key.split('|');
+                        const subIdx = parseInt(subIdxStr || '0', 10);
+                        const conf = configs.find(c => c.id === confId);
+                        const branches = (conf?.branch || '').split(',');
+                        const branchName = branches[subIdx] || conf?.branch || 'Unknown';
+
+                        const bText = branchName;
+                        const isFuture = bText.includes('期貨') || bText.includes('Futures');
+                        const isSub = bText.includes('複委託') || bText.includes('Sub') || bText.includes('H-');
+
+                        const theme = isFuture
+                          ? ACCOUNT_CATEGORY_THEMES.FUTURES
+                          : isSub
+                            ? ACCOUNT_CATEGORY_THEMES.SUB
+                            : ACCOUNT_CATEGORY_THEMES.STOCK;
+
+                        const typeColorClass = theme.fullClass;
+                        const typeLabel = theme.label;
+
+                        const name = conf?.alias || conf?.brokerUsername || 'User';
+                        const displayName = name.includes('永豐金') ? name.split('永豐金')[0].trim() : name;
+                        const middle = typeLabel === '期貨' ? '期貨' : branchName.replace(/\(.*\)/, '').replace('分公司', '');
+
+                        const currentTargetId = accountPortfolioMap[key] || targetPortfolioId;
+
+                        return (
+                          <div key={key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-white/5 pb-3 sm:pb-2 last:border-0 last:pb-0">
+                            <div className="flex-1 flex flex-col gap-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-bold text-white tracking-tight">
+                                  永豐金-{middle} | {displayName}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 pl-0.5">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeColorClass} shadow-sm whitespace-nowrap w-[52px] flex items-center justify-center`}>
+                                  {typeLabel}
+                                </span>
+                                <span className="text-[12px] font-bold text-zinc-500 font-mono tracking-wide">
+                                  {(() => {
+                                    const accList = (conf?.accounts || '').split(',').map(s => s.trim()).filter(Boolean);
+                                    const codeList = (conf?.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
+                                    const idx = branches.indexOf(branchName);
+                                    const displayAcc = accList[idx] || (codeList[idx]?.length >= 7 ? codeList[idx] : '');
+                                    return displayAcc;
+                                  })()}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto shrink-0">
+                              <ArrowRight className="text-zinc-600 w-4 h-4 rotate-90 sm:rotate-0" />
+                              <div className="w-full sm:w-[150px]">
+                                <GlassSelect
+                                  value={currentTargetId}
+                                  onChange={(val) => {
+                                    setAccountPortfolioMap(prev => ({ ...prev, [key]: val }));
+                                    setTransactions(prev => prev.map(t => {
+                                      // @ts-ignore
+                                      if (t.sourceKey === key) return { ...t, portfolioId: val };
+                                      return t;
+                                    }));
+                                  }}
+                                  options={portfolios.map(p => ({ value: p.id, label: p.name }))}
+                                  variant="capsule"
+                                  placeholder="選擇錢包"
+                                  className="text-[10px]"
+                                  align="right"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="max-h-[350px] overflow-y-auto pr-3 space-y-3 custom-scrollbar">
-                {transactions.length === 0 ? (
+                {status === "error" ? (
+                  <div className="py-12 flex flex-col items-center justify-center gap-6 px-4 animate-in fade-in zoom-in-95 duration-500">
+                    <div className="relative">
+                      <div className="w-20 h-20 rounded-[30px] bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 shadow-[0_0_40px_rgba(239,68,68,0.1)]">
+                        <AlertTriangle size={32} className="animate-[float_3s_ease-in-out_infinite]" />
+                      </div>
+                      <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center border-4 border-[#14161B] shadow-lg">
+                        <Zap size={14} fill="currentColor" />
+                      </div>
+                    </div>
+                    
+                    <div className="text-center space-y-2">
+                      <h4 className="text-sm font-black uppercase tracking-[0.3em] text-red-500">System Diagnosis</h4>
+                      <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl max-w-sm">
+                        <p className="text-[11px] text-zinc-400 font-medium leading-relaxed">
+                          {resultMsg || "同步失敗，可能是雲端伺服器連線不穩或權限驗證失敗。"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 w-full max-w-[240px]">
+                      <button 
+                        onClick={() => { setStatus('idle'); handleManualPing(); }}
+                        className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white transition-all active:scale-95"
+                      >
+                        RETRY CONNECTION
+                      </button>
+                    </div>
+                  </div>
+                ) : transactions.length === 0 ? (
                   <div className="py-20 flex flex-col items-center justify-center gap-4 text-slate-500/40">
                     <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/[0.05] flex items-center justify-center">
                       <CalendarDays size={24} className="opacity-20" />
@@ -1227,27 +1411,36 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                     </div>
                   </div>
                 ) : (
-                  transactions.map((tx) => (
+                   transactions.map((tx) => (
                     <div key={tx.id} className="space-y-1">
                       <div
-                        className={`px-2.5 py-2 rounded-2xl border transition-all flex items-start gap-2.5 relative group/item ${!tx.selected
-                          ? "bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-100 hover:grayscale-0 transition-all duration-300"
-                          : tx.isDuplicate
-                            ? "bg-gradient-to-r from-amber-500/5 to-transparent border-white/5 hover:border-amber-500/30 shadow-[inset_0_0_20px_rgba(245,158,11,0.02)]"
+                        className={`px-2.5 py-2 rounded-2xl border transition-all duration-300 flex items-start gap-2.5 relative group/item overflow-hidden ${
+                          tx.isDuplicate && tx.selected
+                            ? "bg-amber-950/30 border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.08)]"
+                            : tx.isDuplicate
+                            ? "bg-black/30 border-white/[0.04] opacity-50 hover:opacity-80"
+                            : !tx.selected
+                            ? "bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-100 hover:grayscale-0"
                             : "bg-[#1C1E22]/50 border-white/10 shadow-lg shadow-black/25"
-                          }`}
+                        }`}
                       >
+                        {/* Left-stripe: amber when duplicate+selected, zinc when duplicate+unchecked */}
+                        {tx.isDuplicate && (
+                          <div className={`absolute left-0 top-2 bottom-2 w-[2px] rounded-full transition-colors duration-300 ${
+                            tx.selected ? "bg-amber-500/70" : "bg-zinc-600/60"
+                          }`} />
+                        )}
+
                         {/* Left: Checkbox (Top aligned) */}
                         <input
                           type="checkbox"
                           checked={tx.selected}
                           onChange={() => toggleSelection(tx.id)}
-                          className={`mt-1 w-4 h-4 rounded-md border-white/20 bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${tx.selected && tx.isDuplicate
-                            ? "text-amber-500 border-amber-500/50"
-                            : tx.isDuplicate && !tx.selected
-                              ? "checked:text-amber-500/50" // Should not be checked usually
-                              : "text-[#C8B085] border-[#C8B085]/30"
-                            }`}
+                          className={`mt-1 w-4 h-4 rounded-md bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${
+                            tx.isDuplicate && tx.selected
+                              ? "text-amber-500 border-amber-500/50"
+                              : "text-[#C8B085] border-[#C8B085]/30 border-white/20"
+                          }`}
                         />
 
                         {/* Right: Content Column (2 rows) */}
@@ -1262,22 +1455,32 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                   .trim()}
                               </span>
                               {tx.isDuplicate && (
-                                <div className="group/tooltip relative flex items-center gap-1 cursor-help transition-all hover:bg-amber-500/10 rounded px-1 -ml-1">
-                                  <AlertTriangle
-                                    size={10}
-                                    className="text-amber-500/70"
-                                  />
-                                  <span className="text-amber-500/70 text-[8px] font-bold tracking-tighter uppercase group-hover/tooltip:text-amber-500 transition-colors">
-                                    已匯入 ({tx.duplicateReason || '重複'})
-                                  </span>
+                                <div className="group/tooltip relative flex items-center gap-1 cursor-help">
+                                  {tx.selected ? (
+                                    <span className="text-[8px] font-black text-amber-400 uppercase tracking-[0.08em] bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-px flex items-center gap-1">
+                                      <AlertTriangle size={7} />
+                                      將重複匯入
+                                    </span>
+                                  ) : (
+                                    <span className="text-[8px] font-bold text-zinc-600 uppercase tracking-[0.12em] border border-zinc-700/60 rounded px-1 py-px">已存在</span>
+                                  )}
 
-                                  {/* Tooltip Content */}
-                                  <div className="absolute left-0 bottom-full mb-1.5 hidden group-hover/tooltip:block z-50 whitespace-nowrap">
-                                    <div className="bg-zinc-900 border border-white/10 text-zinc-300 text-[9px] px-2 py-1 rounded-lg shadow-xl backdrop-blur-xl">
-                                      {tx.duplicateReason ||
-                                        "此交易已在記錄中存在"}
-                                      {/* Arrow */}
-                                      <div className="absolute left-2 top-full w-2 h-2 bg-zinc-900 border-r border-b border-white/10 transform rotate-45 -mt-1"></div>
+                                  {/* Tooltip */}
+                                  <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block z-50">
+                                    <div className={`text-[9px] px-3 py-2 rounded-xl shadow-xl backdrop-blur-xl whitespace-nowrap ${
+                                      tx.selected
+                                        ? "bg-amber-950 border border-amber-500/30 text-amber-200"
+                                        : "bg-zinc-950 border border-zinc-800 text-zinc-400"
+                                    }`}>
+                                      <span className={`font-bold block mb-1 ${tx.selected ? "text-amber-300" : "text-zinc-300"}`}>
+                                        {tx.selected ? "⚠ 此交易將被重複匯入" : "已在記錄中"}
+                                      </span>
+                                      {tx.duplicateReason || "此交易已在記錄中存在"}
+                                      <div className={`absolute left-2 top-full w-2 h-2 transform rotate-45 -mt-1 ${
+                                        tx.selected
+                                          ? "bg-amber-950 border-r border-b border-amber-500/30"
+                                          : "bg-zinc-950 border-r border-b border-zinc-800"
+                                      }`} />
                                     </div>
                                   </div>
                                 </div>
@@ -1302,33 +1505,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                               <span
                                 className={`text-[10px] font-black font-barlow-numeric tracking-tight ${tx.pnl >= 0 ? "text-[#D05A5A]" : "text-[#5B9A8B]"}`}
                               >
-                                {(() => {
-                                  const isFuture = tx.category === '期貨' || tx.category === 'Option' || (tx.code && (tx.code.includes('期') || tx.code.includes('選')));
-                                  if (isFuture) {
-                                    const hasPrices = tx.entryPrice != null && tx.exitPrice != null && tx.entryPrice > 0 && tx.exitPrice > 0;
-                                    if (hasPrices) {
-                                      // 🔧 FIX: Show TOTAL Pts (Sum) = |Exit - Entry| * Abs(Qty)
-                                      const diff = Math.abs(tx.exitPrice! - tx.entryPrice!);
-                                      const absQty = Math.abs(tx.quantity || 1);
-                                      const totalPts = Number((diff * absQty).toFixed(2));
-                                      return `${tx.pnl >= 0 ? '+' : '-'}${totalPts.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
-                                    } else if (tx.pnl !== 0) {
-                                      const code = tx.code.toUpperCase();
-                                      let multiplier = 200;
-                                      if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
-                                      else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
-                                      else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
-                                      else if (code.includes('XIF') || code.includes('東證')) multiplier = 200;
-                                      else if (code.includes('GTF') || code.includes('黃金')) multiplier = 100;
-
-                                      // 🔧 FIX: Show TOTAL Pts (Sum) = Total PnL / Multiplier
-                                      // Removed division by Qty
-                                      const totalDerivedPts = Number((Math.abs(tx.pnl) / multiplier).toFixed(2));
-                                      if (totalDerivedPts > 0) return `${tx.pnl >= 0 ? '+' : '-'}${totalDerivedPts.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts`;
-                                    }
-                                  }
-                                  return (tx.pnl >= 0 ? "+" : "") + formatMoney(tx.pnl);
-                                })()}
+                                {(tx.pnl >= 0 ? "+" : "") + formatMoney(tx.pnl)}
                               </span>
                             </div>
                           </div>
@@ -1503,38 +1680,99 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
             )}
           </div>
 
-          <div className="flex gap-3">
-            {step === 2 && (
-              <button
-                onClick={() => setStep(1)}
-                className="px-6 py-2.5 rounded-2xl text-slate-500 hover:text-white font-black text-[10px] uppercase tracking-widest transition-colors"
-              >
-                BACK
-              </button>
+          <div className="flex flex-col gap-3">
+             {backendStatus === 'sleeping' && (
+              <div className="bg-white/[0.03] border border-white/10 rounded-[28px] p-5 flex flex-col gap-4 backdrop-blur-3xl shadow-[0_20px_50px_rgba(80,200,255,0.08)] mb-2 group overflow-hidden relative">
+                 {/* Decorative background glow */}
+                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl pointer-events-none rounded-full" />
+                 
+                 <div className="flex items-center gap-4 relative z-10">
+                   <div className="w-10 h-10 rounded-2xl bg-[#50C8FF]/10 flex items-center justify-center text-[#50C8FF] shadow-inner">
+                     <div className="orbital-loader">
+                       <Zap size={18} className="animate-pulse" />
+                       <div className="orbital-dot" style={{ animationDelay: '0s' }} />
+                       <div className="orbital-dot" style={{ animationDelay: '-0.5s' }} />
+                       <div className="orbital-dot" style={{ animationDelay: '-1s' }} />
+                     </div>
+                   </div>
+                   <div className="flex flex-col gap-0.5">
+                     <span className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-400 stagger-1">
+                       Nebula Wake-up
+                     </span>
+                     <span className="text-[10px] text-zinc-500 font-bold stagger-2">
+                       伺服器正在從星雲中甦醒...
+                     </span>
+                   </div>
+                 </div>
+                 
+                 <div className="space-y-2 relative z-10 pl-14">
+                   <p className="text-[10px] text-zinc-400 leading-relaxed font-medium stagger-3">
+                     Render 免費版主機進入休眠狀態。正在為您建立專屬連線，這通常需要 <span className="text-blue-400 font-black">60-90</span> 秒。
+                   </p>
+                   <div className="flex items-center gap-2 stagger-3">
+                     <Activity size={10} className="text-blue-500/50" />
+                     <div className="h-[2px] w-24 bg-white/5 rounded-full overflow-hidden">
+                       <div className="h-full bg-blue-500/40 animate-[shimmer_2s_infinite]" style={{ width: '40%' }} />
+                     </div>
+                   </div>
+                 </div>
+              </div>
             )}
 
-            <button
-              onClick={step === 1 ? () => handleFetch() : handleConfirmImport}
-              disabled={status === "loading"}
-              className={`relative overflow-hidden px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-3 shadow-lg active:scale-95 
-                            ${status === "loading"
-                  ? "bg-zinc-800 text-white w-full justify-center disabled:opacity-100 disabled:cursor-wait"
-                  : "bg-[#C8B085] hover:bg-[#B09870] text-black shadow-[#C8B085]/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                }`}
-            >
-              {status === "loading" && (
-                <div
-                  className="absolute inset-0 bg-[#C8B085] transition-all duration-300 ease-out opacity-20"
-                  style={{ width: `${loadingProgress}%` }}
-                />
+            <div className="flex gap-3">
+              {step === 2 && (
+                <button
+                  onClick={() => setStep(1)}
+                  className="px-6 py-2.5 rounded-2xl text-slate-500 hover:text-white font-black text-[10px] uppercase tracking-widest transition-colors"
+                >
+                  BACK
+                </button>
               )}
 
-              <span className="relative z-10 flex items-center gap-2">
+              <button
+                onClick={step === 1 ? () => handleFetch() : handleConfirmImport}
+                disabled={status === "loading" || backendStatus === "sleeping" || (step === 1 && selectedConfigIds.length === 0)}
+                className={`relative overflow-hidden px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-3 active:scale-95 
+                  ${status === "loading"
+                    ? "bg-[#14161B] border border-[#C8B085]/30 text-[#C8B085] w-full disabled:opacity-100 disabled:cursor-wait shadow-[0_0_30px_rgba(200,176,133,0.1)]"
+                    : backendStatus === "sleeping"
+                    ? "bg-zinc-800 text-zinc-400 w-full disabled:opacity-100 disabled:cursor-wait"
+                    : "bg-[#C8B085] hover:bg-[#B09870] text-black shadow-[0_4px_20px_rgba(200,176,133,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+              >
+              {status === "loading" && (
+                <>
+                  <div
+                    className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-transparent via-[#C8B085]/20 to-[#C8B085]/40 transition-all duration-500 ease-out flex items-center justify-end"
+                    style={{ width: `${loadingProgress}%` }}
+                  >
+                    {/* Glowing Leading Edge */}
+                    <div className="h-full w-[2px] bg-[#C8B085] shadow-[0_0_15px_2px_#C8B085]" />
+                  </div>
+                  {/* Shimmer overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-[shimmer-bar_1.5s_infinite]" style={{ width: '200%' }} />
+                </>
+              )}
+
+              <span className="relative z-10 flex items-center gap-3">
                 {status === "loading" ? (
                   <>
-                    <RefreshCw size={12} className="animate-spin" />
-                    <span>{loadingMessage || "處理中..."}</span>
-                    <span className="opacity-50 ml-1">{loadingProgress}%</span>
+                    <div className="relative w-4 h-4 flex items-center justify-center">
+                      <div className="absolute inset-0 rounded-full border border-[#C8B085]/30 animate-ping" style={{ animationDuration: '2s' }} />
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#C8B085] animate-pulse shadow-[0_0_8px_#C8B085]" />
+                    </div>
+                    <span className="tracking-[0.2em]">{loadingMessage || "PROCESSING..."}</span>
+                    <span className="font-barlow-numeric text-[11px] text-white bg-black/40 px-2 py-0.5 rounded border border-[#C8B085]/30 shadow-inner">
+                      {loadingProgress}%
+                    </span>
+                  </>
+                ) : backendStatus === "sleeping" ? (
+                  <>
+                    <div className="orbital-loader mr-1 scale-75 text-zinc-400">
+                      <div className="orbital-dot" />
+                      <div className="orbital-dot" style={{ animationDelay: '-1s' }} />
+                    </div>
+                    <span className="animate-pulse tracking-[0.2em]">BOOTING...</span>
                   </>
                 ) : (
                   <>
@@ -1551,6 +1789,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               </span>
             </button>
           </div>
+        </div>
         </div>
       </div>
 

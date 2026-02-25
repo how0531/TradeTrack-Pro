@@ -1,12 +1,14 @@
 import shioaji as sj
 import os
+import threading
 from datetime import datetime
+from threading import Lock
 
 # Global Session Manager Instance
 _SESSION_MANAGER = None
 
-# CA 啟動有效期（秒）：強制設為 0 以解決 Flask 多執行緒下的憑證遺失問題
-_CA_EXPIRY_SECONDS = 0 
+# CA 啟動有效期（秒）：從 0 改為 1800，避免頻繁重複啟動 CA 導致 Shioaji 底層狀態異常 (PnL 回傳空值)
+_CA_EXPIRY_SECONDS = 1800 
 
 class ShioajiSessionManager:
     def __init__(self):
@@ -17,6 +19,7 @@ class ShioajiSessionManager:
         self.is_simulation = True
         self.ca_activated = False
         self.ca_activated_time = None  # 記錄 CA 最後啟動時間
+        self._lock = Lock()
 
     def get_api(
         self, api_key, secret_key, person_id, ca_path, ca_password, simulation=True
@@ -28,57 +31,98 @@ class ShioajiSessionManager:
         # Comparison key (suffix)
         key_suffix = api_key[-6:] if api_key and len(api_key) > 6 else api_key
 
-        # 1. Check if we can reuse the existing session
-        if (
-            self.api
-            and self.current_person_id == person_id
-            and self.current_api_key_suffix == key_suffix
-            and self.is_simulation == simulation
-        ):
+        with self._lock:
+            # 1. Double check under lock if we can reuse the existing session
+            if (
+                self.api
+                and self.current_person_id == person_id
+                and self.current_api_key_suffix == key_suffix
+                and self.is_simulation == simulation
+            ):
+                # 快速存活檢查：如果最近 60 秒內有使用過，跳過健康檢查
+                if self.last_used_time:
+                    idle_seconds = (datetime.now() - self.last_used_time).total_seconds()
+                    if idle_seconds < 60:
+                        print(
+                            f"DEBUG: [SessionReuse] Reusing connection (idle {idle_seconds:.0f}s < 60s, skip health check)",
+                            flush=True,
+                        )
+                        self.last_used_time = datetime.now()
+                        return self.api
+
+                # 健康檢查：確認 TCP 連線仍然存活
+                try:
+                    self.api.list_accounts()
+                    print(
+                        f"DEBUG: [SessionReuse] Reusing existing connection for {person_id} (health OK)",
+                        flush=True,
+                    )
+                    self.last_used_time = datetime.now()
+                    return self.api
+                except Exception as health_err:
+                    print(
+                        f"WARNING: [SessionReuse] Health check failed: {health_err}. Will reconnect.",
+                        flush=True,
+                    )
+                    self._safe_logout()
+                    self.api = None
+                    self.ca_activated = False
+                    self.ca_activated_time = None
+
+            # 2. If valid session exists but credentials changed, drop old session
+            if self.api:
+                print(
+                    f"DEBUG: [Session] Dropping old session to avoid deadlock. Credentials changed.",
+                    flush=True,
+                )
+                self._safe_logout()
+                self.api = None
+                self.ca_activated = False
+                self.ca_activated_time = None
+
+            # 3. Create new connection with timeout protection
             print(
-                f"DEBUG: [SessionReuse] Reusing existing connection for {person_id}",
+                f"DEBUG: [SessionReuse] Creating NEW connection for {person_id} (Sim={simulation})",
                 flush=True,
             )
-            
-            # Session reuse 時仍檢查 CA（由 ensure_ca_active 負責）
+            new_api = sj.Shioaji(simulation=simulation)
+
+            # Login with timeout
+            login_result = [None]
+            login_error = [None]
+            def _do_login():
+                try:
+                    login_result[0] = new_api.login(
+                        api_key=api_key,
+                        secret_key=secret_key,
+                        fetch_contract=True,
+                    )
+                except Exception as e:
+                    login_error[0] = e
+
+            login_thread = threading.Thread(target=_do_login, daemon=True)
+            login_thread.start()
+            login_thread.join(timeout=30)
+
+            if login_thread.is_alive():
+                print("ERROR: [Session] Login timed out after 30 seconds!", flush=True)
+                raise TimeoutError("Shioaji login 超時 (30秒)，請檢查網路連線或稍後重試。")
+
+            if login_error[0]:
+                raise login_error[0]
+
+            accounts = login_result[0]
+            print(f"DEBUG: Login successful. Found {len(accounts)} account(s).", flush=True)
+
+            self._try_activate_ca(new_api, ca_path, ca_password, person_id)
+
+            self.api = new_api
+            self.current_person_id = person_id
+            self.current_api_key_suffix = key_suffix
+            self.is_simulation = simulation
             self.last_used_time = datetime.now()
+
             return self.api
-
-        # 2. If valid session exists but credentials changed, drop old session
-        if self.api:
-            print(
-                f"DEBUG: [Session] Dropping old session to avoid deadlock. Credentials changed.",
-                flush=True,
-            )
-            self.api = None
-            self.ca_activated = False
-            self.ca_activated_time = None
-
-        # 3. Create new connection
-        print(
-            f"DEBUG: [SessionReuse] Creating NEW connection for {person_id} (Sim={simulation})",
-            flush=True,
-        )
-        new_api = sj.Shioaji(simulation=simulation)
-
-        accounts = new_api.login(
-            api_key=api_key,
-            secret_key=secret_key,
-            fetch_contract=True,
-        )
-        print(f"DEBUG: Login successful. Found {len(accounts)} account(s).", flush=True)
-
-        # Activate CA immediately
-        self._try_activate_ca(new_api, ca_path, ca_password, person_id)
-
-        # Update State
-        self.api = new_api
-        self.current_person_id = person_id
-        self.current_api_key_suffix = key_suffix
-        self.is_simulation = simulation
-        self.last_used_time = datetime.now()
-
-        return self.api
 
     def ensure_ca_active(self, ca_path, ca_password, person_id):
         """
@@ -132,13 +176,28 @@ class ShioajiSessionManager:
                 ca_passwd=ca_password,
                 person_id=person_id,
             )
-            self.ca_activated = True
-            self.ca_activated_time = datetime.now()
-            print(f"DEBUG: [CA] ✅ CA Activated successfully! Result: {result}", flush=True)
+            # 驗證回傳值：activate_ca 可能回傳 False 或非 True 值表示失敗
+            if result is False:
+                self.ca_activated = False
+                self.ca_activated_time = None
+                print(f"WARNING: [CA] ❌ activate_ca returned False — CA not activated", flush=True)
+            else:
+                self.ca_activated = True
+                self.ca_activated_time = datetime.now()
+                print(f"DEBUG: [CA] ✅ CA Activated successfully! Result: {result}", flush=True)
         except Exception as e:
             self.ca_activated = False
             self.ca_activated_time = None
             print(f"WARNING: [CA] ❌ CA Activation failed: {e}", flush=True)
+
+    def _safe_logout(self):
+        """嘗試安全登出舊連線，避免撞 Shioaji 5 連線上限。"""
+        if self.api:
+            try:
+                self.api.logout()
+                print("DEBUG: [Session] Old connection logged out successfully.", flush=True)
+            except Exception as e:
+                print(f"DEBUG: [Session] Logout failed (non-critical): {e}", flush=True)
 
 
 def get_session_manager():

@@ -24,9 +24,10 @@ export interface Trade {
   amount?: string;
   type?: 'profit' | 'loss';
   code?: string;
-  entryPrice?: number;
+    entryPrice?: number;
   exitPrice?: number;
   quantity?: number;
+  price?: number;
   category?: string;
   raw_yield?: number;
   yield?: number;

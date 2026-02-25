@@ -87,7 +87,8 @@ def get_broker_profile():
             start_date=None,
             end_date=None,
             simulation=is_simulation,
-            branch_filter=data.get("branchCode"),  # Pass the branch filter
+            branch_filter=data.get("branchCode"),
+            profile_only=True,  # M4: 只需登入列帳號，跳過 PnL 抓取
         )
 
         print(f"[RESULT] Status: {result.get('status')}", flush=True)
