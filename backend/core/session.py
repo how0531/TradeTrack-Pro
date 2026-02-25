@@ -6,6 +6,7 @@ from threading import Lock
 
 # Global Session Manager Instance
 _SESSION_MANAGER = None
+_SINGLETON_LOCK = Lock()  # B1: 保護 singleton 建立避免 race condition
 
 # CA 啟動有效期（秒）：從 0 改為 1800，避免頻繁重複啟動 CA 導致 Shioaji 底層狀態異常 (PnL 回傳空值)
 _CA_EXPIRY_SECONDS = 1800 
@@ -50,18 +51,29 @@ class ShioajiSessionManager:
                         self.last_used_time = datetime.now()
                         return self.api
 
-                # 健康檢查：確認 TCP 連線仍然存活
-                try:
-                    self.api.list_accounts()
+                # B4: 健康檢查加 timeout，防止 Shioaji 卡住導致 Lock deadlock
+                health_ok = [False]
+                def _health_check():
+                    try:
+                        self.api.list_accounts()
+                        health_ok[0] = True
+                    except Exception:
+                        pass
+                ht = threading.Thread(target=_health_check, daemon=True)
+                ht.start()
+                ht.join(timeout=5)
+
+                if health_ok[0]:
                     print(
                         f"DEBUG: [SessionReuse] Reusing existing connection for {person_id} (health OK)",
                         flush=True,
                     )
                     self.last_used_time = datetime.now()
                     return self.api
-                except Exception as health_err:
+                else:
+                    reason = "timed out (5s)" if ht.is_alive() else "failed"
                     print(
-                        f"WARNING: [SessionReuse] Health check failed: {health_err}. Will reconnect.",
+                        f"WARNING: [SessionReuse] Health check {reason}. Will reconnect.",
                         flush=True,
                     )
                     self._safe_logout()
@@ -106,6 +118,12 @@ class ShioajiSessionManager:
 
             if login_thread.is_alive():
                 print("ERROR: [Session] Login timed out after 30 seconds!", flush=True)
+                # B2: 嘗試釋放殭屍連線，避免撞 Shioaji 5 連線上限
+                try:
+                    new_api.logout()
+                    print("DEBUG: [Session] Zombie connection cleaned up after timeout.", flush=True)
+                except Exception:
+                    pass
                 raise TimeoutError("Shioaji login 超時 (30秒)，請檢查網路連線或稍後重試。")
 
             if login_error[0]:
@@ -157,10 +175,11 @@ class ShioajiSessionManager:
     def _try_activate_ca(self, api, ca_path, ca_password, person_id):
         """
         Attempt CA activation. Updates self.ca_activated on success.
+        B3: Returns True on success, False on failure/skip.
         """
         if not ca_path:
             print("DEBUG: [CA] No CA path provided, skipping activation.", flush=True)
-            return
+            return False
             
         if not os.path.exists(ca_path):
             print(
@@ -168,7 +187,7 @@ class ShioajiSessionManager:
                 f"If using cloud deployment, ensure caContent (Base64) is uploaded via the frontend.",
                 flush=True,
             )
-            return
+            return False
             
         try:
             result = api.activate_ca(
@@ -181,14 +200,17 @@ class ShioajiSessionManager:
                 self.ca_activated = False
                 self.ca_activated_time = None
                 print(f"WARNING: [CA] ❌ activate_ca returned False — CA not activated", flush=True)
+                return False
             else:
                 self.ca_activated = True
                 self.ca_activated_time = datetime.now()
                 print(f"DEBUG: [CA] ✅ CA Activated successfully! Result: {result}", flush=True)
+                return True
         except Exception as e:
             self.ca_activated = False
             self.ca_activated_time = None
             print(f"WARNING: [CA] ❌ CA Activation failed: {e}", flush=True)
+            return False
 
     def _safe_logout(self):
         """嘗試安全登出舊連線，避免撞 Shioaji 5 連線上限。"""
@@ -201,7 +223,10 @@ class ShioajiSessionManager:
 
 
 def get_session_manager():
+    """B1: Thread-safe singleton with double-checked locking."""
     global _SESSION_MANAGER
     if _SESSION_MANAGER is None:
-        _SESSION_MANAGER = ShioajiSessionManager()
+        with _SINGLETON_LOCK:
+            if _SESSION_MANAGER is None:
+                _SESSION_MANAGER = ShioajiSessionManager()
     return _SESSION_MANAGER

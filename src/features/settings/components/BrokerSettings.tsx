@@ -94,6 +94,16 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         }
     }, [isEditing]);
 
+    // F4: 清理計時器，防止元件卸載後繼續 setInterval 導致記憶體洩漏
+    useEffect(() => {
+        return () => {
+            if (elapsedTimerRef.current) {
+                clearInterval(elapsedTimerRef.current);
+                elapsedTimerRef.current = null;
+            }
+        };
+    }, []);
+
     const handleManualPing = async () => {
         setBackendStatus('checking');
         const status = await validateBackendStatus();
@@ -109,12 +119,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const handleStartEdit = (id: string | 'new') => {
         if (id === 'new') {
             setLocalConfig({ ...emptyConfig, id: Math.random().toString(36).substr(2, 9) });
+            setErrorMsg(null); // 新建時清除舊錯誤
         } else {
             const config = configs.find(c => c.id === id);
             if (config) setLocalConfig({ ...config });
+            // 編輯既有帳號時保留錯誤訊息，讓用戶知道為什麼失敗
+            if (errorConfigId !== id) setErrorMsg(null);
         }
         setIsEditing(id);
-        setErrorMsg(null);
         setAccountChoices([]);
         setLoginStep(1); // 重置 Stepper 回第一步
         setLoginResult(null); // 清除上次結果
@@ -1021,8 +1033,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                                     onClick={(e) => {
                                                                         e.preventDefault();
                                                                         e.stopPropagation();
-                                                                        handleChange('caPath', '');
-                                                                        handleChange('caContent', '');
+                                                                        // F5: 一次性清除 caPath + caContent 避免 race condition
+                                                                        setLocalConfig(prev => prev ? ({ ...prev, caPath: '', caContent: '' }) : null);
                                                                     }}
                                                                     className="text-zinc-600 hover:text-red-400 transition-colors p-1 -mr-1"
                                                                     title="Remove"

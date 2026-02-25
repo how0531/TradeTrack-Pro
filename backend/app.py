@@ -8,20 +8,14 @@ import traceback
 # sys.path.append(os.path.join(os.path.dirname(__file__), "core"))
 
 try:
-    from core.pnl import login_and_fetch_pnl
-    import core.pnl
-    import os
-    import datetime
-    log_file = os.path.join(os.path.expanduser("~"), "debug_backend.log")
-    with open(log_file, "a") as f:
-        f.write(f"[{datetime.datetime.now()}] LOADED PNL FROM: {core.pnl.__file__}\n")
-    print(f"DEBUG: Imported login_and_fetch_pnl from core.pnl: {core.pnl.__file__}", flush=True)
+    from core.pnl import login_and_fetch_pnl, verify_simulation_account
+    print(f"DEBUG: Imported pnl module successfully", flush=True)
 except ImportError as e:
     print(f"Error importing core.pnl: {e}")
     # Fallback for dev environment path issues
     try: 
-        from backend.core.pnl import login_and_fetch_pnl
-        print(f"DEBUG: Imported login_and_fetch_pnl from backend.core.pnl: {login_and_fetch_pnl}", flush=True)
+        from backend.core.pnl import login_and_fetch_pnl, verify_simulation_account
+        print(f"DEBUG: Imported from backend.core.pnl (fallback)", flush=True)
     except:
         print(f"Critical Import Error: {e}")
         raise
@@ -212,7 +206,7 @@ def verify_broker_account():
         if missing_fields:
             return jsonify({"status": "error", "message": f"缺少必要欄位: {', '.join(missing_fields)}"}), 400
 
-        from core.pnl import verify_simulation_account
+        # B10: verify_simulation_account is now imported at top-level
         
         result = verify_simulation_account(
             api_key=data["apiKey"],
@@ -271,6 +265,6 @@ if __name__ == "__main__":
 
     print(f"Server starting on http://0.0.0.0:{port}", flush=True)
 
-    # Run locally (for cloud we use gunicorn)
-    # 啟用 debug=True 以支援熱重載 (Hot Reload)
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # B11: debug mode via env var, defaults to False for production safety
+    is_debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host="0.0.0.0", port=port, debug=is_debug)

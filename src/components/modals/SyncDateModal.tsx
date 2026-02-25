@@ -1397,17 +1397,29 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                     </div>
                   </div>
                 ) : transactions.length === 0 ? (
-                  <div className="py-20 flex flex-col items-center justify-center gap-4 text-slate-500/40">
-                    <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/[0.05] flex items-center justify-center">
-                      <CalendarDays size={24} className="opacity-20" />
+                  <div className="py-16 flex flex-col items-center justify-center gap-4 text-slate-500/40">
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center ${resultMsg && resultMsg.includes('失敗') ? 'bg-red-500/10 border border-red-500/20' : 'bg-white/[0.02] border border-white/[0.05]'}`}>
+                      {resultMsg && resultMsg.includes('失敗') ? (
+                        <AlertTriangle size={24} className="text-red-500/60" />
+                      ) : (
+                        <CalendarDays size={24} className="opacity-20" />
+                      )}
                     </div>
-                    <div className="text-center">
+                    <div className="text-center space-y-2 max-w-sm px-4">
                       <p className="text-[11px] font-black tracking-widest uppercase">
-                        No Data Found
+                        {resultMsg && resultMsg.includes('失敗') ? 'Sync Failed' : 'No Data Found'}
                       </p>
-                      <p className="text-[10px] font-medium mt-1">
-                        此區間無同步交易紀錄
-                      </p>
+                      {resultMsg ? (
+                        <div className={`p-3 rounded-xl border text-left ${resultMsg.includes('失敗') ? 'bg-red-500/5 border-red-500/15' : 'bg-white/[0.02] border-white/5'}`}>
+                          <p className={`text-[10px] font-medium leading-relaxed ${resultMsg.includes('失敗') ? 'text-red-400/80' : 'text-zinc-500'}`}>
+                            {resultMsg}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] font-medium mt-1">
+                          此區間無同步交易紀錄
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : (

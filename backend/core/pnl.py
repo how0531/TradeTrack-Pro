@@ -63,7 +63,8 @@ def login_and_fetch_pnl(
         
         if not ca_is_active:
             log("⚠️ CA NOT ACTIVATED — PnL queries may return empty results!")
-            if not ca_content and (not ca_path or not os.path.exists(ca_path)):
+            # B5: profile_only 模式下 CA 不是必要的，只需列帳號，不阻斷
+            if not profile_only and not ca_content and (not ca_path or not os.path.exists(ca_path)):
                 return {
                     "status": "error",
                     "message": "CA 憑證未啟動：雲端伺服器找不到 .pfx 檔案。請在設定頁面重新上傳憑證檔案 (.pfx)。",
@@ -454,9 +455,7 @@ def login_and_fetch_pnl(
             except Exception as exc:
                 log(f"❌ [Exception] {acc.account_id} generated an exception: {exc}")
 
-        if temp_ca_path and os.path.exists(temp_ca_path):
-            try: os.unlink(temp_ca_path)
-            except: pass
+        # B6: temp CA cleanup is handled exclusively in the `finally` block below
 
         # Final Sort
         details.sort(key=lambda x: x["date"], reverse=True)

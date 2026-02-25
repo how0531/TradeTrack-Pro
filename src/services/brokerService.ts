@@ -196,9 +196,9 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
 };
 
 
+/** @deprecated Dead code — only checks if fields are filled, no actual validation. */
 export const validateBrokerConnection = async (config: BrokerConfig): Promise<boolean> => {
     await new Promise(resolve => setTimeout(resolve, 1000));
-    // Simple validation: check if fields are filled
     if (!config.apiKey || !config.apiSecret || !config.personId || !config.caPath) {
         return false;
     }
@@ -556,11 +556,18 @@ export const fetchBrokerProfile = async (
                     caLength: payload.caContent ? payload.caContent.length : 0
                 });
 
+                // F1: Per-attempt timeout to prevent infinite pending
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s per attempt
+
                 const response = await fetch(`${API_BASE}/api/broker/profile`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
                 });
+
+                clearTimeout(timeoutId);
 
                 const fetchElapsed = performance.now() - fetchStartTime;
                 console.log(`📡 [PERF] Profile API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
@@ -671,11 +678,18 @@ export const verifyBrokerAccount = async (config: BrokerConfig, accountId: strin
             accountId: accountId
         };
 
+        // F2: Per-request timeout to prevent infinite pending
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
         const response = await fetch(`${API_BASE}/api/broker/verify`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         const result = await response.json();
         return result;
