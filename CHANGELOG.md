@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **API 錯誤提示強化**：券商同步模態框 (`SyncDateModal`) 現在會完整收集並顯示後端返回的所有錯誤訊息，不再靜默失敗。
+- **同步失敗原因顯示**：交易檢核頁面的空狀態（NO DATA FOUND）現在會顯示具體錯誤原因（如「無法連接後端伺服器」），不再只顯示空白。
 
 ### Changed
 
@@ -18,6 +19,12 @@ All notable changes to this project will be documented in this file.
 - **帳戶載入效能優化**：修復了每次打開「券商設定」或首頁時都會強制讀取憑證與完整損益的效能缺陷。現在改為輕量化設計 (`profile_only`)，僅需幾毫秒即可載入帳號清單。
 - **憑證安全機制**：修補了後端核心模組中暫存憑證檔案 (`.pfx`) 可能因報錯而未被刪除的安全漏洞，導入嚴格的 `try...finally` 清理機制。
 - **程式碼健壯性**：移除了後端損益模組的殘留廢棄程式碼，並修復了 CA 憑證路徑解析的反斜線錯誤。
+- **Session 管理穩定性**：Thread-safe singleton 避免 race condition、Login 超時後主動清理殭屍連線、Health check 加 5 秒 timeout 防止 deadlock。
+- **`profile_only` CA 不阻斷**：帳號列表模式下 CA 啟動失敗不再阻斷流程，用戶仍可正常瀏覽帳號清單。
+- **前端 Fetch Timeout**：`fetchBrokerProfile` 每次 retry 加 45 秒 timeout、`verifyBrokerAccount` 加 30 秒 timeout，避免永久 pending。
+- **計時器洩漏修復**：修復 `BrokerSettings` 元件卸載後 `setInterval` 計時器未清理導致的記憶體洩漏。
+- **setState Race Condition**：合併連續兩次 `setState` 為一次 atomic update，修復 CA 路徑清除時的競態條件。
+- **Flask Debug 安全**：`debug=True` 改為環境變數控制，避免 production 暴露 Werkzeug debugger。
 
 ## [2.4.12] - 2026-02-24
 
