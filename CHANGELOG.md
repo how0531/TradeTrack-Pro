@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.6] - 2026-02-25
+
+### Changed
+
+- **設定檔分析效能**：Ghost / Duplicate 偵測邏輯改用 `useMemo` 快取，避免每次 render 重新計算。
+- **一鍵修復可讀性**：將 100 行 `onClick` 內嵌邏輯抽取為獨立 `handleFixConfigIssues` 函式。
+- **帳戶刪除體驗**：移除 `window.confirm` 彈窗，改為 inline 紅色確認按鈕（2 秒無操作自動收回），符合暗色系 UI 風格。
+- **登出 Modal 語系**：說明文字與按鈕文案跟隨語系切換（中文 / 英文），不再全英文 hardcode。
+- **帳戶儲存優化**：`AccountRow.handleSave` 合併連續兩次 `updatePortfolio` 為 batch update。
+
+### Fixed
+
+- **雲端憑證驗證**：`caPath` 驗證改為同時接受 `caContent` (base64)，雲端部署用戶不再被攔截。
+- **重複 import 清理**：合併分散的 `useEffect` import 至主 React import。
+- **重複註解清理**：移除 `SettingsView` 中重複的元件標頭註解。
+- **死碼清理**：移除未使用的 `ddPercent` / `streakPercent` 計算。
+
 ## [2.5.5] - 2026-02-25
 
 ### Added

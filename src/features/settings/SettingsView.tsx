@@ -265,7 +265,6 @@ const AccountThemeSelector = ({ portfolio, onUpdate, globalLossColor }: { portfo
     );
 };
 
-// --- INTERNAL COMPONENT: Account Row ---
 // --- INTERNAL COMPONENT: Account Row (Refined for V2.4.4 - Ultra Compact) ---
 const AccountRow = ({
     portfolio,
@@ -283,11 +282,23 @@ const AccountRow = ({
     const [isEditing, setIsEditing] = useState(false);
     const [tempName, setTempName] = useState(portfolio.name);
     const [tempCapital, setTempCapital] = useState(String(portfolio.initialCapital));
+    // S1: inline delete confirmation 取代 window.confirm
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+    // S1: 自動取消確認（2 秒後不操作就收回）
+    React.useEffect(() => {
+        if (!showDeleteConfirm) return;
+        const timer = setTimeout(() => setShowDeleteConfirm(false), 2000);
+        return () => clearTimeout(timer);
+    }, [showDeleteConfirm]);
 
     const handleSave = () => {
-        if (tempName.trim()) actions.updatePortfolio(portfolio.id, 'name', tempName.trim());
+        // S9: 合併為一次 batch update，避免連續觸發兩次渲染
+        const updates: Record<string, any> = {};
+        if (tempName.trim()) updates.name = tempName.trim();
         const cap = parseFloat(tempCapital);
-        if (!isNaN(cap)) actions.updatePortfolio(portfolio.id, 'initialCapital', cap);
+        if (!isNaN(cap)) updates.initialCapital = cap;
+        Object.entries(updates).forEach(([key, val]) => actions.updatePortfolio(portfolio.id, key, val));
         setIsEditing(false);
     };
 
@@ -328,12 +339,21 @@ const AccountRow = ({
             {/* Actions & Theme Selector (Right) */}
             <div className="flex items-center gap-3 shrink-0">
                 {!isEditing && isDeletable && (
-                    <button
-                        onClick={() => { if (window.confirm(t.deleteConfirm)) actions.deletePortfolio(portfolio.id) }}
-                        className="opacity-0 group-hover:opacity-100 p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300"
-                    >
-                        <Trash2 size={14} />
-                    </button>
+                    showDeleteConfirm ? (
+                        <button
+                            onClick={() => { actions.deletePortfolio(portfolio.id); setShowDeleteConfirm(false); }}
+                            className="px-2.5 py-1 bg-red-500 hover:bg-red-400 text-white text-[10px] font-bold rounded-lg transition-all animate-in fade-in zoom-in-95 duration-150 shadow-[0_0_10px_rgba(239,68,68,0.3)]"
+                        >
+                            {t.confirm || '確認'}
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => setShowDeleteConfirm(true)}
+                            className="opacity-0 group-hover:opacity-100 p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-300"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    )
                 )}
 
 
@@ -549,8 +569,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
         }
     };
 
-    const ddPercent = ((ddThreshold - 5) / (50 - 5)) * 100;
-    const streakPercent = ((maxLossStreak - 2) / (10 - 2)) * 100;
+    // S10: ddPercent / streakPercent removed — slider components handle their own %
 
     return (
         <div className="space-y-8 px-4 sm:px-0 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-48 pt-4 max-w-full overflow-x-hidden">
@@ -879,8 +898,6 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
 
 
             {/* SYSTEM DIAGNOSIS & REPAIR */}
-
-            {/* SYSTEM DIAGNOSIS & REPAIR */}
             <div className="space-y-4">
                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5">系統診斷與修復</h3>
 
@@ -960,11 +977,11 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                         </div>
                         <h3 className="text-white font-bold text-lg mb-2">{t.logout}?</h3>
                         <p className="text-xs text-slate-400 mb-6">
-                            You are about to sign out. Local data will be cleared for security.
+                            {lang === 'zh' ? '登出後將清除本機資料以保護隱私。您的交易紀錄在雲端是安全的。' : 'You are about to sign out. Local data will be cleared for security.'}
                         </p>
                         <div className="flex gap-3">
                             <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-3 rounded-xl bg-white/5 text-slate-300 text-xs font-bold hover:bg-white/10 transition-colors">
-                                Cancel
+                                {lang === 'zh' ? '取消' : 'Cancel'}
                             </button>
                             <button
                                 onClick={() => {
@@ -974,7 +991,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                 }}
                                 className="flex-1 py-3 rounded-xl bg-[#C8B085] text-black text-xs font-bold hover:bg-[#B09870] transition-colors"
                             >
-                                Sign Out
+                                {lang === 'zh' ? '確認登出' : 'Sign Out'}
                             </button>
                         </div>
                     </div>

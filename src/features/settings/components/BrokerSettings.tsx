@@ -1,9 +1,8 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw, ChevronRight, ArrowDown, Upload, HelpCircle } from 'lucide-react';
 import { BrokerConfig } from '../../../types';
 import { fetchBrokerProfile, pingBackend, validateBackendStatus, wakeUpBackend, verifyBrokerAccount } from '../../../services/brokerService';
-import { useEffect } from 'react';
 import { ACCOUNT_CATEGORY_THEMES } from '../../../constants';
 import { BrokerGuideModal } from './BrokerGuideModal';
 
@@ -215,7 +214,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         if (!localConfig.personId) newErrors.personId = true;
         if (!localConfig.apiKey) newErrors.apiKey = true;
         if (!localConfig.apiSecret) newErrors.apiSecret = true;
-        if (!localConfig.caPath) newErrors.caPath = true;
+        // S8: 雲端部署時 caContent (base64) 可替代 caPath，兩者擇一即可
+        if (!localConfig.caPath && !localConfig.caContent) newErrors.caPath = true;
         if (!localConfig.caPassword) newErrors.caPassword = true;
 
         if (Object.keys(newErrors).length > 0) {
@@ -394,36 +394,118 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         }
     };
 
+    // S4: useMemo 快取分析結果，避免每次 render 重新計算
+    const configIssues = useMemo(() => {
+        const personIdMap = new Map<string, string[]>();
+        let hasGhost = false;
+        let hasDuplicates = false;
+
+        configs.forEach(c => {
+            const bLen = (c.branch || '').split(',').filter(s => s.trim()).length;
+            const aLen = (c.accounts || '').split(',').filter(s => s.trim()).length;
+            if (aLen > bLen) hasGhost = true;
+            const accs = (c.accounts || '').split(',').filter(s => s.trim());
+            if (new Set(accs).size !== accs.length) hasGhost = true;
+
+            if (c.personId) {
+                const existing = personIdMap.get(c.personId) || [];
+                existing.push(c.id);
+                personIdMap.set(c.personId, existing);
+                if (existing.length > 1) hasDuplicates = true;
+            }
+        });
+
+        return { hasGhost, hasDuplicates, personIdMap, hasIssues: hasGhost || hasDuplicates };
+    }, [configs]);
+
+    // S5: 抽取一鍵修復邏輯為獨立函式
+    const handleFixConfigIssues = useCallback(() => {
+        const { personIdMap } = configIssues;
+
+        // 1. Fix Duplicates (Merge)
+        personIdMap.forEach((ids, pid) => {
+            if (ids.length > 1) {
+                const masterId = ids[0];
+                const masterConfig = configs.find(c => c.id === masterId);
+                if (!masterConfig) return;
+
+                const allAccounts = new Set<string>();
+                const allBranches = new Map<string, string>();
+                const allSigned = new Set<string>();
+
+                (masterConfig.signedAccounts || '').split(',').forEach(s => {
+                    if (s.trim()) allSigned.add(s.trim());
+                });
+
+                ids.forEach(id => {
+                    const cfg = configs.find(c => c.id === id);
+                    if (!cfg) return;
+                    const accs = (cfg.accounts || cfg.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
+                    const brs = (cfg.branch || '').split(',').map(s => s.trim());
+
+                    accs.forEach((accId, idx) => {
+                        allAccounts.add(accId);
+                        if (brs[idx]) allBranches.set(accId, brs[idx]);
+                    });
+
+                    (cfg.signedAccounts || '').split(',').forEach(s => {
+                        if (s.trim()) allSigned.add(s.trim());
+                    });
+
+                    if (id !== masterId) onDelete(id);
+                });
+
+                const uniqueAccList = Array.from(allAccounts);
+                const uniqueBranchList = uniqueAccList.map(uid => allBranches.get(uid) || 'Unknown Branch');
+
+                onUpdate(masterId, {
+                    ...masterConfig,
+                    accounts: uniqueAccList.join(','),
+                    branchCode: uniqueAccList.join(','),
+                    branch: uniqueBranchList.join(','),
+                    signedAccounts: Array.from(allSigned).join(',')
+                });
+            }
+        });
+
+        // 2. Fix Ghosts & Internal Duplicates
+        configs.forEach(c => {
+            const branches = (c.branch || '').split(',');
+            const accounts = (c.accounts || '').split(',');
+
+            const uniqueMap = new Map<string, string>();
+            let changed = false;
+
+            accounts.forEach((acc, idx) => {
+                const trimmed = acc.trim();
+                if (!trimmed) return;
+                if (!uniqueMap.has(trimmed)) {
+                    const b = branches[idx] && branches[idx].trim() ? branches[idx].trim() : (uniqueMap.get(trimmed) || 'Unknown');
+                    uniqueMap.set(trimmed, b);
+                } else {
+                    changed = true;
+                }
+            });
+
+            if (accounts.length > branches.length) changed = true;
+
+            if (changed) {
+                const newAccs = Array.from(uniqueMap.keys());
+                const newBras = Array.from(uniqueMap.values());
+                onUpdate(c.id, {
+                    ...c,
+                    accounts: newAccs.join(','),
+                    branchCode: newAccs.join(','),
+                    branch: newBras.join(',')
+                });
+            }
+        });
+    }, [configs, configIssues, onUpdate, onDelete]);
+
     return (
         <div className="space-y-4">
             {/* Ghost Account & Duplicate Config Fixer */}
-            {(() => {
-                // Analysis
-                const personIdMap = new Map<string, string[]>(); // personId -> configIds
-                let hasGhost = false;
-                let hasDuplicates = false;
-
-                configs.forEach(c => {
-                    // Check Ghost
-                    const bLen = (c.branch || '').split(',').filter(s => s.trim()).length;
-                    const aLen = (c.accounts || '').split(',').filter(s => s.trim()).length;
-                    if (aLen > bLen) hasGhost = true;
-                    // Check Duplicates Within (Same ID twice in one config)
-                    const accs = (c.accounts || '').split(',').filter(s => s.trim());
-                    if (new Set(accs).size !== accs.length) hasGhost = true;
-
-                    // Check Duplicate Configs
-                    if (c.personId) {
-                        const existing = personIdMap.get(c.personId) || [];
-                        existing.push(c.id);
-                        personIdMap.set(c.personId, existing);
-                        if (existing.length > 1) hasDuplicates = true;
-                    }
-                });
-
-                if (!hasGhost && !hasDuplicates) return null;
-
-                return (
+            {configIssues.hasIssues && (
                     <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between animate-in fade-in slide-in-from-top-2">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center">
@@ -434,117 +516,20 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     {lang === 'zh' ? '偵測到設定檔異常' : 'Configuration Issues Detected'}
                                 </span>
                                 <span className="text-[10px] text-amber-500/60">
-                                    {hasDuplicates
+                                    {configIssues.hasDuplicates
                                         ? (lang === 'zh' ? '發現重複的設定檔 (同一身分證)，建議合併。' : 'Duplicate configs found.')
                                         : (lang === 'zh' ? '部分帳號未正確連結 (幽靈帳號)。' : 'Ghost accounts detected.')}
                                 </span>
                             </div>
                         </div>
                         <button
-                            onClick={() => {
-                                // 1. Fix Duplicates (Merge)
-                                personIdMap.forEach((ids, pid) => {
-                                    if (ids.length > 1) {
-                                        // Keep the first one, merge others into it
-                                        const masterId = ids[0];
-                                        const masterConfig = configs.find(c => c.id === masterId);
-                                        if (!masterConfig) return;
-
-                                        // Collect all unique accounts and signed statuses
-                                        const allAccounts = new Set<string>();
-                                        const allBranches = new Map<string, string>(); // accId -> branchName
-                                        const allSigned = new Set<string>();
-
-                                        // Initial load from master
-                                        (masterConfig.signedAccounts || '').split(',').forEach(s => {
-                                            if (s.trim()) allSigned.add(s.trim());
-                                        });
-
-                                        ids.forEach(id => {
-                                            const cfg = configs.find(c => c.id === id);
-                                            if (!cfg) return;
-                                            const accs = (cfg.accounts || cfg.branchCode || '').split(',').map(s => s.trim()).filter(Boolean);
-                                            const brs = (cfg.branch || '').split(',').map(s => s.trim());
-
-                                            accs.forEach((accId, idx) => {
-                                                allAccounts.add(accId);
-                                                if (brs[idx]) allBranches.set(accId, brs[idx]);
-                                            });
-
-                                            // Merge signed status
-                                            (cfg.signedAccounts || '').split(',').forEach(s => {
-                                                if (s.trim()) allSigned.add(s.trim());
-                                            });
-
-                                            // Delete the duplicates (except master)
-                                            if (id !== masterId) onDelete(id);
-                                        });
-
-                                        // Update Master
-                                        const uniqueAccList = Array.from(allAccounts);
-                                        const uniqueBranchList = uniqueAccList.map(uid => allBranches.get(uid) || 'Unknown Branch');
-
-                                        onUpdate(masterId, {
-                                            ...masterConfig,
-                                            accounts: uniqueAccList.join(','),
-                                            branchCode: uniqueAccList.join(','),
-                                            branch: uniqueBranchList.join(','),
-                                            signedAccounts: Array.from(allSigned).join(',')
-                                        });
-                                    }
-                                });
-
-                                // 2. Fix Ghosts & Internal Duplicates (Run on all survivors)
-                                // We use a timeout to let the deletes propagate if necessary, 
-                                // but typically we can just run this logic on non-deleted ones.
-                                // Re-reading configs from prop might be stale if we just called onDelete?
-                                // Actually, we should probably rely on the user clicking "Fix" again if state updates rely on parent.
-                                // But let's try to fix "in-place" for the ones we touched.
-
-                                configs.forEach(c => {
-                                    // Skip if likely deleted (checked via personIdMap logic above)
-                                    // Just perform local cleanup
-                                    const branches = (c.branch || '').split(',');
-                                    const accounts = (c.accounts || '').split(',');
-
-                                    // Dedup within single config
-                                    const uniqueMap = new Map<string, string>(); // id -> branch
-                                    let changed = false;
-
-                                    accounts.forEach((acc, idx) => {
-                                        const trimmed = acc.trim();
-                                        if (!trimmed) return;
-                                        if (!uniqueMap.has(trimmed)) {
-                                            // Keep valid branch if possible
-                                            const b = branches[idx] && branches[idx].trim() ? branches[idx].trim() : (uniqueMap.get(trimmed) || 'Unknown');
-                                            uniqueMap.set(trimmed, b);
-                                        } else {
-                                            changed = true; // Found dup
-                                        }
-                                    });
-
-                                    // Check Length Mismatch
-                                    if (accounts.length > branches.length) changed = true;
-
-                                    if (changed) {
-                                        const newAccs = Array.from(uniqueMap.keys());
-                                        const newBras = Array.from(uniqueMap.values());
-                                        onUpdate(c.id, {
-                                            ...c,
-                                            accounts: newAccs.join(','),
-                                            branchCode: newAccs.join(','), // ensure sync
-                                            branch: newBras.join(',')
-                                        });
-                                    }
-                                });
-                            }}
+                            onClick={handleFixConfigIssues}
                             className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black text-[10px] font-bold rounded-xl transition-colors shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                         >
                             {lang === 'zh' ? '一鍵修復' : 'Fix Configs'}
                         </button>
                     </div>
-                );
-            })()}
+            )}
 
             {/* Verification Progress & Errors (Outside Modal) */}
             {!isEditing && (progressMsg || errorMsg) && (
