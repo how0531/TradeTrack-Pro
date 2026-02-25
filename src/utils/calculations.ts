@@ -6,7 +6,7 @@ import { formatDate } from './format';
 // Helper to get start of period
 const getPeriodKey = (dateStr: string, freq: Frequency): string => {
     if (freq === 'daily') return dateStr;
-    
+
     const parts = dateStr.split('-').map(Number);
     // Construct local date from YYYY-MM-DD parts
     const d = new Date(parts[0], parts[1] - 1, parts[2]);
@@ -38,6 +38,12 @@ const toLocalISO = (d: Date) => {
     return `${yy}-${mm}-${dd}`;
 };
 
+// Helper to safely parse dates cross-browser (Safari struggles with YYYY-MM-DD local time)
+export const safeDateParse = (dateStr: string | undefined | null): Date => {
+    if (!dateStr) return new Date();
+    return new Date(dateStr.replace(/-/g, '/'));
+};
+
 export const calculateMetrics = (
     trades: Trade[],
     portfolios: Portfolio[],
@@ -56,8 +62,8 @@ export const calculateMetrics = (
 
     // 2. Filter Trades & Sort by Date (Robust Timestamp Sort)
     const sortedTrades = [...trades].sort((a, b) => {
-        const timeA = new Date(a.date).getTime();
-        const timeB = new Date(b.date).getTime();
+        const timeA = safeDateParse(a.date).getTime();
+        const timeB = safeDateParse(b.date).getTime();
         const valA = isNaN(timeA) ? 0 : timeA;
         const valB = isNaN(timeB) ? 0 : timeB;
         return valA - valB;
@@ -66,7 +72,7 @@ export const calculateMetrics = (
     // 3. Strategy Statistics Calculation
     const stratStats: Record<string, StrategyStat> = {};
     const uniqueStrats = [...new Set(trades.filter(t => t.strategy).map(t => t.strategy!))];
-    
+
     uniqueStrats.forEach(strat => {
         const sTrades = sortedTrades.filter(t => t.strategy === strat);
         let sPnL = 0;
@@ -75,14 +81,14 @@ export const calculateMetrics = (
         let sMinDDAmt = 0;
         let sGrossProfit = 0;
         let sGrossLoss = 0;
-        let sCurrentEquity = 0; 
+        let sCurrentEquity = 0;
 
         sTrades.forEach(t => {
-            const val = Number(t.pnl) || 0; 
-            sPnL += val; 
+            const val = Number(t.pnl) || 0;
+            sPnL += val;
             sCurrentEquity += val;
-            
-            if (val > 0) { 
+
+            if (val > 0) {
                 sWin++;
                 sGrossProfit += val;
             } else if (val < 0) {
@@ -90,19 +96,19 @@ export const calculateMetrics = (
             }
 
             if (sCurrentEquity > sPeak) sPeak = sCurrentEquity;
-            const currentDDAmt = sCurrentEquity - sPeak; 
+            const currentDDAmt = sCurrentEquity - sPeak;
             if (currentDDAmt < sMinDDAmt) sMinDDAmt = currentDDAmt;
         });
-        
-        stratStats[strat] = { 
-            pnl: sPnL, 
-            trades: sTrades.length, 
-            winRate: sTrades.length > 0 ? (sWin / sTrades.length) * 100 : 0, 
-            mddPct: safeCapital > 0 ? (Math.abs(sMinDDAmt) / safeCapital) * 100 : 0, 
-            curDDPct: safeCapital > 0 ? (Math.abs(sCurrentEquity - sPeak) / safeCapital) * 100 : 0, 
+
+        stratStats[strat] = {
+            pnl: sPnL,
+            trades: sTrades.length,
+            winRate: sTrades.length > 0 ? (sWin / sTrades.length) * 100 : 0,
+            mddPct: safeCapital > 0 ? (Math.abs(sMinDDAmt) / safeCapital) * 100 : 0,
+            curDDPct: safeCapital > 0 ? (Math.abs(sCurrentEquity - sPeak) / safeCapital) * 100 : 0,
             isNewHigh: (sPnL >= sPeak - 0.01) && sTrades.length > 0,
-            riskReward: ((sTrades.length - sWin) > 0 && sGrossLoss > 0) ? (sGrossProfit/sWin) / (sGrossLoss/(sTrades.length-sWin)) : (sGrossProfit > 0 ? Infinity : 0),
-            avgWin: sWin > 0 ? sGrossProfit / sWin : 0, 
+            riskReward: ((sTrades.length - sWin) > 0 && sGrossLoss > 0) ? (sGrossProfit / sWin) / (sGrossLoss / (sTrades.length - sWin)) : (sGrossProfit > 0 ? Infinity : 0),
+            avgWin: sWin > 0 ? sGrossProfit / sWin : 0,
             avgLoss: (sTrades.length - sWin) > 0 ? sGrossLoss / (sTrades.length - sWin) : 0
         };
     });
@@ -123,26 +129,26 @@ export const calculateMetrics = (
     let dailyEquity = safeCapital;
     let dailyPeak = safeCapital;
     const dailyReturns: number[] = [];
-    
+
     if (sortedTrades.length > 0) {
         const dailyPnlMap = new Map<string, number>();
         sortedTrades.forEach(t => {
-            const dStr = toLocalISO(new Date(t.date));
+            const dStr = toLocalISO(safeDateParse(t.date));
             dailyPnlMap.set(dStr, (dailyPnlMap.get(dStr) || 0) + Number(t.pnl));
         });
 
-        const dCursor = new Date(sortedTrades[0].date);
+        const dCursor = safeDateParse(sortedTrades[0].date);
         const dEnd = new Date();
-        dCursor.setHours(0,0,0,0);
-        dEnd.setHours(0,0,0,0);
+        dCursor.setHours(0, 0, 0, 0);
+        dEnd.setHours(0, 0, 0, 0);
 
         let safeCounter = 0;
         let prevEquity = safeCapital;
 
-        while(dCursor <= dEnd && safeCounter < 11000) {
+        while (dCursor <= dEnd && safeCounter < 11000) {
             const dStr = toLocalISO(dCursor);
             const dayPnl = dailyPnlMap.get(dStr) || 0;
-            
+
             // Collect daily return for Sharpe (only on active days or every day?)
             // Standard approach is to include every day to capture "risk" of flat days
             // but we'll only calculate return if equity > 0
@@ -179,7 +185,7 @@ export const calculateMetrics = (
         const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
         const variance = dailyReturns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (dailyReturns.length - 1);
         const stdDev = Math.sqrt(variance);
-        
+
         if (stdDev > 0) {
             // Annualize (sqrt(252) for trading days, but since we collected calendar days 
             // including weekends as 0 returns, sqrt(365) might be more consistent?
@@ -192,7 +198,7 @@ export const calculateMetrics = (
     // 5. Equity Curve Construction
     // A. Aggregate trades into buckets first
     const periodGroups: Record<string, { totalPnl: number, portfolios: Record<string, number> }> = {};
-    
+
     sortedTrades.forEach(t => {
         const d = getPeriodKey(t.date, frequency);
         if (!periodGroups[d]) periodGroups[d] = { totalPnl: 0, portfolios: {} };
@@ -204,24 +210,24 @@ export const calculateMetrics = (
 
     const curve: any[] = [];
     const drawdown: any[] = [];
-    
+
     let equity = safeCapital;
     let peak = safeCapital;
     let maxDD = 0;
 
     // B. Determine Timeline Range
     // Start: Period of first trade OR Today if no trades
-    const firstTradeDate = sortedTrades.length > 0 ? new Date(sortedTrades[0].date) : new Date();
+    const firstTradeDate = sortedTrades.length > 0 ? safeDateParse(sortedTrades[0].date) : new Date();
     // Align to period start
-    let cursor = new Date(getPeriodKey(toLocalISO(firstTradeDate), frequency));
-    
+    let cursor = new Date(getPeriodKey(toLocalISO(firstTradeDate), frequency).replace(/-/g, '/'));
+
     // End: Period of Today (Ensure chart goes up to now)
     const today = new Date();
     const endDateStr = getPeriodKey(toLocalISO(today), frequency);
-    const endDate = new Date(endDateStr);
+    const endDate = new Date(endDateStr.replace(/-/g, '/'));
 
     // C. Add Anchor Point (One period before start)
-    const anchor = new Date(cursor);
+    const anchor = new Date(cursor.getTime());
     if (frequency === 'daily') anchor.setDate(anchor.getDate() - 1);
     else if (frequency === 'weekly') anchor.setDate(anchor.getDate() - 7);
     else if (frequency === 'monthly') anchor.setMonth(anchor.getMonth() - 1);
@@ -248,16 +254,16 @@ export const calculateMetrics = (
     while (cursor <= endDate && iterations < 36500) {
         const dateKey = toLocalISO(cursor);
         const dayData = periodGroups[dateKey] || { totalPnl: 0, portfolios: {} };
-        
+
         equity += dayData.totalPnl;
-        
+
         let isNewPeak = false;
         if (equity >= peak) {
             peak = equity;
             // Only mark new peak dot if there was activity (PnL != 0) or it's the very first point
             // This prevents continuous dots on flat equity lines during inactive periods
             if (dayData.totalPnl !== 0 || sortedTrades.length === 0) {
-                 isNewPeak = true;
+                isNewPeak = true;
             }
         }
 
@@ -289,10 +295,10 @@ export const calculateMetrics = (
         }
 
         curve.push(point);
-        drawdown.push({ 
-            date: point.date, 
-            timestamp: ts, 
-            ddPct: -ddPct 
+        drawdown.push({
+            date: point.date,
+            timestamp: ts,
+            ddPct: -ddPct
         });
 
         // Increment cursor based on frequency
@@ -301,7 +307,7 @@ export const calculateMetrics = (
         else if (frequency === 'monthly') cursor.setMonth(cursor.getMonth() + 1);
         else if (frequency === 'quarterly') cursor.setMonth(cursor.getMonth() + 3);
         else if (frequency === 'yearly') cursor.setFullYear(cursor.getFullYear() + 1);
-        
+
         iterations++;
     }
 
@@ -324,24 +330,24 @@ export const calculateMetrics = (
         periodChangePct = safeCapital > 0 ? (periodChange / safeCapital) * 100 : 0;
     }
 
-    return { 
-        curve, 
-        drawdown, 
-        currentEq, 
-        eqChange: periodChange, 
+    return {
+        curve,
+        drawdown,
+        currentEq,
+        eqChange: periodChange,
         eqChangePct: periodChangePct,
         netProfit,
         netProfitPct,
-        currentDD: currentDD, 
-        maxDD: maxDD, 
-        winRate: sortedTrades.length > 0 ? (wins / sortedTrades.length) * 100 : 0, 
-        pf: gLoss === 0 ? (gProfit > 0 ? Infinity : 0) : gProfit / gLoss, 
-        riskReward: (losses > 0 && gLoss > 0) ? (gProfit/wins) / (gLoss/losses) : (wins > 0 ? Infinity : 0), 
-        stratStats, 
-        isPeak: currentEq >= peak - 0.01, 
-        sharpe, 
-        avgWin: wins > 0 ? gProfit/wins : 0, 
-        avgLoss: losses > 0 ? gLoss/losses : 0, 
+        currentDD: currentDD,
+        maxDD: maxDD,
+        winRate: sortedTrades.length > 0 ? (wins / sortedTrades.length) * 100 : 0,
+        pf: gLoss === 0 ? (gProfit > 0 ? Infinity : 0) : gProfit / gLoss,
+        riskReward: (losses > 0 && gLoss > 0) ? (gProfit / wins) / (gLoss / losses) : (wins > 0 ? Infinity : 0),
+        stratStats,
+        isPeak: currentEq >= peak - 0.01,
+        sharpe,
+        avgWin: wins > 0 ? gProfit / wins : 0,
+        avgLoss: losses > 0 ? gLoss / losses : 0,
         totalTrades: sortedTrades.length,
         maxStagnationDays,
         expectancy: sortedTrades.length > 0 ? netProfit / sortedTrades.length : 0
@@ -350,8 +356,8 @@ export const calculateMetrics = (
 
 export const calculateStreaks = (trades: Trade[]): Streaks => {
     const sortedTrades = [...trades].sort((a, b) => {
-        const timeA = new Date(a.date).getTime();
-        const timeB = new Date(b.date).getTime();
+        const timeA = safeDateParse(a.date).getTime();
+        const timeB = safeDateParse(b.date).getTime();
         const diff = timeA - timeB;
         if (diff !== 0) return diff;
         if (a.timestamp && b.timestamp) return a.timestamp.localeCompare(b.timestamp);
@@ -376,9 +382,9 @@ export const calculateStreaks = (trades: Trade[]): Streaks => {
     for (let i = sortedTrades.length - 1; i >= 0; i--) {
         const t = sortedTrades[i];
         const val = Number(t.pnl) || 0;
-        
+
         if (val > 0) {
-            if (currentLoss > 0) break; 
+            if (currentLoss > 0) break;
             currentWin++;
         } else if (val < 0) {
             if (currentWin > 0) break;
@@ -388,9 +394,9 @@ export const calculateStreaks = (trades: Trade[]): Streaks => {
         }
     }
 
-    return { 
-        currentWin, 
-        currentLoss, 
+    return {
+        currentWin,
+        currentLoss,
         bestWin,
         bestLoss: 0, // TODO: Calculate if needed
         maxWin: bestWin, // Alias for bestWin
