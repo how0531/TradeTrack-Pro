@@ -3,9 +3,14 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    background-color: #000000;
+  }
+
   body {
     @apply text-gray-200 overflow-x-hidden relative;
-    background: radial-gradient(circle at 50% -10%, #1c1812 0%, #000000 80%);
+    background-color: #000000;
+    background-image: radial-gradient(circle at 50% -10%, #1c1812 0%, #000000 80%);
     background-attachment: fixed;
     overscroll-behavior-y: none;
   }
