@@ -54,25 +54,25 @@ interface SyncDateModalProps {
 
 // --- Constants & Animations ---
 const NEBULA_THEMES: Record<string, { flare1: string; flare2: string; pulse: string }> = {
-  online: { 
-    flare1: "bg-[#C8B085]/10", 
+  online: {
+    flare1: "bg-[#C8B085]/10",
     flare2: "bg-[#D05A5A]/5",
-    pulse: "animate-[pulse_8s_ease-in-out_infinite]" 
+    pulse: "animate-[pulse_8s_ease-in-out_infinite]"
   },
-  sleeping: { 
-    flare1: "bg-[#50C8FF]/15", 
+  sleeping: {
+    flare1: "bg-[#50C8FF]/15",
     flare2: "bg-[#7042FF]/10",
-    pulse: "animate-[pulse_4s_ease-in-out_infinite]" 
+    pulse: "animate-[pulse_4s_ease-in-out_infinite]"
   },
-  checking: { 
-    flare1: "bg-white/10", 
+  checking: {
+    flare1: "bg-white/10",
     flare2: "bg-zinc-500/5",
-    pulse: "animate-pulse" 
+    pulse: "animate-pulse"
   },
-  offline: { 
-    flare1: "bg-red-500/10", 
+  offline: {
+    flare1: "bg-red-500/10",
     flare2: "bg-orange-500/5",
-    pulse: "animate-[pulse_2s_ease-in-out_infinite]" 
+    pulse: "animate-[pulse_2s_ease-in-out_infinite]"
   }
 };
 
@@ -238,7 +238,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     // 🔄 Auto-Polling Logic: If sleeping, check every 5s until online or modal closed
     const pollInterval = setInterval(async () => {
       if (!isOpen || backendStatus === 'online') return;
-      
+
       console.log('🔄 [POLL] Checking backend status...');
       const status = await validateBackendStatus(0); // 0 retries for fast poll
       if (status === 'ready') {
@@ -248,8 +248,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       }
     }, 5000);
 
-    return () => { 
-      mounted = false; 
+    return () => {
+      mounted = false;
       clearInterval(pollInterval);
     };
   }, [isOpen, backendStatus]);
@@ -597,17 +597,20 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           orderNo.trim() !== '' &&
           orderNo !== 'unknown';
 
+        // Normalize date to YYYY-MM-DD
+        const normalizedDate = (d.date || '').replace(/[\.\/]/g, '-');
+
         let stableId: string;
         if (isValidOrderNo) {
-          stableId = `${orderNo}-${d.date}-${stockCode}`;
+          stableId = `${orderNo}-${normalizedDate}-${stockCode}`;
         } else {
-          const contentKey = `${d.date}_${stockCode}_${d.pnl.toFixed(2)}_${d.quantity}_${Number(d.price).toFixed(4)}`;
+          const contentKey = `${normalizedDate}_${stockCode}_${d.pnl.toFixed(2)}_${d.quantity}_${Number(d.price).toFixed(4)}`;
           stableId = `tx-${contentKey}`;
         }
 
         return {
           id: stableId,
-          date: d.date,
+          date: normalizedDate,
           orderNo: d.orderNo || `unknown-${i}`,
           code: d.code,
           pnl: d.pnl,
@@ -836,7 +839,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
   const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0A0B0F]/85 backdrop-blur-2xl animate-in fade-in duration-300 p-4 overflow-hidden font-inter">
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @keyframes orbit {
           0% { transform: rotate(0deg) translateX(12px) rotate(0deg); opacity: 0.2; }
           50% { opacity: 1; }
@@ -873,7 +877,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         .stagger-3 { animation: stagger-in 0.6s cubic-bezier(.16,1,.3,1) forwards 0.4s; opacity: 0; }
         .stagger-4 { animation: stagger-in 0.6s cubic-bezier(.16,1,.3,1) forwards 0.55s; opacity: 0; }
       `}} />
-      
+
       {/* Ambient Background Flares (Dynamic) */}
       <div className={`absolute top-[-10%] left-[-10%] w-[60%] h-[60%] ${currentTheme.flare1} rounded-full blur-[140px] pointer-events-none transition-all duration-1000 ${currentTheme.pulse}`} />
       <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] ${currentTheme.flare2} rounded-full blur-[120px] pointer-events-none transition-all duration-1000 ${currentTheme.pulse}`} />
@@ -1252,12 +1256,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               {/* Target Portfolio Selector */}
               <div className="flex flex-col gap-2">
                 {/* 💊 Account Mapping Capsule (Collapsible) */}
-                <button 
+                <button
                   onClick={() => setShowMapping(!showMapping)}
                   className={`
                     w-full py-2.5 px-4 rounded-full border transition-all duration-300 flex items-center justify-between group
-                    ${showMapping 
-                      ? "bg-[#C8B085]/10 border-[#C8B085]/30 shadow-[0_4px_20px_rgba(200,176,133,0.05)]" 
+                    ${showMapping
+                      ? "bg-[#C8B085]/10 border-[#C8B085]/30 shadow-[0_4px_20px_rgba(200,176,133,0.05)]"
                       : "bg-white/[0.03] border-white/5 hover:bg-white/[0.08] hover:border-white/10 shadow-sm"
                     }
                   `}
@@ -1377,7 +1381,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                         <Zap size={14} fill="currentColor" />
                       </div>
                     </div>
-                    
+
                     <div className="text-center space-y-2">
                       <h4 className="text-sm font-black uppercase tracking-[0.3em] text-red-500">System Diagnosis</h4>
                       <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl max-w-sm">
@@ -1388,7 +1392,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                     </div>
 
                     <div className="flex flex-col gap-3 w-full max-w-[240px]">
-                      <button 
+                      <button
                         onClick={() => { setStatus('idle'); handleManualPing(); }}
                         className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white transition-all active:scale-95"
                       >
@@ -1423,24 +1427,22 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                     </div>
                   </div>
                 ) : (
-                   transactions.map((tx) => (
+                  transactions.map((tx) => (
                     <div key={tx.id} className="space-y-1">
                       <div
-                        className={`px-2.5 py-2 rounded-2xl border transition-all duration-300 flex items-start gap-2.5 relative group/item overflow-hidden ${
-                          tx.isDuplicate && tx.selected
+                        className={`px-2.5 py-2 rounded-2xl border transition-all duration-300 flex items-start gap-2.5 relative group/item overflow-hidden ${tx.isDuplicate && tx.selected
                             ? "bg-amber-950/30 border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.08)]"
                             : tx.isDuplicate
-                            ? "bg-black/30 border-white/[0.04] opacity-50 hover:opacity-80"
-                            : !tx.selected
-                            ? "bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-100 hover:grayscale-0"
-                            : "bg-[#1C1E22]/50 border-white/10 shadow-lg shadow-black/25"
-                        }`}
+                              ? "bg-black/30 border-white/[0.04] opacity-50 hover:opacity-80"
+                              : !tx.selected
+                                ? "bg-black/20 border-white/5 opacity-40 grayscale-[100%] hover:opacity-100 hover:grayscale-0"
+                                : "bg-[#1C1E22]/50 border-white/10 shadow-lg shadow-black/25"
+                          }`}
                       >
                         {/* Left-stripe: amber when duplicate+selected, zinc when duplicate+unchecked */}
                         {tx.isDuplicate && (
-                          <div className={`absolute left-0 top-2 bottom-2 w-[2px] rounded-full transition-colors duration-300 ${
-                            tx.selected ? "bg-amber-500/70" : "bg-zinc-600/60"
-                          }`} />
+                          <div className={`absolute left-0 top-2 bottom-2 w-[2px] rounded-full transition-colors duration-300 ${tx.selected ? "bg-amber-500/70" : "bg-zinc-600/60"
+                            }`} />
                         )}
 
                         {/* Left: Checkbox (Top aligned) */}
@@ -1448,11 +1450,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                           type="checkbox"
                           checked={tx.selected}
                           onChange={() => toggleSelection(tx.id)}
-                          className={`mt-1 w-4 h-4 rounded-md bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${
-                            tx.isDuplicate && tx.selected
+                          className={`mt-1 w-4 h-4 rounded-md bg-black/40 focus:ring-0 cursor-pointer shrink-0 transition-all ${tx.isDuplicate && tx.selected
                               ? "text-amber-500 border-amber-500/50"
                               : "text-[#C8B085] border-[#C8B085]/30 border-white/20"
-                          }`}
+                            }`}
                         />
 
                         {/* Right: Content Column (2 rows) */}
@@ -1479,20 +1480,18 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
                                   {/* Tooltip */}
                                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block z-50">
-                                    <div className={`text-[9px] px-3 py-2 rounded-xl shadow-xl backdrop-blur-xl whitespace-nowrap ${
-                                      tx.selected
+                                    <div className={`text-[9px] px-3 py-2 rounded-xl shadow-xl backdrop-blur-xl whitespace-nowrap ${tx.selected
                                         ? "bg-amber-950 border border-amber-500/30 text-amber-200"
                                         : "bg-zinc-950 border border-zinc-800 text-zinc-400"
-                                    }`}>
+                                      }`}>
                                       <span className={`font-bold block mb-1 ${tx.selected ? "text-amber-300" : "text-zinc-300"}`}>
                                         {tx.selected ? "⚠ 此交易將被重複匯入" : "已在記錄中"}
                                       </span>
                                       {tx.duplicateReason || "此交易已在記錄中存在"}
-                                      <div className={`absolute left-2 top-full w-2 h-2 transform rotate-45 -mt-1 ${
-                                        tx.selected
+                                      <div className={`absolute left-2 top-full w-2 h-2 transform rotate-45 -mt-1 ${tx.selected
                                           ? "bg-amber-950 border-r border-b border-amber-500/30"
                                           : "bg-zinc-950 border-r border-b border-zinc-800"
-                                      }`} />
+                                        }`} />
                                     </div>
                                   </div>
                                 </div>
@@ -1693,41 +1692,41 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           </div>
 
           <div className="flex flex-col gap-3">
-             {backendStatus === 'sleeping' && (
+            {backendStatus === 'sleeping' && (
               <div className="bg-white/[0.03] border border-white/10 rounded-[28px] p-5 flex flex-col gap-4 backdrop-blur-3xl shadow-[0_20px_50px_rgba(80,200,255,0.08)] mb-2 group overflow-hidden relative">
-                 {/* Decorative background glow */}
-                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl pointer-events-none rounded-full" />
-                 
-                 <div className="flex items-center gap-4 relative z-10">
-                   <div className="w-10 h-10 rounded-2xl bg-[#50C8FF]/10 flex items-center justify-center text-[#50C8FF] shadow-inner">
-                     <div className="orbital-loader">
-                       <Zap size={18} className="animate-pulse" />
-                       <div className="orbital-dot" style={{ animationDelay: '0s' }} />
-                       <div className="orbital-dot" style={{ animationDelay: '-0.5s' }} />
-                       <div className="orbital-dot" style={{ animationDelay: '-1s' }} />
-                     </div>
-                   </div>
-                   <div className="flex flex-col gap-0.5">
-                     <span className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-400 stagger-1">
-                       Nebula Wake-up
-                     </span>
-                     <span className="text-[10px] text-zinc-500 font-bold stagger-2">
-                       伺服器正在從星雲中甦醒...
-                     </span>
-                   </div>
-                 </div>
-                 
-                 <div className="space-y-2 relative z-10 pl-14">
-                   <p className="text-[10px] text-zinc-400 leading-relaxed font-medium stagger-3">
-                     Render 免費版主機進入休眠狀態。正在為您建立專屬連線，這通常需要 <span className="text-blue-400 font-black">60-90</span> 秒。
-                   </p>
-                   <div className="flex items-center gap-2 stagger-3">
-                     <Activity size={10} className="text-blue-500/50" />
-                     <div className="h-[2px] w-24 bg-white/5 rounded-full overflow-hidden">
-                       <div className="h-full bg-blue-500/40 animate-[shimmer_2s_infinite]" style={{ width: '40%' }} />
-                     </div>
-                   </div>
-                 </div>
+                {/* Decorative background glow */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl pointer-events-none rounded-full" />
+
+                <div className="flex items-center gap-4 relative z-10">
+                  <div className="w-10 h-10 rounded-2xl bg-[#50C8FF]/10 flex items-center justify-center text-[#50C8FF] shadow-inner">
+                    <div className="orbital-loader">
+                      <Zap size={18} className="animate-pulse" />
+                      <div className="orbital-dot" style={{ animationDelay: '0s' }} />
+                      <div className="orbital-dot" style={{ animationDelay: '-0.5s' }} />
+                      <div className="orbital-dot" style={{ animationDelay: '-1s' }} />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-400 stagger-1">
+                      Nebula Wake-up
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-bold stagger-2">
+                      伺服器正在從星雲中甦醒...
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 relative z-10 pl-14">
+                  <p className="text-[10px] text-zinc-400 leading-relaxed font-medium stagger-3">
+                    Render 免費版主機進入休眠狀態。正在為您建立專屬連線，這通常需要 <span className="text-blue-400 font-black">60-90</span> 秒。
+                  </p>
+                  <div className="flex items-center gap-2 stagger-3">
+                    <Activity size={10} className="text-blue-500/50" />
+                    <div className="h-[2px] w-24 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500/40 animate-[shimmer_2s_infinite]" style={{ width: '40%' }} />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1748,60 +1747,60 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                   ${status === "loading"
                     ? "bg-[#14161B] border border-[#C8B085]/30 text-[#C8B085] w-full disabled:opacity-100 disabled:cursor-wait shadow-[0_0_30px_rgba(200,176,133,0.1)]"
                     : backendStatus === "sleeping"
-                    ? "bg-zinc-800 text-zinc-400 w-full disabled:opacity-100 disabled:cursor-wait"
-                    : "bg-[#C8B085] hover:bg-[#B09870] text-black shadow-[0_4px_20px_rgba(200,176,133,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+                      ? "bg-zinc-800 text-zinc-400 w-full disabled:opacity-100 disabled:cursor-wait"
+                      : "bg-[#C8B085] hover:bg-[#B09870] text-black shadow-[0_4px_20px_rgba(200,176,133,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
                   }`}
               >
-              {status === "loading" && (
-                <>
-                  <div
-                    className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-transparent via-[#C8B085]/20 to-[#C8B085]/40 transition-all duration-500 ease-out flex items-center justify-end"
-                    style={{ width: `${loadingProgress}%` }}
-                  >
-                    {/* Glowing Leading Edge */}
-                    <div className="h-full w-[2px] bg-[#C8B085] shadow-[0_0_15px_2px_#C8B085]" />
-                  </div>
-                  {/* Shimmer overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-[shimmer-bar_1.5s_infinite]" style={{ width: '200%' }} />
-                </>
-              )}
-
-              <span className="relative z-10 flex items-center gap-3">
-                {status === "loading" ? (
+                {status === "loading" && (
                   <>
-                    <div className="relative w-4 h-4 flex items-center justify-center">
-                      <div className="absolute inset-0 rounded-full border border-[#C8B085]/30 animate-ping" style={{ animationDuration: '2s' }} />
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#C8B085] animate-pulse shadow-[0_0_8px_#C8B085]" />
+                    <div
+                      className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-transparent via-[#C8B085]/20 to-[#C8B085]/40 transition-all duration-500 ease-out flex items-center justify-end"
+                      style={{ width: `${loadingProgress}%` }}
+                    >
+                      {/* Glowing Leading Edge */}
+                      <div className="h-full w-[2px] bg-[#C8B085] shadow-[0_0_15px_2px_#C8B085]" />
                     </div>
-                    <span className="tracking-[0.2em]">{loadingMessage || "PROCESSING..."}</span>
-                    <span className="font-barlow-numeric text-[11px] text-white bg-black/40 px-2 py-0.5 rounded border border-[#C8B085]/30 shadow-inner">
-                      {loadingProgress}%
-                    </span>
-                  </>
-                ) : backendStatus === "sleeping" ? (
-                  <>
-                    <div className="orbital-loader mr-1 scale-75 text-zinc-400">
-                      <div className="orbital-dot" />
-                      <div className="orbital-dot" style={{ animationDelay: '-1s' }} />
-                    </div>
-                    <span className="animate-pulse tracking-[0.2em]">BOOTING...</span>
-                  </>
-                ) : (
-                  <>
-                    {step === 1
-                      ? lang === "zh"
-                        ? "登入並同步"
-                        : "LOGIN & SYNC"
-                      : lang === "zh"
-                        ? "確認匯入"
-                        : "CONFIRM IMPORT"}
-                    <CheckCircle2 size={14} />
+                    {/* Shimmer overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-[shimmer-bar_1.5s_infinite]" style={{ width: '200%' }} />
                   </>
                 )}
-              </span>
-            </button>
+
+                <span className="relative z-10 flex items-center gap-3">
+                  {status === "loading" ? (
+                    <>
+                      <div className="relative w-4 h-4 flex items-center justify-center">
+                        <div className="absolute inset-0 rounded-full border border-[#C8B085]/30 animate-ping" style={{ animationDuration: '2s' }} />
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#C8B085] animate-pulse shadow-[0_0_8px_#C8B085]" />
+                      </div>
+                      <span className="tracking-[0.2em]">{loadingMessage || "PROCESSING..."}</span>
+                      <span className="font-barlow-numeric text-[11px] text-white bg-black/40 px-2 py-0.5 rounded border border-[#C8B085]/30 shadow-inner">
+                        {loadingProgress}%
+                      </span>
+                    </>
+                  ) : backendStatus === "sleeping" ? (
+                    <>
+                      <div className="orbital-loader mr-1 scale-75 text-zinc-400">
+                        <div className="orbital-dot" />
+                        <div className="orbital-dot" style={{ animationDelay: '-1s' }} />
+                      </div>
+                      <span className="animate-pulse tracking-[0.2em]">BOOTING...</span>
+                    </>
+                  ) : (
+                    <>
+                      {step === 1
+                        ? lang === "zh"
+                          ? "登入並同步"
+                          : "LOGIN & SYNC"
+                        : lang === "zh"
+                          ? "確認匯入"
+                          : "CONFIRM IMPORT"}
+                      <CheckCircle2 size={14} />
+                    </>
+                  )}
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
         </div>
       </div>
 

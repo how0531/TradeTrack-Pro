@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.7] - 2026-02-26
+
+### Fixed
+
+- **同步資料顯示異常**：修復 API 回傳特定日期格式 (如 `.` 或 `/`) 導致 Safari/iOS 時間軸位移與無回退渲染的錯誤，全面正規化日期為 `YYYY-MM-DD` 並統一至當地時間顯示，解決圓圈標記無法顯示的問題。
+
 ## [2.5.6] - 2026-02-25
 
 ### Changed
