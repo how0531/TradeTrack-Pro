@@ -14,26 +14,119 @@ interface BrokerSettingsProps {
     lang: 'zh' | 'en';
 }
 
+// S3: Login flow state management via useReducer
+interface LoginFlowState {
+    isTesting: boolean;
+    errorMsg: string | null;
+    progressMsg: string;
+    loginProgress: {
+        phase: 'idle' | 'waking' | 'connecting' | 'authenticating' | 'listing' | 'done';
+        message: string;
+        startTime: number | null;
+    };
+    fieldErrors: Record<string, boolean>;
+    loginStep: 1 | 2;
+    loginResult: {
+        show: boolean;
+        successCount: number;
+        failCount: number;
+        accounts: { name: string; success: boolean; error?: string }[];
+    } | null;
+    accountChoices: any[];
+    isVerifying: string | null;
+    errorConfigId: string | null;
+}
+
+type LoginFlowAction =
+    | { type: 'LOGIN_START' }
+    | { type: 'SET_PROGRESS'; phase: LoginFlowState['loginProgress']['phase']; message: string }
+    | { type: 'SET_PROGRESS_MSG'; msg: string }
+    | { type: 'SET_ERROR'; message: string; configId?: string | null }
+    | { type: 'CLEAR_ERROR' }
+    | { type: 'SET_FIELD_ERRORS'; errors: Record<string, boolean> }
+    | { type: 'CLEAR_FIELD_ERRORS' }
+    | { type: 'SET_ACCOUNTS'; accounts: any[] }
+    | { type: 'UPDATE_ACCOUNT'; accountId: string; updates: Record<string, any> }
+    | { type: 'LOGIN_DONE'; progressMsg?: string }
+    | { type: 'LOGIN_FAIL'; error: string }
+    | { type: 'LOGIN_RESET' }
+    | { type: 'SET_STEP'; step: 1 | 2 }
+    | { type: 'SET_RESULT'; result: LoginFlowState['loginResult'] }
+    | { type: 'VERIFY_START'; accountId: string }
+    | { type: 'VERIFY_END' }
+    | { type: 'EDIT_INIT'; clearError: boolean };
+
+const initialLoginFlow: LoginFlowState = {
+    isTesting: false,
+    errorMsg: null,
+    progressMsg: '',
+    loginProgress: { phase: 'idle', message: '', startTime: null },
+    fieldErrors: {},
+    loginStep: 1,
+    loginResult: null,
+    accountChoices: [],
+    isVerifying: null,
+    errorConfigId: null,
+};
+
+function loginFlowReducer(state: LoginFlowState, action: LoginFlowAction): LoginFlowState {
+    switch (action.type) {
+        case 'LOGIN_START':
+            return { ...state, isTesting: true, errorMsg: null, progressMsg: '', accountChoices: [], fieldErrors: {} };
+        case 'SET_PROGRESS':
+            return { ...state, loginProgress: { phase: action.phase, message: action.message, startTime: Date.now() } };
+        case 'SET_PROGRESS_MSG':
+            return { ...state, progressMsg: action.msg };
+        case 'SET_ERROR':
+            return { ...state, errorMsg: action.message, errorConfigId: action.configId !== undefined ? action.configId : state.errorConfigId };
+        case 'CLEAR_ERROR':
+            return { ...state, errorMsg: null };
+        case 'SET_FIELD_ERRORS':
+            return { ...state, fieldErrors: action.errors, errorMsg: '請填寫所有必填欄位', isTesting: false };
+        case 'CLEAR_FIELD_ERRORS':
+            return { ...state, fieldErrors: {} };
+        case 'SET_ACCOUNTS':
+            return { ...state, accountChoices: action.accounts };
+        case 'UPDATE_ACCOUNT':
+            return { ...state, accountChoices: state.accountChoices.map(a => a.account_id === action.accountId ? { ...a, ...action.updates } : a) };
+        case 'LOGIN_DONE':
+            return { ...state, isTesting: false, progressMsg: action.progressMsg || '', loginProgress: { phase: 'done', message: '登入成功', startTime: null } };
+        case 'LOGIN_FAIL':
+            return { ...state, isTesting: false, progressMsg: '', errorMsg: action.error, loginProgress: { phase: 'idle', message: '', startTime: null } };
+        case 'LOGIN_RESET':
+            return { ...state, isTesting: false, progressMsg: '', loginProgress: { phase: 'idle', message: '', startTime: null } };
+        case 'SET_STEP':
+            return { ...state, loginStep: action.step };
+        case 'SET_RESULT':
+            return { ...state, loginResult: action.result };
+        case 'VERIFY_START':
+            return { ...state, isVerifying: action.accountId, errorMsg: null, progressMsg: '正在執行 Python 模擬下單驗證 API 權限...' };
+        case 'VERIFY_END':
+            return { ...state, isVerifying: null };
+        case 'EDIT_INIT':
+            return { ...state, accountChoices: [], loginStep: 1, loginResult: null, errorMsg: action.clearError ? null : state.errorMsg };
+        default:
+            return state;
+    }
+}
+
 export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: BrokerSettingsProps) => {
     const [isEditing, setIsEditing] = useState<string | 'new' | null>(null);
     const [localConfig, setLocalConfig] = useState<BrokerConfig | null>(null);
-    const [isTesting, setIsTesting] = useState(false);
-    const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [showSecrets, setShowSecrets] = useState(false);
     const [showApiHelper, setShowApiHelper] = useState(false);
-    const [accountChoices, setAccountChoices] = useState<any[]>([]);
+
+    // S3: useReducer 管理登入流程相關 state
+    const [loginFlow, dispatch] = React.useReducer(loginFlowReducer, initialLoginFlow);
+    const { isTesting, errorMsg, progressMsg, loginProgress, fieldErrors: errors, loginStep,
+            loginResult, accountChoices, isVerifying, errorConfigId } = loginFlow;
 
     // New state for backend health check
     const [backendStatus, setBackendStatus] = useState<'ready' | 'server_only' | 'offline' | 'checking' | 'sleeping'>('checking');
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [deleteTarget, setDeleteTarget] = useState<{ configId: string, accountIndex: number } | null>(null);
-    const [isVerifying, setIsVerifying] = useState<string | null>(null); // New: track verification per accountId
     const [uploadConfigId, setUploadConfigId] = useState<string | null>(null); // Track which config for CA upload
-    const [errorConfigId, setErrorConfigId] = useState<string | null>(null); // Track which config caused the error
 
-    // Derived state for button type
-    const [errors, setErrors] = useState<Record<string, boolean>>({});
-    const [progressMsg, setProgressMsg] = useState<string>(''); // Track login progress
     // 登入狀態追蹤（支援詳細階段）
     const [accountLoginStatus, setAccountLoginStatus] = useState<Record<string, {
         phase: 'connecting' | 'authenticating' | 'fetching_data' | 'success' | 'error',
@@ -41,25 +134,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         error?: string
     }>>({});
 
-    // ===== 優化新增狀態 =====
-    // Stepper：控制登入 Modal 顯示哪一步
-    const [loginStep, setLoginStep] = useState<1 | 2>(1);
-    // 結構化進度：替代簡單的 progressMsg 字串
-    const [loginProgress, setLoginProgress] = useState<{
-        phase: 'idle' | 'waking' | 'connecting' | 'authenticating' | 'listing' | 'done',
-        message: string,
-        startTime: number | null
-    }>({ phase: 'idle', message: '', startTime: null });
     // 計時器：顯示已等待秒數
     const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
-    // 登入成功結果摘要
-    const [loginResult, setLoginResult] = useState<{
-        show: boolean,
-        successCount: number,
-        failCount: number,
-        accounts: { name: string, success: boolean, error?: string }[]
-    } | null>(null);
 
     const emptyConfig: BrokerConfig = {
         id: '',
@@ -118,17 +195,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const handleStartEdit = (id: string | 'new') => {
         if (id === 'new') {
             setLocalConfig({ ...emptyConfig, id: Math.random().toString(36).substr(2, 9) });
-            setErrorMsg(null); // 新建時清除舊錯誤
+            dispatch({ type: 'EDIT_INIT', clearError: true });
         } else {
             const config = configs.find(c => c.id === id);
             if (config) setLocalConfig({ ...config });
-            // 編輯既有帳號時保留錯誤訊息，讓用戶知道為什麼失敗
-            if (errorConfigId !== id) setErrorMsg(null);
+            dispatch({ type: 'EDIT_INIT', clearError: errorConfigId !== id });
         }
         setIsEditing(id);
-        setAccountChoices([]);
-        setLoginStep(1); // 重置 Stepper 回第一步
-        setLoginResult(null); // 清除上次結果
     };
 
     // ===== 錯誤分類器：將技術性錯誤轉為友善訊息 =====
@@ -204,9 +277,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
     const handleTestConnection = async () => {
         if (!localConfig) return;
-        setIsTesting(true);
-        setErrorMsg(null);
-        setAccountChoices([]);
+        dispatch({ type: 'LOGIN_START' });
         startElapsedTimer();
 
         // Validation
@@ -219,28 +290,22 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         if (!localConfig.caPassword) newErrors.caPassword = true;
 
         if (Object.keys(newErrors).length > 0) {
-            setErrors(newErrors);
-            setErrorMsg('請填寫所有必填欄位');
-            setIsTesting(false);
+            dispatch({ type: 'SET_FIELD_ERRORS', errors: newErrors });
             stopElapsedTimer();
             return;
         }
-        setErrors({});
+        dispatch({ type: 'CLEAR_FIELD_ERRORS' });
 
         try {
             // 階段 1: 喚醒後端（如果已 ready 則跳過）
             if (backendStatus !== 'ready') {
-                setLoginProgress({ phase: 'waking', message: '正在喚醒後端伺服器...', startTime: Date.now() });
-                setProgressMsg('🔄 正在喚醒後端伺服器...');
-                setErrorMsg(null);
+                dispatch({ type: 'SET_PROGRESS', phase: 'waking', message: '正在喚醒後端伺服器...' });
+                dispatch({ type: 'SET_PROGRESS_MSG', msg: '🔄 正在喚醒後端伺服器...' });
 
                 const wakeResult = await wakeUpBackend();
                 if (!wakeResult.success) {
                     const classified = classifyError(wakeResult.error || 'Backend unreachable');
-                    setErrorMsg(classified.message);
-                    setIsTesting(false);
-                    setProgressMsg('');
-                    setLoginProgress({ phase: 'idle', message: '', startTime: null });
+                    dispatch({ type: 'LOGIN_FAIL', error: classified.message });
                     stopElapsedTimer();
                     return;
                 }
@@ -248,33 +313,31 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             }
 
             // 階段 2: 連接券商 API
-            setLoginProgress({ phase: 'connecting', message: '正在連接券商 API...', startTime: Date.now() });
-            setProgressMsg('🔑 正在驗證憑證與連線...');
+            dispatch({ type: 'SET_PROGRESS', phase: 'connecting', message: '正在連接券商 API...' });
+            dispatch({ type: 'SET_PROGRESS_MSG', msg: '🔑 正在驗證憑證與連線...' });
 
             // 短暫延遲讓狀態變化可見
             await new Promise(r => setTimeout(r, 200));
 
             // 階段 3: 驗證身份
-            setLoginProgress({ phase: 'authenticating', message: '正在驗證身份...', startTime: Date.now() });
-            setProgressMsg('🔐 正在驗證身份...');
+            dispatch({ type: 'SET_PROGRESS', phase: 'authenticating', message: '正在驗證身份...' });
+            dispatch({ type: 'SET_PROGRESS_MSG', msg: '🔐 正在驗證身份...' });
 
             const result = await fetchBrokerProfile(localConfig, (msg) => {
-                setProgressMsg(msg);
+                dispatch({ type: 'SET_PROGRESS_MSG', msg });
             });
 
             // 階段 4: 取得帳號列表
-            setLoginProgress({ phase: 'listing', message: '正在取得帳號列表...', startTime: Date.now() });
+            dispatch({ type: 'SET_PROGRESS', phase: 'listing', message: '正在取得帳號列表...' });
 
             if (result.status === 'multiple_accounts' && result.accounts) {
-                setAccountChoices(result.accounts);
+                dispatch({ type: 'SET_ACCOUNTS', accounts: result.accounts });
 
                 // Track which ones are signed
                 const signedIds = result.accounts.filter((a: any) => a.signed).map((a: any) => a.account_id).join(',');
                 if (localConfig) setLocalConfig({ ...localConfig, signedAccounts: signedIds });
 
-                setProgressMsg('');
-                setLoginProgress({ phase: 'done', message: '已取得帳號列表', startTime: null });
-                setIsTesting(false);
+                dispatch({ type: 'LOGIN_DONE' });
                 stopElapsedTimer();
                 return;
             }
@@ -301,24 +364,19 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             if (isEditing === 'new') onAdd(updated);
             else onUpdate(localConfig.id, updated);
 
-            setLoginProgress({ phase: 'done', message: '登入成功', startTime: null });
+            dispatch({ type: 'LOGIN_DONE' });
             setIsEditing(null);
-            setIsTesting(false);
-            setAccountChoices([]);
-            setProgressMsg('');
+            dispatch({ type: 'SET_ACCOUNTS', accounts: [] });
             stopElapsedTimer();
         } catch (error: any) {
             const rawMsg = error?.message || '連線失敗 (Connection failed)';
             const classified = classifyError(rawMsg);
-            setErrorMsg(classified.message);
+            dispatch({ type: 'LOGIN_FAIL', error: classified.message });
 
             // 網路錯誤時嘗試預喚醒
             if (classified.action === 'retry') {
                 pingBackend();
             }
-            setIsTesting(false);
-            setProgressMsg('');
-            setLoginProgress({ phase: 'idle', message: '', startTime: null });
             stopElapsedTimer();
         }
     };
@@ -343,10 +401,10 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
             if (localConfig?.id === configId) setLocalConfig(updated);
 
             // Clear error if it was a path error
-            if (errorMsg?.includes('找不到憑證')) setErrorMsg(null);
+            if (errorMsg?.includes('找不到憑證')) dispatch({ type: 'CLEAR_ERROR' });
 
             // Auto-retry verification if this was a fix action
-            setProgressMsg('憑證上傳成功，正在重新嘗試驗證...');
+            dispatch({ type: 'SET_PROGRESS_MSG', msg: '憑證上傳成功，正在重新嘗試驗證...' });
             setTimeout(() => {
                 handleVerifyAccount(updated, configId);
             }, 800);
@@ -356,9 +414,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
     const handleVerifyAccount = async (config: BrokerConfig, accountId: string) => {
         // 後端 verify_simulation_account 永遠使用 simulation=True 登入，所以任何環境都可以安全使用
-        setIsVerifying(accountId);
-        setErrorMsg(null);
-        setProgressMsg('正在執行 Python 模擬下單驗證 API 權限...');
+        dispatch({ type: 'VERIFY_START', accountId });
 
         try {
             const result = await verifyBrokerAccount(config, accountId);
@@ -372,25 +428,21 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                     onUpdate(config.id, updated);
                 }
                 // 更新 accountChoices 中的 signed 狀態
-                setAccountChoices(prev => prev.map(a =>
-                    a.account_id === accountId ? { ...a, signed: true } : a
-                ));
-                setProgressMsg('✅ 驗證成功！');
-                setTimeout(() => setProgressMsg(''), 3000);
+                dispatch({ type: 'UPDATE_ACCOUNT', accountId, updates: { signed: true } });
+                dispatch({ type: 'SET_PROGRESS_MSG', msg: '✅ 驗證成功！' });
+                setTimeout(() => dispatch({ type: 'SET_PROGRESS_MSG', msg: '' }), 3000);
             } else if (result.status === 'pending') {
-                setProgressMsg(result.message || '測試訂單已送出，請等待 5 分鐘後重新檢查。');
-                setTimeout(() => setProgressMsg(''), 8000);
+                dispatch({ type: 'SET_PROGRESS_MSG', msg: result.message || '測試訂單已送出，請等待 5 分鐘後重新檢查。' });
+                setTimeout(() => dispatch({ type: 'SET_PROGRESS_MSG', msg: '' }), 8000);
             } else {
-                setErrorMsg(result.message || '驗證失敗');
-                setErrorConfigId(config.id);
-                setProgressMsg('');
+                dispatch({ type: 'SET_ERROR', message: result.message || '驗證失敗', configId: config.id });
+                dispatch({ type: 'SET_PROGRESS_MSG', msg: '' });
             }
         } catch (err: any) {
-            setErrorMsg(err.message || '連線錯誤');
-            setErrorConfigId(config.id);
-            setProgressMsg('');
+            dispatch({ type: 'SET_ERROR', message: err.message || '連線錯誤', configId: config.id });
+            dispatch({ type: 'SET_PROGRESS_MSG', msg: '' });
         } finally {
-            setIsVerifying(null);
+            dispatch({ type: 'VERIFY_END' });
         }
     };
 
@@ -758,7 +810,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 <div className="relative flex flex-col items-center">
                                     <button
                                         type="button"
-                                        onClick={() => !isTesting && setLoginStep(1)}
+                                        onClick={() => !isTesting && dispatch({ type: 'SET_STEP', step: 1 })}
                                         className={`w-8 h-8 rounded-full z-10 relative flex items-center justify-center text-[11px] font-bold transition-all duration-300 border-2 bg-[#1C1E22] shrink-0
                                             ${loginStep > 1
                                                 ? 'border-emerald-500/60 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
@@ -784,7 +836,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 <div className="relative flex flex-col items-center">
                                     <button
                                         type="button"
-                                        onClick={() => !isTesting && setLoginStep(2)}
+                                        onClick={() => !isTesting && dispatch({ type: 'SET_STEP', step: 2 })}
                                         className={`w-8 h-8 rounded-full z-10 relative flex items-center justify-center text-[11px] font-bold transition-all duration-300 border-2 bg-[#1C1E22] shrink-0
                                             ${loginStep === 2
                                                 ? 'border-[#C8B085] text-[#C8B085] shadow-[0_0_12px_rgba(200,176,133,0.3)]'
@@ -1147,7 +1199,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 <button onClick={handleSave} className="w-full sm:w-auto flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10 order-2 sm:order-1">僅儲存</button>
                             ) : (
                                 <button
-                                    onClick={() => setLoginStep(prev => Math.max(1, prev - 1) as 1 | 2)}
+                                    onClick={() => dispatch({ type: 'SET_STEP', step: Math.max(1, loginStep - 1) as 1 | 2 })}
                                     className="w-full sm:w-auto flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10 order-2 sm:order-1 flex items-center justify-center gap-1"
                                 >
                                     <ChevronRight size={12} className="rotate-180" /> 上一步
@@ -1157,7 +1209,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             {accountChoices.length === 0 && (
                                 loginStep < 2 ? (
                                     <button
-                                        onClick={() => setLoginStep(prev => Math.min(2, prev + 1) as 1 | 2)}
+                                        onClick={() => dispatch({ type: 'SET_STEP', step: Math.min(2, loginStep + 1) as 1 | 2 })}
                                         className="w-full sm:w-auto flex-[2] py-4 px-8 rounded-2xl bg-[#C8B085] text-black hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 order-1 sm:order-2"
                                     >
                                         <span>下一步</span> <ChevronRight size={14} />
@@ -1188,8 +1240,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             </div>
                             <button
                                 onClick={() => {
-                                    setAccountChoices([]);
-                                    setErrorMsg(null);
+                                    dispatch({ type: 'SET_ACCOUNTS', accounts: [] });
+                                    dispatch({ type: 'CLEAR_ERROR' });
                                 }}
                                 className="p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
                             >
@@ -1454,7 +1506,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
                         <div className="p-5 border-t border-white/5 bg-zinc-900/50 flex gap-3">
                             <button
-                                onClick={() => setAccountChoices([])}
+                                onClick={() => dispatch({ type: 'SET_ACCOUNTS', accounts: [] })}
                                 className="flex-1 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white font-bold text-sm transition-all"
                             >
                                 取消
@@ -1463,9 +1515,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 disabled={selectedIds.length === 0}
                                 onClick={async () => {
                                     // ✅ 直接使用 accountChoices（multiple_accounts 回應），不再逐帳號呼叫後端
-                                    setIsTesting(true);
-                                    setErrorMsg(null);
-                                    setProgressMsg('');
+                                    dispatch({ type: 'LOGIN_START' });
 
                                     try {
                                         if (!localConfig) return;
@@ -1477,7 +1527,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         }
 
                                         // 直接從 accountChoices 建構帳號資訊（無需額外 API 呼叫）
-                                        setProgressMsg(`正在設定 ${selectedAccounts.length} 個帳號...`);
+                                        dispatch({ type: 'SET_PROGRESS_MSG', msg: `正在設定 ${selectedAccounts.length} 個帳號...` });
 
                                         // 為所有帳號立即標記成功
                                         const allStatus: Record<string, {
@@ -1606,19 +1656,17 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             };
                                         });
 
-                                        setLoginResult({
+                                        dispatch({ type: 'SET_RESULT', result: {
                                             show: true,
                                             successCount: selectedAccounts.length,
                                             failCount: 0,
                                             accounts: resultAccounts
-                                        });
+                                        } });
 
-                                        setProgressMsg('');
-                                        setIsTesting(false);
+                                        dispatch({ type: 'LOGIN_DONE' });
                                     } catch (error: any) {
                                         const classified = classifyError(error?.message || '設定失敗');
-                                        setErrorMsg(classified.message);
-                                        setIsTesting(false);
+                                        dispatch({ type: 'LOGIN_FAIL', error: classified.message });
                                         setAccountLoginStatus({});
                                     }
                                 }}
@@ -1687,11 +1735,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                         <div className="p-5 border-t border-white/5 bg-zinc-900/50">
                             <button
                                 onClick={() => {
-                                    setLoginResult(null);
+                                    dispatch({ type: 'SET_RESULT', result: null });
                                     setIsEditing(null);
-                                    setAccountChoices([]);
+                                    dispatch({ type: 'SET_ACCOUNTS', accounts: [] });
                                     setAccountLoginStatus({});
-                                    setErrorMsg('');
+                                    dispatch({ type: 'CLEAR_ERROR' });
                                 }}
                                 className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${loginResult.failCount === 0
                                     ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-[0_0_20px_rgba(16,185,129,0.2)]'
