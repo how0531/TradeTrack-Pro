@@ -14,7 +14,7 @@ import { TrendingUp, Activity, Eye, EyeOff, Filter, Cloud, CloudOff, RefreshCw, 
 import { THEME, I18N } from './constants';
 import { Trade, ViewMode, TimeRange, Frequency } from './types';
 import { getLocalDateStr, formatDecimal, formatCompactNumber } from './utils/format';
-import { calculateMetrics } from './utils/calculations';
+import { calculateMetrics, safeDateParse } from './utils/calculations';
 import { pingBackend } from './services/brokerService';
 
 // Components & Pages
@@ -147,7 +147,7 @@ function MainApp() {
         const end = new Date(year, month + 1, 0, 23, 59, 59);
         
         const monthlyTrades = trades.filter(t => {
-            const d = new Date(t.date);
+            const d = safeDateParse(t.date);
             return d >= start && d <= end;
         });
         

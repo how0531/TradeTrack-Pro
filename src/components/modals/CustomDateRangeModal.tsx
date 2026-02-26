@@ -3,6 +3,7 @@ import { X, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { I18N } from '../../constants';
 import { Lang } from '../../types';
 import { getLocalDateStr } from '../../utils/format';
+import { safeDateParse } from '../../utils/calculations';
 
 interface CustomDateRangeModalProps {
     isOpen: boolean;
@@ -35,7 +36,7 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
 
             // 根據起始日定位月曆顯示月份
             if (initialRange.start) {
-                const d = new Date(initialRange.start);
+                const d = safeDateParse(initialRange.start);
                 if (!isNaN(d.getTime())) {
                     setViewDate(new Date(d.getFullYear(), d.getMonth(), 1));
                 }
@@ -97,7 +98,7 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
             if (normalized.length === 8 && !normalized.includes('-')) {
                 normalized = `${normalized.substring(0, 4)}-${normalized.substring(4, 6)}-${normalized.substring(6, 8)}`;
             }
-            const d = new Date(normalized);
+            const d = safeDateParse(normalized);
             if (!isNaN(d.getTime())) {
                 const ds = getLocalDateStr(d);
                 if (editMode === 'start') {
@@ -130,7 +131,7 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
     // 友善的日期顯示格式 (2026/02/24)
     const formatDisplay = (dateStr: string | null): string => {
         if (!dateStr) return '—';
-        const d = new Date(dateStr);
+        const d = safeDateParse(dateStr);
         if (isNaN(d.getTime())) return dateStr;
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, '0');

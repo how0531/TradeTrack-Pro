@@ -4,6 +4,7 @@ import { Scroll, Trash2, Edit2, Calendar, ArrowUpDown, StickyNote } from 'lucide
 import { Trade, LogsViewProps, Lang } from '../../types';
 import { I18N } from '../../constants';
 import { formatCompactNumber, formatDate, formatPointsDisplay } from '../../utils/format';
+import { safeDateParse } from '../../utils/calculations';
 import { formatSymbolCode } from '../../utils/symbolNames';
 import { vibrate } from '../../utils/haptics';
 
@@ -263,7 +264,7 @@ export const LogsView = ({ trades, lang, hideAmounts, portfolios, onEdit, onDele
 
     const sortedTrades = useMemo(() => {
         const sorted = [...filteredTrades];
-        if (sortType === 'date') return sorted.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || (b.id || '').localeCompare(a.id || ''));
+        if (sortType === 'date') return sorted.sort((a, b) => safeDateParse(b.date).getTime() - safeDateParse(a.date).getTime() || (b.id || '').localeCompare(a.id || ''));
         if (sortType === 'pnl_high') return sorted.sort((a, b) => b.pnl - a.pnl);
         if (sortType === 'pnl_low') return sorted.sort((a, b) => a.pnl - b.pnl);
         return sorted;

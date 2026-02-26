@@ -5,6 +5,7 @@ import { useSync } from '../hooks/useSync';
 import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { detectDuplicates, mergeDuplicates, DuplicateGroup, DetectionOptions } from '../utils/duplicateDetection';
+import { safeDateParse } from '../utils/calculations';
 import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams } from '../types';
 import { db, resetFirestoreCache } from '../firebaseConfig';
 import { doc, setDoc } from 'firebase/firestore';
@@ -336,7 +337,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (data.trades) {
                 const tradeMap = new Map(trades.map(t => [t.id, t]));
                 data.trades.forEach((t: Trade) => tradeMap.set(t.id, t));
-                const merged = Array.from(tradeMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                const merged = Array.from(tradeMap.values()).sort((a, b) => safeDateParse(b.date).getTime() - safeDateParse(a.date).getTime());
                 setTrades(merged);
             }
             if (data.strategies) {
