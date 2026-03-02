@@ -57,16 +57,22 @@ export const useMetrics = (
         }
 
         const result = filtered.filter(t => {
+            if (!t.date) return false; // 🛡️ 跳過無日期的交易
             if (!startDate) return true;
             // Safari bug: 'YYYY-MM-DD' parses as UTC which can shift days. 'YYYY/MM/DD' forces local time.
-            const safeDateStr = (t.date || '').replace(/-/g, '/');
+            const safeDateStr = t.date.replace(/-/g, '/');
             const d = new Date(safeDateStr);
+            if (isNaN(d.getTime())) return false; // 🛡️ 跳過無效日期
             if (endDate) return d >= startDate && d <= endDate;
             return d >= startDate;
         });
 
-        // Sort descending by date
-        return result.sort((a, b) => new Date((b.date || '').replace(/-/g, '/')).getTime() - new Date((a.date || '').replace(/-/g, '/')).getTime());
+        // Sort descending by date (with NaN guard)
+        return result.sort((a, b) => {
+            const ta = new Date((b.date || '').replace(/-/g, '/')).getTime() || 0;
+            const tb = new Date((a.date || '').replace(/-/g, '/')).getTime() || 0;
+            return ta - tb;
+        });
 
     }, [trades, activePortfolioIds, filterStrategy, filterEmotion, timeRange, customRange]);
 
@@ -105,6 +111,7 @@ export const useMetrics = (
         const map: Record<string, number> = {};
         filteredTrades.forEach(t => {
             const date = (t.date || '').replace(/[\.\/]/g, '-');
+            if (!date || date.length < 8) return; // 🛡️ 跳過無效日期格式
             map[date] = (map[date] || 0) + (Number(t.pnl) || 0);
         });
         return map;

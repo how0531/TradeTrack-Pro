@@ -176,15 +176,20 @@ def login_and_fetch_pnl(
             }
 
         # Optimization #18: Proactive CA Verification Probe
-        # Non-fatal check: verify CA is functional before PnL fetch
-        ca_is_active = manager.ensure_ca_active(final_ca_path, ca_password, person_id)
+        # 🔧 FIX: 不再重複呼叫 ensure_ca_active（L62 已執行），直接使用既有結果
+        # 🔧 FIX: CA probe 只針對期貨帳號，股票帳號不支援 margin()
         if ca_is_active and valid_accounts:
             try:
-                api.margin(valid_accounts[0])
-                log("✅ [CA Probe] CA is active and functional.")
+                futures_acc = next((a for a in valid_accounts if "F" in str(getattr(a, "account_type", "")).upper()), None)
+                if futures_acc:
+                    api.margin(futures_acc)
+                    log("✅ [CA Probe] CA is active and functional (futures account).")
+                else:
+                    # 股票帳號用 list_positions 測試 CA
+                    api.list_positions(valid_accounts[0])
+                    log("✅ [CA Probe] CA is active and functional (stock account).")
             except Exception as probe_err:
-                log(f"⚠️ [CA Probe] CA active but probe failed: {probe_err}")
-                # Non-fatal: some accounts might fail probe but still allow PnL queries.
+                log(f"⚠️ [CA Probe] CA probe non-fatal failure: {probe_err}")
 
         # 4. Fetch PnL — Sequential Execution
         # Default dates
@@ -328,9 +333,14 @@ def login_and_fetch_pnl(
                 for item in pnl_data:
                     try:
                         code = getattr(item, "code", "Unknown")
-                        item_date = str(getattr(item, "date", ""))
-                        if len(item_date) == 8:
-                            item_date = f"{item_date[:4]}-{item_date[4:6]}-{item_date[6:]}"
+                        # 🛡️ 強化日期解析：支援 datetime.date / "20250401" / "2025-04-01"
+                        raw_date = getattr(item, "date", "")
+                        if hasattr(raw_date, 'strftime'):
+                            item_date = raw_date.strftime("%Y-%m-%d")
+                        else:
+                            item_date = str(raw_date).strip()
+                            if len(item_date) == 8 and item_date.isdigit():
+                                item_date = f"{item_date[:4]}-{item_date[4:6]}-{item_date[6:]}"
                         
                         raw_qty = int(getattr(item, "quantity", 0))
                         # pnl from Shioaji is ALWAYS in NTD for both Stock and Futures
@@ -377,8 +387,19 @@ def login_and_fetch_pnl(
                             price = entry_price
                             
                             # 自行計算報酬率 (期貨沒有 pr_ratio)
+                            # 🔧 FIX: 加入合約乘數，避免報酬率異常（如 200% → 實際 1%）
                             if entry_price > 0 and raw_qty > 0:
-                                denom = entry_price * raw_qty
+                                upper_code = str(code).upper()
+                                contract_multiplier = 200  # 台指期預設
+                                if 'MTX' in upper_code or '小台' in upper_code: contract_multiplier = 50
+                                elif 'MTE' in upper_code or '小電' in upper_code: contract_multiplier = 500
+                                elif 'TE' in upper_code or '電子' in upper_code: contract_multiplier = 4000
+                                elif 'TF' in upper_code or '金融' in upper_code: contract_multiplier = 1000
+                                elif 'T5F' in upper_code or '櫃買' in upper_code: contract_multiplier = 100
+                                elif 'XIF' in upper_code or '東證' in upper_code: contract_multiplier = 200
+                                elif 'GTF' in upper_code or '黃金' in upper_code: contract_multiplier = 100
+                                elif 'UNF' in upper_code or '非金電' in upper_code: contract_multiplier = 200
+                                denom = entry_price * raw_qty * contract_multiplier
                                 if denom > 0:
                                     pr_ratio_val = round((realized / denom) * 100, 2)
                             

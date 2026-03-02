@@ -27,7 +27,7 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
     // Sync State
     // Sync State
     const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
-    const { trades, activeBrokerConfig, updateBrokerConfig, actions, activePortfolioIds, activeBrokerId, autoSyncParams, setAutoSyncParams } = useTradeContext();
+    const { trades, activeBrokerConfig, updateBrokerConfig, actions, activePortfolioIds, setActivePortfolioIds, activeBrokerId, autoSyncParams, setAutoSyncParams } = useTradeContext();
 
     // Auto-Open Modal if params exist
     useEffect(() => {
@@ -86,21 +86,33 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
              strategy: tx.strategy || '',
              emotion: tx.emotion || '',
              note: tx.note,
-             portfolioId: tx.portfolioId,
-             // 🛡️ Data Integrity Hardening: Persist Critical Fields
+             portfolioId: tx.portfolioId || 'main', // 🛡️ 防護：空 portfolioId 回退到 main
+             // 🛡️ Data Integrity Hardening: Persist ALL Critical Fields
              code: tx.code,
              quantity: tx.quantity,
              entryPrice: tx.entryPrice,
              exitPrice: tx.exitPrice,
              category: tx.category,
-             orderNo: tx.orderNo
+             orderNo: tx.orderNo,
+             price: tx.price,
+             raw_yield: tx.raw_yield,
+             yield: tx.yield,
+             points: tx.points,
          }));
 
          try {
              await actions.saveTrades(newTrades);
              console.log("✅ [IMPORT] Successfully saved all items to IndexedDB");
-             // Double check count in console for user verification
-             console.table(newTrades.map(t => ({ date: t.date, pnl: t.pnl, id: t.id })));
+             console.table(newTrades.map(t => ({ date: t.date, pnl: t.pnl, id: t.id, portfolioId: t.portfolioId })));
+
+             // 🔧 FIX: 確保匯入的 portfolioId 都在 activePortfolioIds 中
+             // 否則 useMetrics 會將這些交易全部過濾掉，導致權益曲線/紀錄/日曆不顯示
+             const importedPids = [...new Set(newTrades.map(t => t.portfolioId).filter(Boolean))] as string[];
+             const missingPids = importedPids.filter(pid => !activePortfolioIds.includes(pid));
+             if (missingPids.length > 0) {
+                 console.log(`🔧 [IMPORT] 自動啟用帳戶組合: ${missingPids.join(', ')}`);
+                 setActivePortfolioIds([...activePortfolioIds, ...missingPids]);
+             }
          } catch (error) {
              console.error("❌ [IMPORT] Failed to bulk save:", error);
              alert("匯入失敗：資料庫寫入錯誤");

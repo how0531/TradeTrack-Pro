@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.8] - 2026-03-02
+
+### Fixed
+
+- **匯入資料不顯示修正**：修復手機板匯入交易損益後，權益曲線、紀錄、日曆全部空白的核心問題。根因為 `portfolioId` 未加入 `activePortfolioIds`，導致 `useMetrics` 全數過濾。
+- **匯入欄位遺漏**：`handleSyncSuccess` 補齊 `price`、`raw_yield`、`yield`、`points` 四個關鍵欄位，避免 LogsView 報酬率/點數顯示空白。
+- **後端日期解析強化**：`pnl.py` 支援 `datetime.date` 物件、`20250401`、`2025-04-01` 三種格式，解決跨格式 NaN 問題。
+- **CA 重複啟動移除**：`ensure_ca_active` 由 2 次呼叫精簡為 1 次，減少 ~500ms 延遲並降低 Shioaji 狀態異常風險。
+- **CA Probe 帳號篩選**：期貨帳號用 `margin()` 偵測、股票帳號改用 `list_positions()`，消除股票帳號的誤報警告。
+- **期貨報酬率修正**：加入合約乘數（台指期 200、小台 50、電子期 4000 等），修正異常的 200% 為合理的 ~1%。
+- **Safari 日期時區修正**：`SyncDateModal` 使用 `/` 分隔符強制本地時間解析，避免 iOS Safari 日期偏移。
+- **useMetrics 防護強化**：過濾無效/空日期交易、NaN 排序防護、dailyPnlMap 日期格式驗證。
+
 ## [2.5.7] - 2026-02-26
 
 ### Fixed

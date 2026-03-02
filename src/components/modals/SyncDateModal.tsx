@@ -383,8 +383,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       setLoadingProgress(30);
       setLoadingMessage("正在登入券商 API...");
       const step2Start = performance.now();
-      const startD = new Date(effectiveStart);
-      const endD = new Date(effectiveEnd);
+      // 🛡️ FIX: Safari 日期時區修正 — 用 '/' 分隔符強制本地時間解析
+      const startD = new Date(effectiveStart.replace(/-/g, '/'));
+      const endD = new Date(effectiveEnd.replace(/-/g, '/'));
 
       // Group selections by (Config ID + Target Portfolio ID + Account Type)
       // Key: `configId|targetPortfolioId|type`
