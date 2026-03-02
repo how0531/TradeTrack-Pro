@@ -4,16 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [2.5.8] - 2026-03-02
 
+### Changed (Optimizations)
+
+- **API 效能與穩定性優化**：移除後端 `ensure_ca_active` 的重複呼叫，每次請求減少約 500ms 延遲，並降低 Shioaji API 狀態異常風險。
+- **憑證檢測 (CA Probe) 智慧化**：精準區分帳號類型，期貨帳號使用 `margin()` 偵測，股票帳號自動切換為 `list_positions()`，徹底消除股票帳號的系統誤報。
+- **前端狀態處理防護**：大幅強化 `useMetrics` 對邊界值的容錯能力，過濾無效或空日期的交易、新增 NaN 排序防護，及 `dailyPnlMap` 日期格式驗證，提升系統整體穩定性與崩潰防護。
+- **前端時區相容性優化**：`SyncDateModal` 全面改用 `/` 分隔符強制本地時間解析，完美避開 iOS / Safari 瀏覽器底層的 UTC 時區自動偏移問題。
+
 ### Fixed
 
-- **匯入資料不顯示修正**：修復手機板匯入交易損益後，權益曲線、紀錄、日曆全部空白的核心問題。根因為 `portfolioId` 未加入 `activePortfolioIds`，導致 `useMetrics` 全數過濾。
-- **匯入欄位遺漏**：`handleSyncSuccess` 補齊 `price`、`raw_yield`、`yield`、`points` 四個關鍵欄位，避免 LogsView 報酬率/點數顯示空白。
-- **後端日期解析強化**：`pnl.py` 支援 `datetime.date` 物件、`20250401`、`2025-04-01` 三種格式，解決跨格式 NaN 問題。
-- **CA 重複啟動移除**：`ensure_ca_active` 由 2 次呼叫精簡為 1 次，減少 ~500ms 延遲並降低 Shioaji 狀態異常風險。
-- **CA Probe 帳號篩選**：期貨帳號用 `margin()` 偵測、股票帳號改用 `list_positions()`，消除股票帳號的誤報警告。
-- **期貨報酬率修正**：加入合約乘數（台指期 200、小台 50、電子期 4000 等），修正異常的 200% 為合理的 ~1%。
-- **Safari 日期時區修正**：`SyncDateModal` 使用 `/` 分隔符強制本地時間解析，避免 iOS Safari 日期偏移。
-- **useMetrics 防護強化**：過濾無效/空日期交易、NaN 排序防護、dailyPnlMap 日期格式驗證。
+- **匯入資料不顯示修正**：修復手機板匯入交易損益後，權益曲線、紀錄、日曆全部空白的核心問題。主因為更新後 `portfolioId` 未正確加入 `activePortfolioIds`，導致被過濾。
+- **匯入欄位遺漏**：`handleSyncSuccess` 補齊 `price`、`raw_yield`、`yield`、`points` 四個關鍵欄位，解決 LogsView 報酬率與點數顯示空白的 Bug。
+- **後端日期解析強化**：`pnl.py` 新增支援 `datetime.date` 物件、`20250401`、`2025-04-01` 等多種格式，解決永豐 API 跨版本回傳格式差異所造成的 NaN 問題。
+- **期貨報酬率計算修正**：精準加入期貨合約乘數（如台指期 200、小台 50、電子期 4000 等），修正以往可能將 1% 獲利誤算為 200% 的嚴重計算偏差。
 
 ## [2.5.7] - 2026-02-26
 
