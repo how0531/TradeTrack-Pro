@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.9] - 2026-03-12
+
+### Fixed
+
+- **雲端部署 502 Bad Gateway 修復**：移除了 `zeabur.toml` 中前端服務多餘的 `start = "npm run preview"` 指令，讓 Zeabur 能夠正確使用 Nginx 託管靜態路由，徹底解決手機版與網頁版存取時發生的 502 錯誤與白畫面問題。
+
 ## [2.5.8] - 2026-03-02
 
 ### Changed (Optimizations)

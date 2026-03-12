@@ -9,7 +9,6 @@ name = "frontend"
 dir = "."
 type = "static"
 build = "npm install && npm run build"
-start = "npm run preview" # 或者只是靜態託管
 output = "dist"
 
 # 依賴關係確保後端先啟動（雖然 Zeabur 的靜態前端不一定需要這個，但好習慣）
