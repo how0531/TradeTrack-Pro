@@ -1,0 +1,11 @@
+[service]
+name = "tradetrack-frontend"
+
+[build]
+type = "docker"
+dockerfile = "Dockerfile"
+
+[[ports]]
+id = "web"
+port = 80
+type = "HTTP"
