@@ -24,7 +24,7 @@ export interface Trade {
   amount?: string;
   type?: 'profit' | 'loss';
   code?: string;
-    entryPrice?: number;
+  entryPrice?: number;
   exitPrice?: number;
   quantity?: number;
   price?: number;
@@ -32,6 +32,9 @@ export interface Trade {
   raw_yield?: number;
   yield?: number;
   points?: string; // e.g. "+150 pts" or "+5.2%"
+  // Incremental Sync Fields
+  updatedAt?: string;   // ISO string — 每次建立或修改都更新，供增量同步使用
+  isDeleted?: boolean;  // 軟刪除旗標，刪除時設為 true 而非真正移除
 }
 
 export interface Metrics {

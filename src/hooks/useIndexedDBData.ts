@@ -28,7 +28,8 @@ export const useIndexedDBData = () => {
   }, []);
 
   // 使用 Dexie 的 useLiveQuery 自動訂閱資料變更
-  const trades = useLiveQuery(() => db.trades.toArray(), []) || [];
+  // 過濾掉軟刪除的記錄 (isDeleted: true)
+  const trades = useLiveQuery(() => db.trades.filter(t => !t.isDeleted).toArray(), []) || [];
   const portfolios = useLiveQuery(() => db.portfolios.toArray(), []) || [];
 
   const strategies = useLiveQuery(
@@ -78,32 +79,40 @@ export const useIndexedDBData = () => {
 
   const actions = useMemo(() => ({
     saveTrade: async (trade: Trade, editingId: string | null) => {
+      const now = new Date().toISOString();
       if (editingId) {
-        await db.trades.update(editingId, trade);
+        await db.trades.update(editingId, { ...trade, updatedAt: now });
       } else {
         const newTrade = {
           ...trade,
           id: `trade-${Date.now()}`,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          updatedAt: now,
+          isDeleted: false,
         };
         await db.trades.add(newTrade);
       }
     },
 
     saveTrades: async (trades: Partial<Pick<Trade, 'id' | 'timestamp'>> & Omit<Trade, 'id' | 'timestamp'>[]) => {
-      const now = Date.now();
+      const now = new Date().toISOString();
       const newTrades = (trades as any[]).map((t, index) => ({
         ...t,
         // 保留傳入的 stable ID（來自券商同步），僅在缺失時才生成新 ID
-        id: t.id || `trade-${now}-${index}`,
-        timestamp: t.timestamp || new Date().toISOString()
+        id: t.id || `trade-${Date.now()}-${index}`,
+        timestamp: t.timestamp || now,
+        updatedAt: t.updatedAt || now,
+        isDeleted: t.isDeleted ?? false,
       }));
       // 使用 bulkPut 代替 bulkAdd，遇到相同 ID 時更新而非報錯
       await db.trades.bulkPut(newTrades as Trade[]);
     },
 
     deleteTrade: async (id: string) => {
-      await db.trades.delete(id);
+      // 軟刪除：標記為 isDeleted 並更新 updatedAt，不真正移除 document
+      // 這樣其他裝置在增量同步時能正確偵測到刪除事件
+      const now = new Date().toISOString();
+      await db.trades.update(id, { isDeleted: true, updatedAt: now });
     },
 
     updatePortfolio: async (id: string, key: keyof Portfolio, value: any) => {

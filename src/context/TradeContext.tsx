@@ -215,20 +215,26 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         authStatus,
         db,
         data: { trades, strategies, emotions, portfolios, lossColor },
-        onPull: (cloudData) => {
-            if (cloudData.trades) {
-                // Dedup after pull to prevent duplicates from cross-device sync
-                const groups = detectDuplicates(cloudData.trades);
-                const cleaned = groups.length > 0 ? mergeDuplicates(cloudData.trades, groups) : cloudData.trades;
-                setTrades(cleaned);
+        onPull: async (patches) => {
+            // 增量合併：upsert 差異記錄，而非全量覆蓋
+            if (patches.trades && patches.trades.length > 0) {
+                // 將所有 patch trade 寫入 IndexedDB (bulkPut = upsert)
+                // 軟刪除的記錄也會寫入，因為 useLiveQuery 已設定過濾掉 isDeleted:true
+                await localActions.saveTrades(
+                    patches.trades.map(t => ({
+                        ...t,
+                        updatedAt: t.updatedAt || new Date().toISOString(),
+                        isDeleted: t.isDeleted ?? false,
+                    }))
+                );
             }
-            if (cloudData.strategies) setStrategies(cloudData.strategies);
-            if (cloudData.emotions) setEmotions(cloudData.emotions);
-            if (cloudData.portfolios) {
-                setPortfolios(cloudData.portfolios);
-                setActivePortfolioIds(cloudData.portfolios.map((p: any) => p.id));
+            if (patches.strategies) setStrategies(patches.strategies);
+            if (patches.emotions) setEmotions(patches.emotions);
+            if (patches.portfolios) {
+                setPortfolios(patches.portfolios);
+                setActivePortfolioIds(patches.portfolios.map((p: any) => p.id));
             }
-            if (cloudData.settings?.lossColor) setLossColor(cloudData.settings.lossColor);
+            if (patches.settings?.lossColor) setLossColor(patches.settings.lossColor);
         }
     });
 
