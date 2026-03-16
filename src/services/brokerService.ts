@@ -366,155 +366,75 @@ export interface BrokerProfile {
  * @returns 'ready' | 'server_only' | 'offline' | 'sleeping'
  */
 export const validateBackendStatus = async (
-    maxRetries: number = 2
+    maxRetries: number = 1  // 預設重試 1 次（減少等待時間）
 ): Promise<'ready' | 'server_only' | 'offline' | 'sleeping'> => {
     const startTime = performance.now();
-    console.log('🔍 [BACKEND_CHECK] Starting comprehensive validation:', new Date().toISOString());
-    console.log(`🔁 [BACKEND_CHECK] Max retries: ${maxRetries}`);
 
-    // 重試邏輯
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         if (attempt > 0) {
-            const waitTime = 1000 * attempt; // 漸進式延遲：1s, 2s
-            console.log(`🔁 [BACKEND_CHECK] Retry attempt ${attempt}/${maxRetries}, waiting ${waitTime}ms...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
+            await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
         }
 
         try {
-            // Step 1: Check if server is alive with health endpoint
+            // Step 1: Health check — 縮短到 8 秒，避免 UI 凍結
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s for Render free-tier cold boot
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-            const healthResponse = await fetch(`${API_BASE}/health`, { signal: controller.signal });
+            const healthResponse = await fetch(`${API_BASE}/health`, {
+                signal: controller.signal,
+                cache: 'no-cache',
+            });
             clearTimeout(timeoutId);
 
-            // 檢查狀態碼
             if (!healthResponse.ok) {
-                console.warn(`❌ [BACKEND_CHECK] Health check failed with status ${healthResponse.status}`);
-
-                // 502/503 通常表示後端正在啟動或休眠
                 if (healthResponse.status === 502 || healthResponse.status === 503) {
-                    if (attempt < maxRetries) {
-                        console.log(`⏳ [BACKEND_CHECK] Server may be waking up (${healthResponse.status}), retrying...`);
-                        continue; // 重試
-                    }
+                    if (attempt < maxRetries) continue;
                     return 'sleeping';
                 }
-
-                // 其他錯誤視為離線
                 if (attempt < maxRetries) continue;
                 return 'offline';
             }
 
-            // 檢查 health 端點的回應內容
-            let healthData: any = {};
-            try {
-                const healthText = await healthResponse.text();
-                healthData = healthText ? JSON.parse(healthText) : {};
-            } catch (e) {
-                console.warn(`⚠️ [BACKEND_CHECK] Health endpoint returned non-JSON response`);
-                // 即使回應不是 JSON，只要狀態碼是 200 就繼續
-            }
+            console.log(`✅ [BACKEND_CHECK] Health OK (${(performance.now() - startTime).toFixed(0)}ms)`);
 
-            // 驗證 health 回應的結構（可選的額外驗證）
-            if (healthData.status && healthData.status !== 'healthy' && healthData.status !== 'ok') {
-                console.warn(`⚠️ [BACKEND_CHECK] Health status is: ${healthData.status}`);
-            }
-
-            console.log(`✅ [BACKEND_CHECK] Server is alive (${(performance.now() - startTime).toFixed(0)}ms)`);
-
-            // Step 2: Test if API endpoint structure is available
-            const apiCheckTime = performance.now();
+            // Step 2: API probe — 4 秒 timeout
             const apiController = new AbortController();
-            const apiTimeoutId = setTimeout(() => apiController.abort(), 5000); // 5s timeout for API check
+            const apiTimeoutId = setTimeout(() => apiController.abort(), 4000);
 
-            // Send an intentionally invalid request to check if the endpoint exists
-            // We expect a 400 (bad request) response, not 404 (not found)
-            console.log('🔍 [BACKEND_CHECK] Probing API endpoint accessibility...');
             const apiResponse = await fetch(`${API_BASE}/api/broker/profile`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}), // Empty payload to trigger validation error
-                signal: apiController.signal
+                body: JSON.stringify({}),
+                signal: apiController.signal,
             });
-
             clearTimeout(apiTimeoutId);
 
-            // If we get 400, it means the endpoint exists and is validating input (good!)
-            // If we get 404, the API route doesn't exist
-            // If we get 500, there might be a configuration issue
-            if (apiResponse.status === 404) {
-                console.warn(`⚠️ [BACKEND_CHECK] API endpoint not found - deployment might be incomplete`);
-                return 'server_only';
-            }
+            if (apiResponse.status === 404) return 'server_only';
+            if (apiResponse.status === 400 || apiResponse.status === 422) return 'ready';
 
-            if (apiResponse.status === 400) {
-                console.log(`✅ [BACKEND_CHECK] API is functional (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
-                return 'ready';
-            }
-
-            // Try to read the response to get more details
-            const text = await apiResponse.text();
-            let parsed: any = {};
+            // 其他回應碼—嘗試解析訊息
             try {
-                parsed = text ? JSON.parse(text) : {};
-            } catch (e) {
-                console.warn(`⚠️ [BACKEND_CHECK] Non-JSON response from API: ${text.substring(0, 100)}`);
-            }
+                const text = await apiResponse.text();
+                const parsed = text ? JSON.parse(text) : {};
+                if (parsed.message || parsed.error || parsed.status) return 'ready';
+            } catch (_) { /* ignore */ }
 
-            // If we get a proper error response with message, API is working
-            if (parsed.message || parsed.error) {
-                console.log(`✅ [BACKEND_CHECK] API is responding (${(performance.now() - apiCheckTime).toFixed(0)}ms)`);
-                return 'ready';
-            }
-
-            console.warn(`⚠️ [BACKEND_CHECK] Unexpected API response: ${apiResponse.status}`);
             return 'server_only';
 
         } catch (e: any) {
-            const elapsed = performance.now() - startTime;
-
-            // 超時錯誤
             if (e.name === 'AbortError') {
-                console.warn(`😴 [BACKEND_CHECK] Timeout after ${elapsed.toFixed(0)}ms on attempt ${attempt + 1}`);
-
-                // 如果還有重試機會，繼續重試
-                if (attempt < maxRetries) {
-                    console.log(`⏳ [BACKEND_CHECK] Will retry (timeout may indicate sleeping server)...`);
-                    continue;
-                }
-
-                return 'sleeping';
+                if (attempt < maxRetries) continue;
+                return 'sleeping'; // timeout = 可能在冷啟動中
             }
-
-            // 網路錯誤（Failed to fetch）
             if (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
-                console.error(`❌ [BACKEND_CHECK] Network error on attempt ${attempt + 1}: ${e.message}`);
-
-                // 如果還有重試機會，繼續重試
-                if (attempt < maxRetries) {
-                    console.log(`⏳ [BACKEND_CHECK] Will retry due to network error...`);
-                    continue;
-                }
-
-                console.warn('💡 Hint: This usually means the server is down or there are CORS issues.');
-                return 'offline';
+                if (attempt < maxRetries) continue;
+                return 'offline'; // 網路關掉 = offline
             }
-
-            // 其他未知錯誤
-            console.error(`❌ [BACKEND_CHECK] Unexpected error on attempt ${attempt + 1}:`, e);
-
-            if (attempt < maxRetries) {
-                console.log(`⏳ [BACKEND_CHECK] Will retry due to unexpected error...`);
-                continue;
-            }
-
+            if (attempt < maxRetries) continue;
             return 'offline';
         }
     }
 
-    // 理論上不會到這裡，但為了類型安全
-    console.error(`❌ [BACKEND_CHECK] All ${maxRetries + 1} attempts exhausted`);
     return 'offline';
 };
 
@@ -527,38 +447,53 @@ export const pingBackend = async (): Promise<boolean> => {
 };
 
 /**
- * Pre-emptively wake up Render backend if it's sleeping
- * This should be called before attempting login to reduce wait time
+ * 喚醒後端——用輸止 Polling 轉密式回報
+ * 不再用單次 90s 阁塞請求
+ * 改用：每 5s ping 一次 /health，最多等 90s，讓 UI 可即時更新
  */
-export const wakeUpBackend = async (): Promise<{ success: boolean; error?: string }> => {
+export const wakeUpBackend = async (
+    onProgress?: (attempt: number, maxAttempts: number) => void
+): Promise<{ success: boolean; error?: string }> => {
     const url = `${API_BASE}/health`;
-    console.log(`🔔 [WAKE] Attempting to wake up backend at: ${url}`);
-    try {
-        const controller = new AbortController();
-        // 免費 tier 後端冷啟動可能需要 30-90 秒，給 90 秒 timeout
-        const timeoutId = setTimeout(() => controller.abort(), 90000);
+    const MAX_ATTEMPTS = 12;  // 12 x 7.5秒 ≈ 90秒
+    const POLL_INTERVAL = 7500;
 
-        const response = await fetch(url, {
-            signal: controller.signal,
-            cache: 'no-cache'
-        });
-        clearTimeout(timeoutId);
+    console.log(`🔔 [WAKE] Starting polling wake-up (max ${MAX_ATTEMPTS} attempts, every ${POLL_INTERVAL/1000}s)`);
 
-        if (response.ok) {
-            console.log('✅ [WAKE] Backend is awake');
-            return { success: true };
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        onProgress?.(attempt, MAX_ATTEMPTS);
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout per ping
+
+            const response = await fetch(url, {
+                signal: controller.signal,
+                cache: 'no-cache',
+            });
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                console.log(`✅ [WAKE] Backend is awake on attempt ${attempt}`);
+                return { success: true };
+            }
+
+            console.log(`⏳ [WAKE] Attempt ${attempt}/${MAX_ATTEMPTS}: HTTP ${response.status}, waiting...`);
+        } catch (e: any) {
+            if (e.name === 'AbortError') {
+                console.log(`⏳ [WAKE] Attempt ${attempt}/${MAX_ATTEMPTS}: timeout, retrying...`);
+            } else {
+                console.log(`⏳ [WAKE] Attempt ${attempt}/${MAX_ATTEMPTS}: ${e.message}, retrying...`);
+            }
         }
-        console.warn(`⚠️ [WAKE] Backend responded with status: ${response.status}`);
-        return { success: false, error: `HTTP ${response.status} ${response.statusText}` };
-    } catch (e: any) {
-        const errorMsg = e.message || 'Unknown network error';
-        if (e.name === 'AbortError') {
-            console.warn('❌ [WAKE] Timeout waiting for backend (90s)');
-            return { success: false, error: 'Timeout (90s) - 後端可能正在冷啟動，請再次嘗試' };
+
+        // 如果還沒喚醒，等候下一次
+        if (attempt < MAX_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
         }
-        console.warn('❌ [WAKE] Failed to wake backend:', errorMsg);
-        return { success: false, error: errorMsg };
     }
+
+    console.warn('❌ [WAKE] Backend did not wake up within timeout');
+    return { success: false, error: '後端冷啟動超時，請確認部署狀態後再試' };
 };
 
 /**

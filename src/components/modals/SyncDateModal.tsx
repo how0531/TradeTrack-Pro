@@ -194,13 +194,16 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
 
   const handleManualPing = async () => {
-    setBackendStatus("checking");
+    setBackendStatus('checking');
     const status = await validateBackendStatus();
 
     if (status === 'sleeping') {
       setBackendStatus('sleeping');
-      // Auto-wake
-      const wake = await wakeUpBackend();
+      // Non-blocking wake — polls every 7.5s, updates incrementally
+      const wake = await wakeUpBackend((attempt, max) => {
+        setBackendStatus('sleeping'); // keep UI showing sleeping during polling
+        console.log(`⏳ [PING] Wake attempt ${attempt}/${max}`);
+      });
       setBackendStatus(wake.success ? 'online' : 'offline');
     } else {
       setBackendStatus(status === 'ready' ? 'online' : 'offline');
@@ -209,21 +212,24 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
   /**
    * 🤖 Smart Auto-Wake Logic
-   * Checks status on mount. If sleeping, wakes it up automatically.
+   * Checks status on mount. If sleeping, wakes it up in the background.
+   * 🔧 FIX: Removed `backendStatus` from deps — it caused infinite re-trigger loop.
+   *   The interval reads status via a ref, not the closure value.
    */
+  const backendStatusRef = React.useRef(backendStatus);
+  useEffect(() => { backendStatusRef.current = backendStatus; }, [backendStatus]);
+
   useEffect(() => {
+    if (!isOpen) return;
     let mounted = true;
 
-    const checkAndWake = async () => {
-      if (!isOpen) return;
-
-      // 1. Initial Check
+    const doInitialCheck = async () => {
       const status = await validateBackendStatus();
       if (!mounted) return;
 
       if (status === 'sleeping') {
         setBackendStatus('sleeping');
-        // 2. Auto-Wake
+        // Background wake — uses polling internally
         const wake = await wakeUpBackend();
         if (mounted) {
           setBackendStatus(wake.success ? 'online' : 'offline');
@@ -233,26 +239,24 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       }
     };
 
-    checkAndWake();
+    doInitialCheck();
 
-    // 🔄 Auto-Polling Logic: If sleeping, check every 5s until online or modal closed
+    // 🔄 Lightweight poll every 10s — only check, don't auto-wake again
+    // Reads live status via ref to avoid stale closure without adding to deps
     const pollInterval = setInterval(async () => {
-      if (!isOpen || backendStatus === 'online') return;
-
-      console.log('🔄 [POLL] Checking backend status...');
-      const status = await validateBackendStatus(0); // 0 retries for fast poll
-      if (status === 'ready') {
-        setBackendStatus('online');
-      } else if (status === 'sleeping') {
-        setBackendStatus('sleeping');
-      }
-    }, 5000);
+      if (!mounted || backendStatusRef.current === 'online') return;
+      const status = await validateBackendStatus(0);
+      if (!mounted) return;
+      if (status === 'ready') setBackendStatus('online');
+      else if (status === 'sleeping') setBackendStatus('sleeping');
+      else if (status === 'offline') setBackendStatus('offline');
+    }, 10000); // 10s — less aggressive than previous 5s
 
     return () => {
       mounted = false;
       clearInterval(pollInterval);
     };
-  }, [isOpen, backendStatus]);
+  }, [isOpen]); // ⚠️ 就是只跟 isOpen！移除 backendStatus 防止無限迭辭其發生
 
   /**
    * ✅ 樂觀更新策略載入帳號設定
