@@ -1,0 +1,5 @@
+{
+  "build_type": "nodejs",
+  "output_dir": "dist",
+  "start_command": "npx serve -s dist -l tcp://0.0.0.0:${PORT:-8080}"
+}
