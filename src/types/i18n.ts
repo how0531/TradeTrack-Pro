@@ -70,10 +70,10 @@ export interface Translation {
   // Sync Conflict Modal
   syncConflictTitle: string;
   syncConflictDesc: string;
-  mergeOption: string;
-  mergeDesc: string;
-  discardOption: string;
-  discardDesc: string;
+  useCloudOption: string;
+  useLocalOption: string;
+  smartMergeOption: string;
+  syncStats: string;
   processing: string;
 
   // Import Conflict Modal

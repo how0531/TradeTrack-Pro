@@ -159,17 +159,22 @@ export const useIndexedDBData = () => {
     },
 
     clearLocalData: async () => {
-      await db.trades.clear();
-      await db.portfolios.clear();
-      await db.strategies.clear();
-      await db.emotions.clear();
+      // 使用 Dexie transaction 確保所有操作原子化完成
+      // useLiveQuery 只會在 transaction 結束後觸發一次重新渲染，
+      // 避免在清空和重新插入之間產生空陣列的中間狀態導致崩潰
+      await db.transaction('rw', [db.trades, db.portfolios, db.strategies, db.emotions], async () => {
+        await db.trades.clear();
+        await db.portfolios.clear();
+        await db.strategies.clear();
+        await db.emotions.clear();
 
-      // 重新初始化預設資料
-      await db.portfolios.add(INITIAL_PORTFOLIO);
-      await db.strategies.bulkAdd(['動能突破', '急殺抄底', '波段趨勢'].map(name => ({ name })));
-      await db.emotions.bulkAdd(['短線', '事件', '產業', '波段'].map(name => ({ name })));
+        // 重新初始化預設資料
+        await db.portfolios.add(INITIAL_PORTFOLIO);
+        await db.strategies.bulkAdd(['動能突破', '急殺抄底', '波段趨勢'].map(name => ({ name })));
+        await db.emotions.bulkAdd(['短線', '事件', '產業', '波段'].map(name => ({ name })));
+      });
 
-      console.log('✅ 已清除所有 IndexedDB 資料並重新初始化');
+      console.log('✅ 已清除所有 IndexedDB 資料並重新初始化 (transaction)');
     },
 
     downloadBackup: () => {

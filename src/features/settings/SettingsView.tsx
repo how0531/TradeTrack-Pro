@@ -984,9 +984,10 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                 {lang === 'zh' ? '取消' : 'Cancel'}
                             </button>
                             <button
-                                onClick={() => {
-                                    actions.clearLocalData(); // 1. WIPE LOCAL
-                                    onLogout();               // 2. SIGN OUT
+                                onClick={async () => {
+                                    try { await triggerCloudBackup(); } catch (_) {} // 1. BACKUP TO CLOUD first
+                                    try { await actions.clearLocalData(); } catch (_) {} // 2. WIPE LOCAL
+                                    onLogout();               // 3. SIGN OUT
                                     setShowLogoutConfirm(false);
                                 }}
                                 className="flex-1 py-3 rounded-xl bg-[#C8B085] text-black text-xs font-bold hover:bg-[#B09870] transition-colors"

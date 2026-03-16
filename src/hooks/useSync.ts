@@ -4,6 +4,7 @@ import { doc, setDoc, getDoc, onSnapshot, Timestamp, Firestore } from 'firebase/
 import { useLocalStorage } from './useLocalStorage';
 import { SyncStatus, User, Trade, Portfolio } from '../types';
 import { stableStringify } from '../utils/storage';
+import { detectDuplicates } from '../utils/duplicateDetection';
 
 interface SyncData {
     trades: Trade[];
@@ -61,6 +62,9 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     const [lastSyncTimeStr, setLastSyncTimeStr] = useLocalStorage<string>('app_last_sync_time', '');
     const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
     const [syncError, setSyncError] = useState<string | null>(null);
+    const [conflictStats, setConflictStats] = useState<{
+        localCount: number; cloudCount: number; duplicateCount: number;
+    } | null>(null);
 
     // Refs to prevent stale closures in onSnapshot
     const dataRef = useRef(data);
@@ -161,7 +165,17 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
                     
                     if (localStr !== cloudStr) {
                         const hasEverSynced = !!lastBackupTimeRef.current || !!lastSyncTimeStrRef.current;
-                        
+
+                        // Calculate conflict stats for the modal preview
+                        const allTrades = [...localData.trades, ...(cloudData.trades || [])];
+                        const groups = detectDuplicates(allTrades);
+                        const dupeCount = groups.reduce((s, g) => s + g.duplicates.length, 0);
+                        setConflictStats({
+                            localCount: localData.trades.length,
+                            cloudCount: (cloudData.trades || []).length,
+                            duplicateCount: dupeCount
+                        });
+
                         if (!hasEverSynced) {
                              setIsSyncModalOpen(true);
                         } else {
@@ -242,6 +256,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         triggerCloudBackup,
         manualPull, 
         setSyncStatus,
-        setLastSyncTimeStr 
+        setLastSyncTimeStr,
+        conflictStats
     };
 };

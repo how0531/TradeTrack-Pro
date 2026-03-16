@@ -93,6 +93,7 @@ function MainApp() {
         setLossColor,
         triggerCloudBackup,
         onResolveSyncConflict,
+        conflictStats,
         autoSyncParams,
         setAutoSyncParams
     } = useTradeContext();
@@ -364,6 +365,7 @@ function MainApp() {
                 onResolve={onResolveSyncConflict} 
                 lang={lang}
                 isSyncing={isSyncing}
+                stats={conflictStats ?? undefined}
             />
 
             <ShareModal 

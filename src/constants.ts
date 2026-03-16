@@ -142,12 +142,12 @@ export const I18N = {
         maxLossStreak: '連續虧損次數',
 
         // Sync Conflict Modal
-        syncConflictTitle: '發現資料衝突',
-        syncConflictDesc: '我們發現您的裝置上有未同步的本地資料。請問您希望如何處理？',
-        mergeOption: '合併並備份',
-        mergeDesc: '推薦。保留本地資料並上傳至雲端。',
-        discardOption: '捨棄本地資料',
-        discardDesc: '僅保留雲端上的舊資料，本地新資料將被刪除。',
+        syncConflictTitle: '發現資料差異',
+        syncConflictDesc: '雲端與本機的資料不一致，請選擇處理方式：',
+        useCloudOption: '使用雲端版本',
+        useLocalOption: '覆蓋雲端',
+        smartMergeOption: '智慧合併（推薦）',
+        syncStats: '本機 {local} 筆 / 雲端 {cloud} 筆 / 重複 {dup} 筆',
         processing: '處理中...',
 
         // Import Conflict Modal
@@ -244,12 +244,12 @@ export const I18N = {
         maxLossStreak: 'Max Loss Streak',
 
         // Sync Conflict Modal
-        syncConflictTitle: 'Data Conflict Detected',
-        syncConflictDesc: 'We found local data on this device that is not synced. How would you like to proceed?',
-        mergeOption: 'Merge & Sync',
-        mergeDesc: 'Recommended. Keeps local data and uploads it to the cloud.',
-        discardOption: 'Discard Local Data',
-        discardDesc: 'Keep only cloud data. Local changes will be lost.',
+        syncConflictTitle: 'Data Difference Detected',
+        syncConflictDesc: 'Cloud and local data are different. Choose how to proceed:',
+        useCloudOption: 'Use Cloud Version',
+        useLocalOption: 'Use Local Version',
+        smartMergeOption: 'Smart Merge (Recommended)',
+        syncStats: 'Local: {local} / Cloud: {cloud} / Duplicates: {dup}',
         processing: 'Processing...',
 
         // Import Conflict Modal

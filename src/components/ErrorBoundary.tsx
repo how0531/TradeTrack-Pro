@@ -28,12 +28,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   private handleReset = () => {
     if (window.confirm("這將清除所有本地暫存資料並重新整理頁面。如果您已登入，雲端資料不會受影響。確定要繼續嗎？\n\nThis will clear local storage and reload. Cloud data is safe.")) {
-      // Clear specific app keys to avoid wiping unrelated localhost data
-      const keysToRemove = [
-        'local_trades', 'local_strategies', 'local_emotions', 'local_portfolios',
-        'app_active_portfolios', 'app_loss_color', 'app_dd_threshold', 'app_max_loss_streak', 'app_last_sync_time'
-      ];
-      keysToRemove.forEach(k => localStorage.removeItem(k));
+      // 全面清除：localStorage + IndexedDB
+      // 避免損壞的 IndexedDB 資料導致崩潰循環
+      localStorage.clear();
+      indexedDB.deleteDatabase('TradeTrackDB');
       window.location.reload();
     }
   };

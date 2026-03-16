@@ -8,7 +8,7 @@ import { detectDuplicates, mergeDuplicates, DuplicateGroup, DetectionOptions } f
 import { safeDateParse } from '../utils/calculations';
 import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams } from '../types';
 import { db, resetFirestoreCache } from '../firebaseConfig';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { I18N, THEME } from '../constants';
 
 interface TradeContextType {
@@ -80,7 +80,8 @@ interface TradeContextType {
     syncError: string | null;
     repairDatabase: () => Promise<void>;
     isSyncModalOpen: boolean;
-    onResolveSyncConflict: (choice: 'merge' | 'discard') => void;
+    onResolveSyncConflict: (choice: 'cloud' | 'local' | 'merge') => Promise<void>;
+    conflictStats: { localCount: number; cloudCount: number; duplicateCount: number } | null;
 
     // Actions
     actions: {
@@ -208,19 +209,23 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 5. Sync Logic
     const {
         isSyncing, syncStatus, syncError, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen,
-        triggerCloudBackup, manualPull, setLastSyncTimeStr, setSyncStatus
+        triggerCloudBackup, manualPull, setLastSyncTimeStr, setSyncStatus, conflictStats
     } = useSync({
         user,
         authStatus,
         db,
         data: { trades, strategies, emotions, portfolios, lossColor },
         onPull: (cloudData) => {
-            if (cloudData.trades) setTrades(cloudData.trades);
+            if (cloudData.trades) {
+                // Dedup after pull to prevent duplicates from cross-device sync
+                const groups = detectDuplicates(cloudData.trades);
+                const cleaned = groups.length > 0 ? mergeDuplicates(cloudData.trades, groups) : cloudData.trades;
+                setTrades(cleaned);
+            }
             if (cloudData.strategies) setStrategies(cloudData.strategies);
             if (cloudData.emotions) setEmotions(cloudData.emotions);
             if (cloudData.portfolios) {
                 setPortfolios(cloudData.portfolios);
-                // Also update active if needed, logic borrowed from old useTradeData
                 setActivePortfolioIds(cloudData.portfolios.map((p: any) => p.id));
             }
             if (cloudData.settings?.lossColor) setLossColor(cloudData.settings.lossColor);
@@ -368,7 +373,6 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
             // Cloud Reset (Explicitly Clear)
             if (user && authStatus === 'online') {
-                // 1. Explicitly clear user data in Firestore to prevent auto-restore
                 console.log('🧹 Clearing Cloud Data...');
                 await setDoc(doc(db, 'users', user.uid), {
                     trades: [],
@@ -381,26 +385,93 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 console.log('✅ Cloud Data Cleared');
             }
 
-            // 2. Clear Local
-            console.log('🧹 Clearing Local Data...');
-            await localActions.clearLocalData();
+            // 2. Delete the entire IndexedDB database atomically
+            //    This avoids triggering useLiveQuery observers table-by-table,
+            //    which caused React re-renders on partial state → crash.
+            console.log('🧹 Deleting IndexedDB (atomic)...');
+            await indexedDB.deleteDatabase('TradeTrackDB');
+            console.log('✅ IndexedDB Deleted');
 
-            // 3. Reload
+            // 3. Clear all localStorage preferences
+            localStorage.clear();
+
+            // 4. Reload — DB will be recreated with defaults on next load
             window.location.reload();
 
         } catch (error) {
             console.error("Reset failed:", error);
-            // Fallback
+            // Fallback: brute-force cleanup
             localStorage.clear();
+            try { await indexedDB.deleteDatabase('TradeTrackDB'); } catch (_) {}
             window.location.reload();
         }
     };
 
-    const onResolveSyncConflict = (choice: 'merge' | 'discard') => {
-        if (choice === 'discard') {
-            manualPull(); // Use standardized manual pull to update sync refs/cooldown
+    const onResolveSyncConflict = async (choice: 'cloud' | 'local' | 'merge') => {
+        if (choice === 'cloud') {
+            // Use cloud version: pull cloud data and overwrite local
+            await manualPull();
+        } else if (choice === 'local') {
+            // Use local version: push local to cloud
+            await triggerCloudBackup();
         } else {
-            triggerCloudBackup();
+            // Smart merge: combine both sides by id, then dedup
+            try {
+                if (!user) {
+                    setIsSyncModalOpen(false);
+                    return;
+                }
+                const docSnap = await getDoc(doc(db, 'users', user.uid));
+                const cloudTrades: Trade[] = docSnap.exists() ? (docSnap.data()?.trades || []) : [];
+                const cloudPortfolios: Portfolio[] = docSnap.exists() ? (docSnap.data()?.portfolios || []) : [];
+                const cloudStrategies: string[] = docSnap.exists() ? (docSnap.data()?.strategies || []) : [];
+                const cloudEmotions: string[] = docSnap.exists() ? (docSnap.data()?.emotions || []) : [];
+
+                // Merge trades by id (local takes priority for same id)
+                const tradeMap = new Map<string, Trade>();
+                cloudTrades.forEach(t => tradeMap.set(t.id, t));
+                trades.forEach(t => tradeMap.set(t.id, t)); // Local overwrites cloud for same id
+                const mergedTrades = Array.from(tradeMap.values());
+
+                // Dedup
+                const groups = detectDuplicates(mergedTrades);
+                const cleanedTrades = groups.length > 0 ? mergeDuplicates(mergedTrades, groups) : mergedTrades;
+                setTrades(cleanedTrades);
+
+                // Merge portfolios by id
+                const portfolioMap = new Map<string, Portfolio>();
+                cloudPortfolios.forEach(p => portfolioMap.set(p.id, p));
+                portfolios.forEach(p => portfolioMap.set(p.id, p));
+                const mergedPortfolios = Array.from(portfolioMap.values());
+                setPortfolios(mergedPortfolios);
+                setActivePortfolioIds(mergedPortfolios.map(p => p.id));
+
+                // Merge strategies & emotions (union)
+                const mergedStrategies = Array.from(new Set([...cloudStrategies, ...strategies]));
+                const mergedEmotions = Array.from(new Set([...cloudEmotions, ...emotions]));
+                setStrategies(mergedStrategies);
+                setEmotions(mergedEmotions);
+
+                // Push merged result directly to cloud (avoid stale closure from triggerCloudBackup)
+                // triggerCloudBackup reads `data` from its closure, but setTrades hasn't flushed yet.
+                // So we push the merged data directly using setDoc.
+                const now = new Date();
+                const rawData = {
+                    trades: cleanedTrades,
+                    strategies: mergedStrategies,
+                    emotions: mergedEmotions,
+                    portfolios: mergedPortfolios,
+                    settings: { lossColor },
+                    lastUpdated: now
+                };
+                await setDoc(doc(db, 'users', user.uid), JSON.parse(JSON.stringify(rawData, (_, v) => v === undefined ? null : v)));
+                setSyncStatus('synced');
+                setLastSyncTimeStr(now.toISOString());
+            } catch (error) {
+                console.error('Smart merge failed:', error);
+                // Fallback: just push local to cloud
+                await triggerCloudBackup();
+            }
         }
         setIsSyncModalOpen(false);
     };
@@ -470,7 +541,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         activeBrokerConfig,
         filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap,
         availableStrategies, availableEmotions,
-        isSyncing, syncStatus, lastBackupTime, triggerCloudBackup, manualPull, isSyncModalOpen, onResolveSyncConflict,
+        isSyncing, syncStatus, lastBackupTime, triggerCloudBackup, manualPull, isSyncModalOpen, onResolveSyncConflict, conflictStats,
         syncError, repairDatabase: resetFirestoreCache,
         actions: combinedActions,
         authStatus, user, login, logout,

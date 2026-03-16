@@ -59,12 +59,12 @@ export const en: Translation = {
     maxLossStreak: 'Max Loss Streak',
 
     // Sync Conflict Modal
-    syncConflictTitle: 'Data Conflict Detected',
-    syncConflictDesc: 'We found local data on this device that is not synced. How would you like to proceed?',
-    mergeOption: 'Merge & Sync',
-    mergeDesc: 'Recommended. Keeps local data and uploads it to the cloud.',
-    discardOption: 'Discard Local Data',
-    discardDesc: 'Keep only cloud data. Local changes will be lost.',
+    syncConflictTitle: 'Data Difference Detected',
+    syncConflictDesc: 'Cloud and local data are different. Choose how to proceed:',
+    useCloudOption: 'Use Cloud Version',
+    useLocalOption: 'Use Local Version',
+    smartMergeOption: 'Smart Merge (Recommended)',
+    syncStats: 'Local: {local} / Cloud: {cloud} / Duplicates: {dup}',
     processing: 'Processing...',
 
     // Import Conflict Modal
