@@ -1,5 +1,5 @@
 {
-  "build_type": "nodejs",
+  "build_command": "npm install && npm run build",
   "output_dir": "dist",
-  "start_command": "npx serve -s dist -l tcp://0.0.0.0:${PORT:-8080}"
+  "start_command": "npx serve dist -s -l tcp://0.0.0.0:${PORT:-8080}"
 }

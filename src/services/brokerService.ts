@@ -186,20 +186,31 @@ export const fetchBrokerPnl = async (
                 throw fetchError;
             }
 
+            // ⚡ 先檢查 HTTP 狀態碼，避免嘗試 parse HTML 錯誤頁面
+            if (response.status === 502 || response.status === 503 || response.status === 504) {
+                throw new Error(`後端正在冷啟動或暫時無法使用 (HTTP ${response.status})，請先至設定頁面點擊「喚醒後端」，等待後端就緒後再重試。`);
+            }
+
             const text = await response.text();
             let result: any;
             try {
                 result = text ? JSON.parse(text) : {};
             } catch (e) {
-                // JSON 解析失敗 - 不應靜默回退到假資料
+                // JSON 解析失敗 — 通常是後端回傳了 HTML 錯誤頁面
                 console.error('❌ [PNL] JSON Parse Error:', text.substring(0, 200));
-                throw new Error(`後端回應格式錯誤，無法解析交易資料。請重試或檢查後端狀態。`);
+                const isHtml = text.trimStart().startsWith('<');
+                throw new Error(
+                    isHtml
+                        ? `後端回傳了 HTML 頁面而非 JSON，可能正在冷啟動或部署中。請先確認後端狀態。`
+                        : `後端回應格式錯誤，無法解析交易資料。回應內容：${text.substring(0, 80)}...`
+                );
             }
 
             if (!response.ok) {
-                // 後端 500 系列錯誤 - 不應靜默回退到假資料
+                // 後端 500 系列錯誤
                 if (response.status >= 500) {
-                    throw new Error(`後端伺服器錯誤 (${response.status})，請稍後重試。`);
+                    const errDetail = result.message || result.error || '';
+                    throw new Error(`後端伺服器錯誤 (${response.status})${errDetail ? '：' + errDetail : ''}，請稍後重試。`);
                 }
 
                 let errMsg = result.message || result.error || `後端錯誤 (${response.status})`;
