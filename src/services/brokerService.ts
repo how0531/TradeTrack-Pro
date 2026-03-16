@@ -68,7 +68,12 @@ const generateMockPnl = (startDate: Date, endDate: Date): BrokerSyncResult => {
     };
 };
 
-export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: BrokerConfig): Promise<BrokerSyncResult> => {
+export const fetchBrokerPnl = async (
+    startDate: Date, 
+    endDate: Date, 
+    config: BrokerConfig,
+    onProgress?: (current: number, total: number, currentStart: string, currentEnd: string) => void
+): Promise<BrokerSyncResult> => {
     const startTime = performance.now();
     console.log('🔍 [PERF] fetchBrokerPnl 開始:', new Date().toISOString());
     // Helper to avoid timezone shift when using toISOString() on local dates
@@ -99,21 +104,60 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
             throw new Error('P&L 擷取失敗：缺少必要憑證資訊 (Missing credentials)');
         }
 
-        // ===== 嘗試呼叫 Python 後端 =====
+        // ===== 嘗試呼叫 Python 後端 (Date Chunking) =====
         try {
-            const payload = {
-                apiKey: config.apiKey,
-                apiSecret: config.apiSecret,
-                personId: config.personId,
-                caPath: config.caPath,
-                caPassword: config.caPassword,
-                caContent: config.caContent, // 傳送 Base64 憑證內容
-                branchCode: config.branchCode, // ✅ 傳遞分公司代碼
-                accountType: config.accountType, // ✅ 傳遞帳號類型 (S/F)
-                environment: config.environment || 'production', // ✅ 傳遞環境設定
-                startDate: startStr,
-                endDate: endStr
+            // Function to generate date chunks (max 31 days per chunk)
+            const getChunks = (start: Date, end: Date) => {
+                const chunks = [];
+                let currentStart = new Date(start);
+                while (currentStart <= end) {
+                    let currentEnd = new Date(currentStart);
+                    currentEnd.setDate(currentStart.getDate() + 30); // 31 days inclusive
+                    if (currentEnd > end) currentEnd = new Date(end);
+                    chunks.push({ start: new Date(currentStart), end: new Date(currentEnd) });
+                    currentStart = new Date(currentEnd);
+                    currentStart.setDate(currentStart.getDate() + 1);
+                }
+                return chunks;
             };
+
+            const dateChunks = getChunks(startDate, endDate);
+            console.log(`⏱️ [CHUNK] 將查詢區間切分為 ${dateChunks.length} 個區塊`);
+
+            let aggregatedResult: BrokerSyncResult = {
+                totalPnl: 0,
+                dailyResults: [],
+                details: [],
+            };
+
+            const fetchStartTime = performance.now();
+
+            // Sequentially fetch chunks to avoid overloading the server completely
+            for (let i = 0; i < dateChunks.length; i++) {
+                const chunk = dateChunks[i];
+                const chunkStartStr = formatLocalYYYYMMDD(chunk.start);
+                const chunkEndStr = formatLocalYYYYMMDD(chunk.end);
+                
+                console.log(`⏳ [CHUNK ${i+1}/${dateChunks.length}] 正在拉取: ${chunkStartStr} → ${chunkEndStr}`);
+                
+                // Invoke callback if provided
+                if (onProgress) {
+                    onProgress(i + 1, dateChunks.length, chunkStartStr, chunkEndStr);
+                }
+
+                const payload = {
+                    apiKey: config.apiKey,
+                    apiSecret: config.apiSecret,
+                    personId: config.personId,
+                    caPath: config.caPath,
+                    caPassword: config.caPassword,
+                    caContent: config.caContent, // 傳送 Base64 憑證內容
+                    branchCode: config.branchCode, // 傳遞分公司代碼
+                    accountType: config.accountType, // 傳遞帳號類型 (S/F)
+                    environment: config.environment || 'production', // 傳遞環境設定
+                    startDate: chunkStartStr,
+                    endDate: chunkEndStr
+                };
 
             // ... (Logging omitted for brevity) ...
 
@@ -169,18 +213,46 @@ export const fetchBrokerPnl = async (startDate: Date, endDate: Date, config: Bro
                 throw new Error(errMsg);
             }
 
-            if (result.status === 'success' && result.details) {
-                return {
-                    totalPnl: result.total_pnl || 0,
-                    dailyResults: result.daily_results || [],
-                    details: result.details || [],
-                    caStatus: result.ca_status,
-                    emptyReason: result.empty_reason
-                };
+            // 處理 FastAPI 回傳的 HTTP 200 但帶有業務邏輯錯誤 (Business Logic Error)
+            if (result.status === 'error') {
+                console.error(`❌ [PNL] Backend returned error status:`, result.message);
+                throw new Error(result.message || result.error || '後端擷取資料失敗');
             }
 
-            // 無法識別的回應格式
-            throw new Error(`後端回應異常：無法識別的資料格式。請重試或聯絡支援。`);
+                // Aggregation
+                if (result.status === 'success' && result.details) {
+                    aggregatedResult.details.push(...(result.details || []));
+                    aggregatedResult.totalPnl += (result.total_pnl || 0);
+                    // Combine daily results
+                    if (result.daily_results) {
+                        result.daily_results.forEach((dr: any) => {
+                            const existing = aggregatedResult.dailyResults.find(d => d.date === dr.date);
+                            if (existing) existing.pnl += dr.pnl;
+                            else aggregatedResult.dailyResults.push(dr);
+                        });
+                    }
+                    aggregatedResult.caStatus = result.ca_status; // Keep the latest status
+                    
+                    // If we get real details, we overwrite the emptyReason
+                    if (result.details.length > 0) {
+                        aggregatedResult.emptyReason = undefined; 
+                    } else if (result.empty_reason && !aggregatedResult.details.length) {
+                        aggregatedResult.emptyReason = result.empty_reason;
+                    }
+                } else {
+                    // 無法識別的回應格式
+                    throw new Error(`後端回應異常：無法識別的資料格式。請重試或聯絡支援。`);
+                }
+            } // end loop
+
+            const totalTime = performance.now() - fetchStartTime;
+            console.log(`✅ [PNL] 成功取得資料，共 ${aggregatedResult.details.length} 筆，總耗時: ${totalTime.toFixed(2)}ms`);
+
+            // Sort finally
+            aggregatedResult.details.sort((a, b) => b.date.localeCompare(a.date));
+            aggregatedResult.dailyResults.sort((a, b) => b.date.localeCompare(a.date));
+
+            return aggregatedResult;
 
         } catch (fetchError: any) {
             // 網路錯誤：後端不可達 - 拋出明確錯誤而非假資料

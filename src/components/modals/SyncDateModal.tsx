@@ -490,7 +490,15 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
         try {
           // Fetch
-          const result = await fetchBrokerPnl(startD, endD, requestConfig);
+          const result = await fetchBrokerPnl(startD, endD, requestConfig, (chunkCurrent, chunkTotal, startStr, endStr) => {
+             // For each chunk, update progress more finely
+             // The overall progress for groups is between 30% and 80%
+             const baseProgress = 30 + Math.floor(((completedGroups - 1) / totalGroups) * 50);
+             const chunkProgress = Math.floor((chunkCurrent / chunkTotal) * (50 / totalGroups));
+             setLoadingProgress(baseProgress + chunkProgress);
+             // Update message to show chunk
+             setLoadingMessage(`正在下載: ${firstBranchName}${branchSuffix} (${typeName}) - 區塊 ${chunkCurrent}/${chunkTotal}...`);
+          });
           console.log(`✅ [DEBUG] Fetch Success: ${key} -> ${result.details?.length || 0} trades`);
 
           if (result.emptyReason === 'ca_not_activated') {

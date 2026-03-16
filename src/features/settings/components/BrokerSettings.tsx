@@ -134,6 +134,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         error?: string
     }>>({});
 
+    // Import Chunk Progress tracking
+    const [fetchProgress, setFetchProgress] = useState<{current: number, total: number, start: string, end: string} | null>(null);
+
     // 計時器：顯示已等待秒數
     const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -585,9 +588,17 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
             {/* Verification Progress & Errors (Outside Modal) */}
             {!isEditing && (progressMsg || errorMsg) && (
-                <div className="p-4 rounded-2xl bg-black/20 border border-white/5 space-y-3 animate-in fade-in slide-in-from-top-2">
+                <div className="p-4 rounded-2xl bg-black/20 border border-white/5 space-y-3 animate-in fade-in slide-in-from-top-2 overflow-hidden relative">
+                    {/* Progress Bar Background */}
+                    {fetchProgress && (
+                        <div 
+                            className="absolute top-0 left-0 h-full bg-[#1e293b]/40 z-0 transition-all duration-300 ease-out" 
+                            style={{ width: `${(fetchProgress.current / fetchProgress.total) * 100}%` }}
+                        />
+                    )}
+                    
                     {progressMsg && (
-                        <div className="flex items-center gap-2 text-xs text-[#C8B085] animate-pulse">
+                        <div className="flex items-center gap-2 text-xs text-[#C8B085] animate-pulse relative z-10">
                             <Loader2 size={14} className="animate-spin" />
                             <span>{progressMsg}</span>
                         </div>
@@ -1436,7 +1447,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                                     <X size={14} className="text-red-500 stroke-[4px]" />
                                                                 ) : isVerifying === acc.account_id ? (
                                                                     <div className="px-2 py-0.5 rounded-full text-[9px] font-bold border border-blue-500/30 text-blue-400 bg-blue-500/5 backdrop-blur-sm flex items-center gap-1 whitespace-nowrap">
-                                                                        <Loader2 size={9} className="animate-spin" /> 測試中
+                                                                        <Loader2 size={9} className="animate-spin" /> 
+                                                                        {fetchProgress ? `${fetchProgress.current}/${fetchProgress.total}` : '測試中'}
                                                                     </div>
                                                                 ) : !isSigned ? (
                                                                     <span className="text-[10px] text-zinc-600">—</span>

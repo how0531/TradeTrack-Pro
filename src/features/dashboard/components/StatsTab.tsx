@@ -147,13 +147,21 @@ const BubbleTooltip = ({ active, payload, hideAmounts, lang }: any) => {
     return null;
 };
 
-const CustomPeakDot = ({ cx, cy, payload, dataLength }: any) => {
+const CustomPeakDot = ({ cx, cy, payload, dataLength, frequency }: any) => {
     if (!payload?.isNewPeak) return null;
-    let r = 5;
-    if (dataLength > 200) r = 2;
-    else if (dataLength > 100) r = 3;
-    else if (dataLength > 50) r = 4;
-    return <circle cx={cx} cy={cy} r={r} fill="#DEB06C" stroke="none" />;
+    
+    let r = 3; // 縮小基礎大小，避免視覺干擾
+    
+    // 依據頻率與資料量動態調整點的大小
+    if (frequency === 'weekly') r = 2;
+    else if (frequency === 'monthly' || frequency === 'quarterly' || frequency === 'yearly') r = 2.5;
+    else {
+        if (dataLength > 200) r = 1.5;
+        else if (dataLength > 100) r = 2;
+        else if (dataLength > 50) r = 2.5;
+    }
+    
+    return <circle cx={cx} cy={cy} r={r} fill="#DEB06C" fillOpacity={0.85} stroke="none" />;
 };
 
 const StrategyBubble = (props: any) => {
@@ -546,7 +554,7 @@ export const StatsChart = ({
                                     dataKey={showPurePnl ? "cumulativePnl" : "equity"}
                                     stroke={THEME.BLUE}
                                     strokeWidth={2}
-                                    dot={(props) => <CustomPeakDot {...props} dataLength={metrics.curve.length} />}
+                                    dot={(props) => <CustomPeakDot {...props} dataLength={metrics.curve.length} frequency={frequency} />}
                                     activeDot={{ r: 4, strokeWidth: 0 }}
                                     yAxisId="equity"
                                     isAnimationActive={true}

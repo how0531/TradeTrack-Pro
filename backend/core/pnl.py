@@ -43,10 +43,12 @@ def login_and_fetch_pnl(
 
     if ca_content:
         try:
-            tf = tempfile.NamedTemporaryFile(delete=False, suffix=".pfx")
-            tf.write(base64.b64decode(ca_content))
-            tf.close()
-            temp_ca_path = tf.name
+            # 🔧 FIX: Use a predictable temp file rather than a random one.
+            # Do NOT use `delete=False` NamedTemporaryFile because we will NOT delete it in finally.
+            # Shioaji C++ library accesses this file dynamically on *every* query signature.
+            temp_ca_path = os.path.join(tempfile.gettempdir(), f"tradetrack_ca_{person_id}.pfx")
+            with open(temp_ca_path, "wb") as f:
+                f.write(base64.b64decode(ca_content))
             final_ca_path = temp_ca_path
         except Exception as e:
             return {"status": "error", "message": f"憑證處理失敗 (CA Failed): {str(e)}", "details": []}
@@ -452,21 +454,29 @@ def login_and_fetch_pnl(
         total_open_pnl = 0    # New: 總未平倉損益
         final_empty_reason = None
         
+        # 收集錯誤，如果所有帳號都失敗，就要拋出明確錯誤給前端
+        account_errors = []
+        
         log(f"🚀 Starting Sequential Execution for {len(valid_accounts)} accounts...")
         for acc in valid_accounts:
             try:
                 # Unpack 5 values now
                 pnl, acc_dets, equity, open_pnl, empty_reason = fetch_worker(acc)
                 
-                if pnl != 0 or acc_dets:
-                    total_pnl += pnl
-                    details.extend(acc_dets)
-                elif empty_reason:
-                    # 優先記錄 ca_not_activated
-                    if empty_reason == "ca_not_activated":
-                        final_empty_reason = "ca_not_activated"
-                    elif not final_empty_reason:
-                        final_empty_reason = empty_reason
+                if empty_reason and empty_reason.startswith("error:"):
+                    error_msg = empty_reason[6:]
+                    account_errors.append(f"帳號 {acc.account_id}: {error_msg}")
+                    log(f"❌ [Worker Reported Error] {acc.account_id} failed with: {error_msg}")
+                else:
+                    if pnl != 0 or acc_dets:
+                        total_pnl += pnl
+                        details.extend(acc_dets)
+                    elif empty_reason:
+                        # 優先記錄 ca_not_activated
+                        if empty_reason == "ca_not_activated":
+                            final_empty_reason = "ca_not_activated"
+                        elif not final_empty_reason:
+                            final_empty_reason = empty_reason
                 
                 # Aggregate Futures Data
                 total_equity += equity
@@ -475,6 +485,18 @@ def login_and_fetch_pnl(
                     
             except Exception as exc:
                 log(f"❌ [Exception] {acc.account_id} generated an exception: {exc}")
+                account_errors.append(f"帳號 {acc.account_id}: {str(exc)}")
+
+        # 如果帳號有失敗且沒有成功取得任何 details，則認定這是一次失敗的查詢
+        if account_errors and not details:
+            error_summary = " | ".join(account_errors)
+            log(f"❌ [Fetch Failed] All valid accounts failed: {error_summary}")
+            return {
+                "status": "error",
+                "message": f"擷取資料失敗: {error_summary}",
+                "details": [],
+                "environment": "simulation" if simulation else "production"
+            }
 
         # B6: temp CA cleanup is handled exclusively in the `finally` block below
 
@@ -532,13 +554,12 @@ def login_and_fetch_pnl(
             "environment": "simulation" if simulation else "production"
         }
     finally:
-        # M1: 確保暫存 CA 檔案無論成功或失敗都會清理
-        if temp_ca_path and os.path.exists(temp_ca_path):
-            try:
-                os.unlink(temp_ca_path)
-                log(f"🗑️ [Cleanup] Temp CA file removed: {temp_ca_path}")
-            except Exception:
-                pass
+        # 🔧 FIX: DO NOT clean up the temp CA file here! 
+        # Because we reuse the Shioaji session across multiple requests (Chunking / Stock vs Futures),
+        # the Shioaji C++ library expects the PFX file to still exist at the precise path 
+        # provided during `activate_ca`. If we delete it here, the next chunk will fail mysteriously.
+        # Since we use a deterministic filename (`tradetrack_ca_{person_id}.pfx`), we won't leak thousands of files.
+        pass
 
 def verify_simulation_account(
     api_key,

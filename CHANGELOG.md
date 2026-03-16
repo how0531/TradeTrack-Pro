@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.1] - 2026-03-16
+
+### Changed (Features & Architecture)
+
+- **券商損益大數據匯入優化 (Data Chunking)**：
+  - **前端智能分塊**：查詢大於一整個月的區間時，前端會自動拆分為多個 30 天的小片段 (Chunks) 並循序向後端請求，徹底解決 Shioaji 大區段查詢導致的 `Timeout` 或崩潰問題。
+  - **動態進度回饋 (Progress UI)**：因應分塊查詢時間拉長，介面上會完整顯示目前的下載進度 (例如：`正在下載: 區塊 1/12...`) 與動態進度條。
+  - **權益曲線圖表優化**：縮小並柔化了周/月頻率圖表中的「創歷史新高」點位，讓主視覺不再被點位過度干擾。
+
+### Fixed
+
+- **靜默失敗阻斷 (Fail-Fast Error Propagation)**：修復舊版後端在遇到券商連線異常時，誤將空陣列與 `success` 回傳給前端導致的資料遺漏。現在發生異常會嚴格回傳 Error 中斷前端匯入。
+- **解決多帳號連續查詢失敗 (CA Persistent File Fix)**：修復「同時勾選期貨與證券帳號」時，Shioaji C++ 底層因暫時 `.pfx` 憑證檔被提前刪除而發生的簽名崩潰，現在後端會以 `person_id` 為基礎穩定留存暫存憑證供重複連線使用。
+
 ## [2.5.11] - 2026-03-16
 
 ### Changed (Features)
