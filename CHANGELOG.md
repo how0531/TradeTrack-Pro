@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.10] - 2026-03-16
+
+### Fixed
+
+- **Zeabur 502 Bad Gateway 優化**：新增 `zbpack.json` 強制指定靜態網站打包輸出，並同時在 `package.json` 中加入 `serve` 作為 fallback 啟動腳本。確保不論 Zeabur 將專案識別為 Static 還是 Node.js 服務，都能正確監聽連接埠並部署 SPA，徹底根除 502 路由異常。
+
 ## [2.5.9] - 2026-03-12
 
 ### Fixed

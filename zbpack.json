@@ -1,0 +1,6 @@
+{
+  "build_command": "npm install && npm run build",
+  "output_dir": "dist",
+  "ignore_dockerfile": true,
+  "app_dir": "."
+}

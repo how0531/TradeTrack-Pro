@@ -1,13 +1,14 @@
 {
   "name": "tradetrack-pro",
   "private": true,
-  "version": "2.5.9",
+  "version": "2.5.10",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "start": "serve -s dist -l tcp://0.0.0.0:${PORT:-8080}"
   },
   "dependencies": {
     "dexie": "^4.3.0",
@@ -18,7 +19,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.12.0",
-    "recharts": "^2.12.0"
+    "recharts": "^2.12.0",
+    "serve": "^14.2.6"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
