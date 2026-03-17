@@ -10,6 +10,7 @@ import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreak
 import { db, resetFirestoreCache } from '../firebaseConfig';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { I18N, THEME } from '../constants';
+import { preemptiveWake } from '../services/backendGateway';
 
 interface TradeContextType {
     // Data
@@ -122,6 +123,9 @@ interface TradeContextType {
 const TradeContext = createContext<TradeContextType | undefined>(undefined);
 
 export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    // 🔥 Layer 1: App 載入時背景預先喚醒後端（不 block UI）
+    preemptiveWake();
+
     // 1. Auth
     const { user, status: authStatus, login, logout } = useAuth();
 

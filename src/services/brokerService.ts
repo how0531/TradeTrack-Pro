@@ -1,5 +1,6 @@
 
-import { BrokerConfig } from '../types';
+import type { BrokerConfig } from '../types';
+import { backendFetch } from './backendGateway';
 
 /**
  * Mocks the Shioaji login/sync process or fetches from a local server.
@@ -161,59 +162,21 @@ export const fetchBrokerPnl = async (
 
             // ... (Logging omitted for brevity) ...
 
-            // 創建 AbortController 以支援取消和超時
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => {
-                controller.abort();
-                console.warn('⏱️ [TIMEOUT] 請求超時（120秒）');
-            }, 120000); // 120秒超時
+            // ✅ 統一透過 Gateway 發送請求（自動 retry + 自動喚醒 + 統一 timeout）
+            const { ok, status, data: result } = await backendFetch('/api/broker/pnl', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                timeout: 120000, // PnL 查詢可能較慢，給 120s
+            });
 
-            const fetchStartTime = performance.now();
-            let response;
-            try {
-                response = await fetch(`${API_BASE}/api/broker/pnl`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                    signal: controller.signal // 添加取消信號
-                });
-
-                clearTimeout(timeoutId); // 清除超時計時器
-                // ... (Perf logging) ...
-            } catch (fetchError: any) {
-                clearTimeout(timeoutId);
-                // Re-throw all errors in production mode (no demo fallback)
-                throw fetchError;
-            }
-
-            // ⚡ 先檢查 HTTP 狀態碼，避免嘗試 parse HTML 錯誤頁面
-            if (response.status === 502 || response.status === 503 || response.status === 504) {
-                throw new Error(`後端正在冷啟動或暫時無法使用 (HTTP ${response.status})，請先至設定頁面點擊「喚醒後端」，等待後端就緒後再重試。`);
-            }
-
-            const text = await response.text();
-            let result: any;
-            try {
-                result = text ? JSON.parse(text) : {};
-            } catch (e) {
-                // JSON 解析失敗 — 通常是後端回傳了 HTML 錯誤頁面
-                console.error('❌ [PNL] JSON Parse Error:', text.substring(0, 200));
-                const isHtml = text.trimStart().startsWith('<');
-                throw new Error(
-                    isHtml
-                        ? `後端回傳了 HTML 頁面而非 JSON，可能正在冷啟動或部署中。請先確認後端狀態。`
-                        : `後端回應格式錯誤，無法解析交易資料。回應內容：${text.substring(0, 80)}...`
-                );
-            }
-
-            if (!response.ok) {
-                // 後端 500 系列錯誤
-                if (response.status >= 500) {
+            if (!ok) {
+                if (status >= 500) {
                     const errDetail = result.message || result.error || '';
-                    throw new Error(`後端伺服器錯誤 (${response.status})${errDetail ? '：' + errDetail : ''}，請稍後重試。`);
+                    throw new Error(`後端伺服器錯誤 (${status})${errDetail ? '：' + errDetail : ''}，請稍後重試。`);
                 }
 
-                let errMsg = result.message || result.error || `後端錯誤 (${response.status})`;
+                let errMsg = result.message || result.error || `後端錯誤 (${status})`;
                 if (typeof errMsg === 'string') {
                     if (errMsg.includes('key:') && errMsg.includes('not exist')) {
                         errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
@@ -224,7 +187,7 @@ export const fetchBrokerPnl = async (
                 throw new Error(errMsg);
             }
 
-            // 處理 FastAPI 回傳的 HTTP 200 但帶有業務邏輯錯誤 (Business Logic Error)
+            // 處理 HTTP 200 但帶有業務邏輯錯誤
             if (result.status === 'error') {
                 console.error(`❌ [PNL] Backend returned error status:`, result.message);
                 throw new Error(result.message || result.error || '後端擷取資料失敗');
@@ -540,63 +503,29 @@ export const fetchBrokerProfile = async (
                 environment: config.environment || 'production'
             };
 
-            // Wrap the fetch call with retry logic
-            const result = await retryWithBackoff(async () => {
-                if (onProgress) onProgress('連接中...');
+            // ✅ 統一透過 Gateway 發送請求
+            if (onProgress) onProgress('連接中...');
 
-                const fetchStartTime = performance.now();
-                console.log('🌐 [PERF] 發送 Profile API 請求至:', `${API_BASE}/api/broker/profile`, {
-                    hasCA: !!payload.caContent,
-                    caLength: payload.caContent ? payload.caContent.length : 0
-                });
-
-                // F1: Per-attempt timeout to prevent infinite pending
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s per attempt
-
-                const response = await fetch(`${API_BASE}/api/broker/profile`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                    signal: controller.signal
-                });
-
-                clearTimeout(timeoutId);
-
-                const fetchElapsed = performance.now() - fetchStartTime;
-                console.log(`📡 [PERF] Profile API 回應時間: ${fetchElapsed.toFixed(0)}ms`);
-
-                const text = await response.text();
-                let result: any;
-                try {
-                    result = text ? JSON.parse(text) : {};
-                } catch (e) {
-                    console.error('JSON Parse Error:', text.substring(0, 200));
-                    throw new Error(`後端回應格式錯誤 (Invalid JSON): ${text.substring(0, 50)}...`);
-                }
-
-                if (!response.ok) {
-                    let errMsg = result.message || result.error || `後端錯誤 (${response.status}): ${text.substring(0, 100)}`;
-
-                    // Improve error message for known Shioaji errors
-                    if (typeof errMsg === 'string') {
-                        if (errMsg.includes('key:') && errMsg.includes('not exist')) {
-                            errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
-                        } else if (errMsg.includes('Account Not Acceptable')) {
-                            errMsg = '帳號授權失敗，請確認該帳號是否有效 (Account Not Acceptable)';
-                        } else if (errMsg.includes('缺少必要欄位')) {
-                            // Validation error - don't retry
-                            throw new Error(errMsg);
-                        }
-                    }
-
-                    throw new Error(errMsg);
-                }
-
-                return result;
-            }, 3, (attempt, max) => {
-                if (onProgress) onProgress(`連接中 (${attempt}/${max})...`);
+            const { ok, status, data: result } = await backendFetch('/api/broker/profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                timeout: 45000,
+                maxRetries: 3,
+                onProgress: (msg) => { if (onProgress) onProgress(msg); },
             });
+
+            if (!ok) {
+                let errMsg = result.message || result.error || `後端錯誤 (${status})`;
+                if (typeof errMsg === 'string') {
+                    if (errMsg.includes('key:') && errMsg.includes('not exist')) {
+                        errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                    } else if (errMsg.includes('Account Not Acceptable')) {
+                        errMsg = '帳號授權失敗，請確認該帳號是否有效 (Account Not Acceptable)';
+                    }
+                }
+                throw new Error(errMsg);
+            }
 
             const totalElapsed = performance.now() - startTime;
             console.log(`✅ [PERF] fetchBrokerProfile 完成: ${totalElapsed.toFixed(0)}ms`);
@@ -672,20 +601,14 @@ export const verifyBrokerAccount = async (config: BrokerConfig, accountId: strin
             accountId: accountId
         };
 
-        // F2: Per-request timeout to prevent infinite pending
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-        const response = await fetch(`${API_BASE}/api/broker/verify`, {
+        // ✅ 統一透過 Gateway 發送請求
+        const { data: result } = await backendFetch('/api/broker/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            signal: controller.signal
+            timeout: 30000,
         });
 
-        clearTimeout(timeoutId);
-
-        const result = await response.json();
         return result;
     } catch (error: any) {
         console.error('[VERIFY] Error:', error);

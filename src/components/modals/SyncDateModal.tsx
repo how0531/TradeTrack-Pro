@@ -24,10 +24,8 @@ import { Trade, BrokerConfig, Portfolio, AutoSyncParams } from "../../types";
 import {
   fetchBrokerPnl,
   fetchBrokerProfile,
-  pingBackend,
-  validateBackendStatus,
-  wakeUpBackend,
 } from "../../services/brokerService";
+import { onBackendStatusChange, getBackendStatus, wakeUpBackendViaGateway } from '../../services/backendGateway';
 import { getLocalDateStr, formatDateWithWeekday } from "../../utils/format";
 import { formatSymbolCode } from "../../utils/symbolNames";
 import { CustomDateRangeModal } from "./CustomDateRangeModal";

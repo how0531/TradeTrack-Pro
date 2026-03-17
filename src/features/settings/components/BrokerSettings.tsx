@@ -4,7 +4,7 @@ import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, Shie
 import { useTradeContext } from '../../../context/TradeContext';
 import { useBackend } from '../../../context/BackendContext';
 import { BrokerConfig } from '../../../types';
-import { fetchBrokerProfile, validateBackendStatus, wakeUpBackend, verifyBrokerAccount } from '../../../services/brokerService';
+import { fetchBrokerProfile, verifyBrokerAccount } from '../../../services/brokerService';
 import { ACCOUNT_CATEGORY_THEMES } from '../../../constants';
 import { BrokerGuideModal } from './BrokerGuideModal';
 
@@ -261,20 +261,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         dispatch({ type: 'CLEAR_FIELD_ERRORS' });
 
         try {
-            // 階段 1: 喚醒後端（如果已 ready 則跳過）
-            if (backendStatus !== 'online') {
-                dispatch({ type: 'SET_PROGRESS', phase: 'waking', message: '正在喚醒後端伺服器...' });
-                dispatch({ type: 'SET_PROGRESS_MSG', msg: '🔄 正在喚醒後端伺服器...' });
-
-                const wakeResult = await wakeUpBackend();
-                if (!wakeResult.success) {
-                    const classified = classifyError(wakeResult.error || 'Backend unreachable');
-                    dispatch({ type: 'LOGIN_FAIL', error: classified.message });
-                    stopElapsedTimer();
-                    return;
-                }
-                // Handled globally
-            }
+            // ✅ Gateway 自動處理喚醒，不再需要手動 wake 階段
+            // 直接進入連接階段
 
             // 階段 2: 連接券商 API
             dispatch({ type: 'SET_PROGRESS', phase: 'connecting', message: '正在連接券商 API...' });
