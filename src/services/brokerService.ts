@@ -366,19 +366,15 @@ export interface BrokerProfile {
 }
 
 /**
- * Validates backend API readiness by checking both server health and API endpoint availability.
+ * Validates backend API readiness by checking server health.
  * 
  * 增強版狀態檢測：
- * - 重試機制：網路錯誤時自動重試避免誤判
- * - 嚴格判定：檢查 health 端點的回應內容，而非僅檢查狀態碼
- * - 錯誤區分：區分網路錯誤（offline）、超時（sleeping）、部署問題（server_only）
- * 
- * @param maxRetries 最大重試次數（預設 2 次）
- * @returns 'ready' | 'server_only' | 'offline' | 'sleeping'
+ * - 簡化：只打 /health 節省 HTTP round-trip，捨棄無用的 server_only 狀態
+ * - 嚴格：區分網路錯誤（offline）與超時或 50x（sleeping / 冷啟動）
  */
 export const validateBackendStatus = async (
-    maxRetries: number = 1  // 預設重試 1 次（減少等待時間）
-): Promise<'ready' | 'server_only' | 'offline' | 'sleeping'> => {
+    maxRetries: number = 1 
+): Promise<'ready' | 'offline' | 'sleeping'> => {
     const startTime = performance.now();
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -387,9 +383,8 @@ export const validateBackendStatus = async (
         }
 
         try {
-            // Step 1: Health check — 縮短到 8 秒，避免 UI 凍結
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
 
             const healthResponse = await fetch(`${API_BASE}/health`, {
                 signal: controller.signal,
@@ -397,40 +392,18 @@ export const validateBackendStatus = async (
             });
             clearTimeout(timeoutId);
 
-            if (!healthResponse.ok) {
-                if (healthResponse.status === 502 || healthResponse.status === 503) {
-                    if (attempt < maxRetries) continue;
-                    return 'sleeping';
-                }
-                if (attempt < maxRetries) continue;
-                return 'offline';
+            if (healthResponse.ok) {
+                console.log(`✅ [BACKEND_CHECK] Health OK (${(performance.now() - startTime).toFixed(0)}ms)`);
+                return 'ready';
             }
 
-            console.log(`✅ [BACKEND_CHECK] Health OK (${(performance.now() - startTime).toFixed(0)}ms)`);
-
-            // Step 2: API probe — 4 秒 timeout
-            const apiController = new AbortController();
-            const apiTimeoutId = setTimeout(() => apiController.abort(), 4000);
-
-            const apiResponse = await fetch(`${API_BASE}/api/broker/profile`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
-                signal: apiController.signal,
-            });
-            clearTimeout(apiTimeoutId);
-
-            if (apiResponse.status === 404) return 'server_only';
-            if (apiResponse.status === 400 || apiResponse.status === 422) return 'ready';
-
-            // 其他回應碼—嘗試解析訊息
-            try {
-                const text = await apiResponse.text();
-                const parsed = text ? JSON.parse(text) : {};
-                if (parsed.message || parsed.error || parsed.status) return 'ready';
-            } catch (_) { /* ignore */ }
-
-            return 'server_only';
+            if (healthResponse.status === 502 || healthResponse.status === 503) {
+                if (attempt < maxRetries) continue;
+                return 'sleeping';
+            }
+            
+            if (attempt < maxRetries) continue;
+            return 'offline';
 
         } catch (e: any) {
             if (e.name === 'AbortError') {
@@ -439,7 +412,7 @@ export const validateBackendStatus = async (
             }
             if (e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError')) {
                 if (attempt < maxRetries) continue;
-                return 'offline'; // 網路關掉 = offline
+                return 'offline'; // 網路層級的失敗 = offline
             }
             if (attempt < maxRetries) continue;
             return 'offline';
@@ -450,26 +423,25 @@ export const validateBackendStatus = async (
 };
 
 /**
- * Legacy function for backward compatibility - simple health check only
+ * Legacy function for backward compatibility
  */
 export const pingBackend = async (): Promise<boolean> => {
     const status = await validateBackendStatus();
-    return status !== 'offline';
+    return status === 'ready';
 };
 
 /**
- * 喚醒後端——用輸止 Polling 轉密式回報
- * 不再用單次 90s 阁塞請求
- * 改用：每 5s ping 一次 /health，最多等 90s，讓 UI 可即時更新
+ * 喚醒後端——漸進式輪詢 (Adaptive Polling)
+ * 前幾次 ping 得比較密集，以抓緊 Render 15-30s 的啟動窗口，
+ * 提升使用者體驗。
  */
 export const wakeUpBackend = async (
     onProgress?: (attempt: number, maxAttempts: number) => void
 ): Promise<{ success: boolean; error?: string }> => {
     const url = `${API_BASE}/health`;
-    const MAX_ATTEMPTS = 12;  // 12 x 7.5秒 ≈ 90秒
-    const POLL_INTERVAL = 7500;
+    const MAX_ATTEMPTS = 15;  
 
-    console.log(`🔔 [WAKE] Starting polling wake-up (max ${MAX_ATTEMPTS} attempts, every ${POLL_INTERVAL/1000}s)`);
+    console.log(`🔔 [WAKE] Starting adaptive polling wake-up (max ${MAX_ATTEMPTS} attempts)`);
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         onProgress?.(attempt, MAX_ATTEMPTS);
@@ -497,9 +469,13 @@ export const wakeUpBackend = async (
             }
         }
 
-        // 如果還沒喚醒，等候下一次
+        // 如果還沒喚醒，依據嘗試次數使用漸進式等待時間 (Adaptive Delay)
         if (attempt < MAX_ATTEMPTS) {
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+            let delay = 10000; // default 10s
+            if (attempt <= 4) delay = 3000;       // 前 4 次等 3 秒
+            else if (attempt <= 8) delay = 5000;  // 第 5~8 次等 5 秒
+            
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
 
@@ -566,7 +542,7 @@ export const fetchBrokerProfile = async (
 
             // Wrap the fetch call with retry logic
             const result = await retryWithBackoff(async () => {
-                if (onProgress) onProgress('正在連接券商 API...');
+                if (onProgress) onProgress('連接中...');
 
                 const fetchStartTime = performance.now();
                 console.log('🌐 [PERF] 發送 Profile API 請求至:', `${API_BASE}/api/broker/profile`, {
@@ -619,7 +595,7 @@ export const fetchBrokerProfile = async (
 
                 return result;
             }, 3, (attempt, max) => {
-                if (onProgress) onProgress(`連接中 (嘗試 ${attempt}/${max})...`);
+                if (onProgress) onProgress(`連接中 (${attempt}/${max})...`);
             });
 
             const totalElapsed = performance.now() - startTime;

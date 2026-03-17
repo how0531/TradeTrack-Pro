@@ -1,8 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, X, Trash2, AlertCircle, FileKey, Check, Loader2, FolderOpen, ShieldCheck, BrainCircuit, RefreshCw, ChevronRight, ArrowDown, Upload, HelpCircle } from 'lucide-react';
+import { useTradeContext } from '../../../context/TradeContext';
+import { useBackend } from '../../../context/BackendContext';
 import { BrokerConfig } from '../../../types';
-import { fetchBrokerProfile, pingBackend, validateBackendStatus, wakeUpBackend, verifyBrokerAccount } from '../../../services/brokerService';
+import { fetchBrokerProfile, validateBackendStatus, wakeUpBackend, verifyBrokerAccount } from '../../../services/brokerService';
 import { ACCOUNT_CATEGORY_THEMES } from '../../../constants';
 import { BrokerGuideModal } from './BrokerGuideModal';
 
@@ -121,9 +123,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const { isTesting, errorMsg, progressMsg, loginProgress, fieldErrors: errors, loginStep,
             loginResult, accountChoices, isVerifying, errorConfigId } = loginFlow;
 
-    // New state for backend health check
-    const [backendStatus, setBackendStatus] = useState<'ready' | 'server_only' | 'offline' | 'checking' | 'sleeping'>('checking');
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const { status: backendStatus, wake: handleManualPing } = useBackend();
     const [deleteTarget, setDeleteTarget] = useState<{ configId: string, accountIndex: number } | null>(null);
     const [uploadConfigId, setUploadConfigId] = useState<string | null>(null); // Track which config for CA upload
 
@@ -153,47 +154,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
         environment: 'production'
     };
 
-    // 自動驗證後端功能 (檢查雲端 API 是否正常運作)
-    useEffect(() => {
-        if (isEditing) {
-            const checkStatus = async () => {
-                setBackendStatus('checking');
-                const status = await validateBackendStatus();
-                if (status === 'sleeping') {
-                    setBackendStatus('sleeping');
-                    const wake = await wakeUpBackend();
-                    setBackendStatus(wake.success ? 'ready' : 'offline');
-                } else {
-                    setBackendStatus(status);
-                }
-            };
-            checkStatus();
-        } else {
-            setBackendStatus('ready');
-        }
-    }, [isEditing]);
-
-    // F4: 清理計時器，防止元件卸載後繼續 setInterval 導致記憶體洩漏
-    useEffect(() => {
-        return () => {
-            if (elapsedTimerRef.current) {
-                clearInterval(elapsedTimerRef.current);
-                elapsedTimerRef.current = null;
-            }
-        };
-    }, []);
-
-    const handleManualPing = async () => {
-        setBackendStatus('checking');
-        const status = await validateBackendStatus();
-        if (status === 'sleeping') {
-            setBackendStatus('sleeping');
-            const wake = await wakeUpBackend();
-            setBackendStatus(wake.success ? 'ready' : 'offline');
-        } else {
-            setBackendStatus(status);
-        }
-    };
+    // Backend health is now automatically managed upstream by BackendContext
 
     const handleStartEdit = (id: string | 'new') => {
         if (id === 'new') {
@@ -301,7 +262,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
         try {
             // 階段 1: 喚醒後端（如果已 ready 則跳過）
-            if (backendStatus !== 'ready') {
+            if (backendStatus !== 'online') {
                 dispatch({ type: 'SET_PROGRESS', phase: 'waking', message: '正在喚醒後端伺服器...' });
                 dispatch({ type: 'SET_PROGRESS_MSG', msg: '🔄 正在喚醒後端伺服器...' });
 
@@ -312,7 +273,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                     stopElapsedTimer();
                     return;
                 }
-                setBackendStatus('ready');
+                // Handled globally
             }
 
             // 階段 2: 連接券商 API
@@ -378,7 +339,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
 
             // 網路錯誤時嘗試預喚醒
             if (classified.action === 'retry') {
-                pingBackend();
+                handleManualPing();
             }
             stopElapsedTimer();
         }
@@ -1162,8 +1123,13 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                         <div className="px-6 pb-2 flex items-center justify-between text-[10px] font-mono">
                             <div className="flex items-center gap-2">
                                 <span className="text-zinc-600 uppercase tracking-tighter font-bold">後端狀態:</span>
-                                {backendStatus === 'checking' && (
-                                    <div className="flex items-center gap-1.5 text-zinc-500">
+                                {backendStatus === 'online' && (
+                                    <span className="flex items-center gap-1.5 text-green-500 font-medium">
+                                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                                        上線
+                                    </span>
+                                )}
+                                {backendStatus === 'offline' && (                                 <div className="flex items-center gap-1.5 text-zinc-500">
                                         <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-pulse" />
                                         <span className="uppercase tracking-tighter">連線中...</span>
                                     </div>
@@ -1174,18 +1140,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                         <span>喚醒伺服器中... ⏳</span>
                                     </div>
                                 )}
-                                {backendStatus === 'ready' && (
-                                    <div className="flex items-center gap-1.5 text-emerald-500">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                                        <span>已連線</span>
-                                    </div>
-                                )}
-                                {backendStatus === 'server_only' && (
-                                    <div className="flex items-center gap-1.5 text-amber-500">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
-                                        <span>API 異常</span>
-                                    </div>
-                                )}
+
                                 {backendStatus === 'offline' && (
                                     <div className="flex items-center gap-1.5 text-red-500">
                                         <div className="w-1.5 h-1.5 rounded-full bg-red-500" />

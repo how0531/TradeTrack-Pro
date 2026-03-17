@@ -37,6 +37,7 @@ import { GlassSelect } from "../common/GlassSelect";
 import { ACCOUNT_CATEGORY_THEMES } from '../../constants';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { useTradeContext } from "../../context/TradeContext";
+import { useBackend } from "../../context/BackendContext";
 import { getCache, setCache } from "../../utils/cache";
 
 // --- Interfaces ---
@@ -93,9 +94,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   const [status, setStatus] = useState<
     "idle" | "loading" | "success" | "error"
   >("idle");
-  const [backendStatus, setBackendStatus] = useState<
-    "checking" | "online" | "offline" | "sleeping"
-  >("checking");
+  const { status: backendStatus, wake: handleManualPing } = useBackend();
   const [resultMsg, setResultMsg] = useState("");
 
   // Dates
@@ -190,74 +189,6 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
   // --- Handlers ---
 
-  // ... (Manual Ping) ...
-
-
-  const handleManualPing = async () => {
-    setBackendStatus('checking');
-    const status = await validateBackendStatus();
-
-    if (status === 'sleeping') {
-      setBackendStatus('sleeping');
-      // Non-blocking wake — polls every 7.5s, updates incrementally
-      const wake = await wakeUpBackend((attempt, max) => {
-        setBackendStatus('sleeping'); // keep UI showing sleeping during polling
-        console.log(`⏳ [PING] Wake attempt ${attempt}/${max}`);
-      });
-      setBackendStatus(wake.success ? 'online' : 'offline');
-    } else {
-      setBackendStatus(status === 'ready' ? 'online' : 'offline');
-    }
-  };
-
-  /**
-   * 🤖 Smart Auto-Wake Logic
-   * Checks status on mount. If sleeping, wakes it up in the background.
-   * 🔧 FIX: Removed `backendStatus` from deps — it caused infinite re-trigger loop.
-   *   The interval reads status via a ref, not the closure value.
-   */
-  const backendStatusRef = React.useRef(backendStatus);
-  useEffect(() => { backendStatusRef.current = backendStatus; }, [backendStatus]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    let mounted = true;
-
-    const doInitialCheck = async () => {
-      const status = await validateBackendStatus();
-      if (!mounted) return;
-
-      if (status === 'sleeping') {
-        setBackendStatus('sleeping');
-        // Background wake — uses polling internally
-        const wake = await wakeUpBackend();
-        if (mounted) {
-          setBackendStatus(wake.success ? 'online' : 'offline');
-        }
-      } else {
-        setBackendStatus(status === 'ready' ? 'online' : 'offline');
-      }
-    };
-
-    doInitialCheck();
-
-    // 🔄 Lightweight poll every 10s — only check, don't auto-wake again
-    // Reads live status via ref to avoid stale closure without adding to deps
-    const pollInterval = setInterval(async () => {
-      if (!mounted || backendStatusRef.current === 'online') return;
-      const status = await validateBackendStatus(0);
-      if (!mounted) return;
-      if (status === 'ready') setBackendStatus('online');
-      else if (status === 'sleeping') setBackendStatus('sleeping');
-      else if (status === 'offline') setBackendStatus('offline');
-    }, 10000); // 10s — less aggressive than previous 5s
-
-    return () => {
-      mounted = false;
-      clearInterval(pollInterval);
-    };
-  }, [isOpen]); // ⚠️ 就是只跟 isOpen！移除 backendStatus 防止無限迭辭其發生
-
   /**
    * ✅ 樂觀更新策略載入帳號設定
    * 1. 立即顯示快取資料 (如果有)
@@ -307,8 +238,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       // 4. REMOVED: Portfolios are now managed by Context. 
       //    We rely on 'portfolios' from useTradeContext() which is reactive.
 
-      // 5. 背景檢測後端狀態 (不阻塞 UI)
-      handleManualPing();
+      // 5. Backend check is now handled globally by BackendContext
     } catch (e) {
       console.error("Error loading configs", e);
     }
@@ -369,7 +299,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
     // 🟢 Status Sync: Set to 'checking' (Yellow) or 'online' (Green) to prevent "OFFLINE" contradiction
     // If we are starting a fetch, we assume we are trying to be online.
-    setBackendStatus(prev => prev === 'offline' ? 'checking' : prev);
+    // (Handled globally by BackendContext now)
 
     // 🎨 啟動真實進度顯示 (Initial State)
     setLoadingProgress(10);
@@ -488,7 +418,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         const branchSuffix = codes.size > 1 ? '等多筆' : '';
         const typeName = type === 'F' ? '期貨' : '證券';
 
-        setLoadingMessage(`正在下載: ${firstBranchName}${branchSuffix} (${typeName})...`);
+        setLoadingMessage(`正在同步 (${typeName})...`);
 
         const requestConfig = { ...config, branchCode: filterCodeStr, accountType: type };
 
@@ -501,7 +431,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
              const chunkProgress = Math.floor((chunkCurrent / chunkTotal) * (50 / totalGroups));
              setLoadingProgress(baseProgress + chunkProgress);
              // Update message to show chunk
-             setLoadingMessage(`正在下載: ${firstBranchName}${branchSuffix} (${typeName}) - 區塊 ${chunkCurrent}/${chunkTotal}...`);
+             setLoadingMessage(`下載中 ${chunkCurrent}/${chunkTotal} (${typeName})`);
           });
           console.log(`✅ [DEBUG] Fetch Success: ${key} -> ${result.details?.length || 0} trades`);
 
@@ -529,7 +459,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       }
 
       // If we are online after fetching, set status to online
-      setBackendStatus('online');
+      // (Handled via BackendContext)
 
       console.log(
         `✅ [PERF] 步驟2 - API 呼叫完成: ${(performance.now() - step2Start).toFixed(0)}ms`,
