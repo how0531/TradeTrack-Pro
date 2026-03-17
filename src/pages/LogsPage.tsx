@@ -27,7 +27,7 @@ export const LogsPage: React.FC<LogsPageProps> = ({
 
     return (
         <div className="flex flex-col h-full w-full">
-            <div className="px-5 pt-8 pb-4">
+            <div className="px-5 pt-[max(2rem,env(safe-area-inset-top))] pb-4">
                 <h1 className="text-3xl font-bold text-[#C8B085] tracking-tight">{t.logs}</h1>
                 <p className="text-sm text-slate-500 mt-1">Review your trading history</p>
             </div>

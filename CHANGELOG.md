@@ -9,7 +9,8 @@ All notable changes to this project will be documented in this file.
 - **券商損益大數據匯入優化 (Data Chunking)**：
   - **前端智能分塊**：查詢大於一整個月的區間時，前端會自動拆分為多個 30 天的小片段 (Chunks) 並循序向後端請求，徹底解決 Shioaji 大區段查詢導致的 `Timeout` 或崩潰問題。
   - **動態進度回饋 (Progress UI)**：因應分塊查詢時間拉長，介面上會完整顯示目前的下載進度 (例如：`正在下載: 區塊 1/12...`) 與動態進度條。
-  - **權益曲線圖表優化**：縮小並柔化了周/月頻率圖表中的「創歷史新高」點位，讓主視覺不再被點位過度干擾。
+  - **圖表視覺優化**：縮小並柔化了周/月頻率圖表中的「創歷史新高」點位，讓主視覺不再被點位過度干擾。
+  - **UI 防遮擋修復**：新增 iPhone 動態島 (Dynamic Island) 與瀏海 (Notch) 的 `safe-area-inset-top` 邊距支援，防止頂部元件被系統 UI 遮擋。
 
 ### Fixed
 

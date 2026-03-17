@@ -572,7 +572,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     // S10: ddPercent / streakPercent removed — slider components handle their own %
 
     return (
-        <div className="space-y-8 px-4 sm:px-0 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-48 pt-4 max-w-full overflow-x-hidden">
+        <div className="space-y-8 px-4 sm:px-0 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-48 pt-[max(1rem,env(safe-area-inset-top))] max-w-full overflow-x-hidden">
             {/* CLOUD SYNC */}
             <div className="space-y-4">
                 <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><Cloud size={12} /> Google 雲端備份</h3>

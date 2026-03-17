@@ -127,7 +127,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
     return (
         <div className="flex flex-col bg-transparent rounded-b-[32px] border-b border-white/5 z-40 relative overflow-visible shrink-0 transition-all duration-300">
-            <div className="px-5 pt-6 flex flex-col w-full relative z-10">
+            <div className="px-5 flex flex-col w-full relative z-10 pt-[max(1.5rem,env(safe-area-inset-top))]">
                 <div className="flex flex-wrap justify-between items-center gap-2 mb-2 shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="p-1.5 rounded-lg bg-[#25282C] border border-white/5 shadow-sm"><Activity size={14} color={THEME.BLUE} /></div>
