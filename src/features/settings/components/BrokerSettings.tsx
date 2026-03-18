@@ -847,18 +847,18 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             )}
 
 
-                            {/* STEP 1: 取得金鑰 + 填寫資訊（合併） - 僅在 loginStep === 1 時顯示 */}
-                            {loginStep === 1 && (
-                                <>
-                                    <div className="relative pl-6 sm:pl-10">
-                                        <div className="relative z-10 pt-1">
-                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
-                                                <div className="flex items-start gap-2.5">
-                                                    <div className="flex flex-col gap-0.5 min-w-0">
-                                                        <span className="text-xs sm:text-sm font-bold text-[#C8B085] uppercase">取得 API 金鑰與憑證</span>
-                                                        <span className="text-[9px] sm:text-[10px] text-amber-500/50 break-words font-medium">尚未申請？點擊下方按鈕前往開通</span>
+                                {/* STEP 1: 取得金鑰 + 填寫資訊（合併） - 僅在 loginStep === 1 時顯示 */}
+                                {loginStep === 1 && (
+                                    <>
+                                        <div className="relative pl-6 sm:pl-10">
+                                            <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">1</div>
+                                            <div className="relative z-10 pt-1">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
+                                                    <div className="flex items-start gap-2.5">
+                                                        <div className="flex flex-col gap-0.5 min-w-0">
+                                                            <span className="text-xs sm:text-sm font-bold text-[#C8B085] uppercase">取得 API 金鑰與憑證</span>
+                                                        </div>
                                                     </div>
-                                                </div>
                                                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                                     <button
                                                         onClick={() => setShowApiHelper(true)}

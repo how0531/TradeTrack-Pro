@@ -144,15 +144,21 @@ export const BrokerGuideModal = ({ isOpen, onClose, lang }: BrokerGuideModalProp
                     </div>
 
                     {/* Footer Action */}
-                    <div className="flex justify-center pt-2 md:pt-4 pb-2">
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4 md:pt-6 pb-2 w-full max-w-sm mx-auto">
+                        <button
+                            onClick={onClose}
+                            className="w-full sm:w-1/2 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-sm transition-all text-center flex items-center justify-center gap-2"
+                        >
+                            返回上頁
+                        </button>
                         <a
                             href="https://www.sinotrade.com.tw/newweb/PythonAPIKey/"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#C8B085] hover:bg-[#E0C8A0] text-black font-bold text-sm shadow-[0_0_20px_rgba(200,176,133,0.2)] transition-all transform hover:scale-105 active:scale-95"
+                            className="w-full sm:w-1/2 py-3 rounded-xl bg-[#C8B085] hover:bg-[#E0C8A0] text-black font-bold text-sm shadow-[0_0_20px_rgba(200,176,133,0.2)] transition-all transform hover:scale-105 active:scale-95 text-center flex items-center justify-center gap-2"
                         >
                             <ExternalLink size={16} />
-                            永豐金API管理中心
+                            前往申請
                         </a>
                     </div>
                 </div>
