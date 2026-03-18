@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.2] - 2026-03-18
+
+### Fixed
+- **完全修復 Zeabur Frontend `502 Bad Gateway` 錯誤**：捨棄 Docker 方案，改採 Zeabur 原生靜態邊緣託管 (Native Static Edge Hosting)，並新增 `zeabur.json` 徹底消除 Port 橋接失敗問題。
+- **優化後端喚醒流程**：將 `validateBackendStatus` 逾時從 90 秒縮短至 8 秒，並導入狀態查詢連線指數退避 (Exponential Backoff) 輪詢，不會再因為長線程阻塞 UI，或導致無窮盡的渲染重置。
+- 修復 `SyncDateModal` 自動 Ping 迴圈競態條件。
+- 修復券商損益匯入時，如果後端處於 502 冷啟動狀態會產生「JSON 格式無法解析」的誤導錯誤，現在會正確顯示「後端冷啟動中」的提示。
+
 ## [3.0.1] - 2026-03-16
 
 ### Changed (Features & Architecture)
