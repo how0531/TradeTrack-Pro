@@ -850,9 +850,9 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 {/* STEP 1: 取得金鑰 + 填寫資訊（合併） - 僅在 loginStep === 1 時顯示 */}
                                 {loginStep === 1 && (
                                     <>
-                                        <div className="relative pl-10 sm:pl-14">
+                                        <div className="relative mt-2">
                                             {/* Beautiful floating number aligned with content */}
-                                            <div className="absolute left-0 top-[-6px] sm:top-[-8px] text-5xl sm:text-6xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">1</div>
+                                            <div className="absolute -left-3 -top-5 sm:-left-4 sm:-top-6 text-6xl sm:text-7xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">1</div>
                                             <div className="relative z-10 pt-1">
                                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-amber-500-[0.02] border border-amber-500/10 backdrop-blur-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
                                                     <div className="flex items-start gap-2.5">
@@ -879,8 +879,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     </div>
 
                                     {/* STEP 1 (續): 輸入 API 資訊 */}
-                                    <div className="relative pl-10 sm:pl-14 mt-10">
-                                        <div className="absolute left-0 top-[-6px] sm:top-[-8px] text-5xl sm:text-6xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">2</div>
+                                    <div className="relative mt-12">
+                                        <div className="absolute -left-3 -top-5 sm:-left-4 sm:-top-6 text-6xl sm:text-7xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">2</div>
                                         <div className="relative z-10 pt-1">
                                             <h5 className="text-sm font-bold text-[#C8B085] mb-6 uppercase tracking-widest">輸入用戶資訊</h5>
                                             <div className="space-y-6">
