@@ -871,7 +871,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                         onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
                                                         className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
                                                     >
-                                                        管理頁面 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
+                                                        前往申請 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
                                                     </button>
                                                 </div>
                                             </div>
@@ -925,23 +925,6 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                         <Shield size={16} />
                                                     </button>
                                                 </div>
-
-                                                {/* API Risk Disclosure Link */}
-                                                <a
-                                                    href="https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/"
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="group w-full bg-zinc-900/30 hover:bg-zinc-800/50 border border-white/5 hover:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between transition-all duration-300 -mt-1"
-                                                >
-                                                    <span className="text-xs font-bold text-zinc-400 group-hover:text-zinc-200 transition-colors flex items-center gap-2">
-                                                        前往簽署 API 風險預告同意書
-                                                        <span className="text-[10px] font-medium text-zinc-600 group-hover:text-zinc-500 transition-colors hidden sm:inline-block">
-                                                            (若已簽署可忽略)
-                                                        </span>
-                                                    </span>
-                                                    <ChevronRight size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors group-hover:translate-x-0.5 duration-300" />
-                                                </a>
-
 
                                             </div>
                                         </div>
@@ -1074,6 +1057,16 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             )}
                         </div>
 
+                        {/* ===== 帳號列表欄位標頭 ===== */}
+                        <div className="px-5 pb-1">
+                            <div className="flex items-center justify-end gap-0 pr-2">
+                                <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-widest text-zinc-700 ml-auto">
+                                    <span className="w-14 text-center">風險同意書</span>
+                                    <span className="w-14 text-center">API 測試</span>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* ===== 增強型進度面板 ===== */}
                         {isTesting && (
                             <div className="px-6 py-3 bg-black/30 border-t border-white/5">
@@ -1110,7 +1103,8 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                             </div>
                         )}
 
-                        {/* 後端狀態 + 計時器 */}
+                        {/* 後端狀態 + 計時器 (登入流程中隱藏) */}
+                        {loginStep !== 1 && (
                         <div className="px-6 pb-2 flex items-center justify-between text-[10px] font-mono">
                             <div className="flex items-center gap-2">
                                 <span className="text-zinc-600 uppercase tracking-tighter font-bold">後端狀態:</span>
@@ -1148,6 +1142,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 </button>
                             </div>
                         </div>
+                        )}
 
                         {/* ===== Footer: 步驟導航按鈕 ===== */}
                         <div className="p-4 sm:p-6 border-t border-white/5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 bg-black/20 font-bold uppercase tracking-tight text-[10px]">
@@ -1420,7 +1415,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 ));
                             })()}
 
-                            {/* ===== 條件警語 ===== */}
+                            {/* ===== 帳號狀態說明 + 行動 CTA ===== */}
                             {(() => {
                                 const hasUnsigned = accountChoices.some(a => a.signed === false);
                                 const hasSignedButUnverified = accountChoices.some(a => {
@@ -1434,17 +1429,29 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 });
                                 if (!hasUnsigned && !hasSignedButUnverified) return null;
                                 return (
-                                    <div className="flex flex-col gap-1.5 px-1 mt-1">
+                                    <div className="flex flex-col gap-2 px-1 mt-2">
                                         {hasUnsigned && (
-                                            <div className="flex items-start gap-2 text-[10px] text-amber-500/80 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
-                                                <ShieldCheck size={13} className="shrink-0 mt-0.5" />
-                                                <span>證券、期貨帳號需<strong>分開簽署</strong>，請至永豐金簽署中心依序完成。</span>
+                                            <div className="flex flex-col gap-2 bg-amber-500/5 border border-amber-500/15 rounded-xl px-3 py-2.5">
+                                                <div className="flex items-start gap-2 text-[10px] text-amber-500/80">
+                                                    <ShieldCheck size={13} className="shrink-0 mt-0.5" />
+                                                    <span>證券、期貨帳號需<strong>分開簽署</strong>，請至永豐金簽署中心依序完成。</span>
+                                                </div>
+                                                <a
+                                                    href="https://www.sinotrade.com.tw/newweb/signCenter/S_openAPI/"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="group self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/50 text-amber-400 text-[10px] font-bold transition-all duration-200 active:scale-95"
+                                                >
+                                                    <ShieldCheck size={11} />
+                                                    前往簽署 API 風險預告同意書
+                                                    <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
+                                                </a>
                                             </div>
                                         )}
                                         {hasSignedButUnverified && (
-                                            <div className="flex items-start gap-2 text-[10px] text-sky-400/80 bg-sky-500/5 border border-sky-500/15 rounded-lg px-3 py-2">
+                                            <div className="flex items-start gap-2 text-[10px] text-sky-400/80 bg-sky-500/5 border border-sky-500/15 rounded-xl px-3 py-2.5">
                                                 <ShieldCheck size={13} className="shrink-0 mt-0.5" />
-                                                <span>首次使用須於<strong>營業日 8:00~20:00</strong> 進行驗證（模擬下單測試）。</span>
+                                                <span>首次使用須於<strong>營業日 8:00~20:00</strong> 進行 API 測試（模擬下單驗證）。直接點擊右側「測試」按鈕將自動完成。</span>
                                             </div>
                                         )}
                                     </div>
