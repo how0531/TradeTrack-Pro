@@ -1,0 +1,5 @@
+{
+  "build_type": "static",
+  "build_command": "npm install && npm run build",
+  "output_dir": "dist"
+}
