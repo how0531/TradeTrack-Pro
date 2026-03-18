@@ -850,13 +850,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                 {/* STEP 1: 取得金鑰 + 填寫資訊（合併） - 僅在 loginStep === 1 時顯示 */}
                                 {loginStep === 1 && (
                                     <>
-                                        <div className="relative pl-6 sm:pl-10">
-                                            <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">1</div>
+                                        <div className="relative pl-10 sm:pl-14">
+                                            {/* Beautiful floating number aligned with content */}
+                                            <div className="absolute left-0 top-[-6px] sm:top-[-8px] text-5xl sm:text-6xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">1</div>
                                             <div className="relative z-10 pt-1">
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-amber-500-[0.02] border border-amber-500/10 backdrop-blur-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
                                                     <div className="flex items-start gap-2.5">
                                                         <div className="flex flex-col gap-0.5 min-w-0">
-                                                            <span className="text-xs sm:text-sm font-bold text-[#C8B085] uppercase">取得 API 金鑰與憑證</span>
+                                                            <span className="text-xs sm:text-sm font-bold text-[#C8B085] uppercase tracking-wider">取得 API 金鑰與憑證</span>
                                                         </div>
                                                     </div>
                                                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -878,14 +879,14 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     </div>
 
                                     {/* STEP 1 (續): 輸入 API 資訊 */}
-                                    <div className="relative pl-6 sm:pl-10 mt-4">
-                                        <div className="absolute -left-1 -top-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white/70 to-transparent opacity-30 select-none pointer-events-none font-sans">2</div>
+                                    <div className="relative pl-10 sm:pl-14 mt-10">
+                                        <div className="absolute left-0 top-[-6px] sm:top-[-8px] text-5xl sm:text-6xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">2</div>
                                         <div className="relative z-10 pt-1">
-                                            <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">輸入用戶資訊</h5>
-                                            <div className="space-y-4">
-                                                <div className="grid grid-cols-1 gap-4">
-                                                    <div className="flex flex-col gap-2">
-                                                        <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">身分證字號 (Person ID)</label>
+                                            <h5 className="text-sm font-bold text-[#C8B085] mb-6 uppercase tracking-widest">輸入用戶資訊</h5>
+                                            <div className="space-y-6">
+                                                <div className="grid grid-cols-1 gap-6">
+                                                    <div className="flex flex-col gap-2.5">
+                                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-1">身分證字號 (Person ID)</label>
                                                         <input
                                                             type="text"
                                                             placeholder="A123456789"
@@ -893,34 +894,36 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                                             onChange={(e) => handleChange('personId', e.target.value.trim().toUpperCase())}
                                                             autoComplete="off"
                                                             spellCheck={false}
-                                                            className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors placeholder:text-zinc-800 ${errors.personId ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                            className={`w-full bg-zinc-900/40 backdrop-blur-md rounded-2xl px-5 py-3.5 text-sm font-mono text-zinc-100 placeholder:text-zinc-700 transition-all duration-300 outline-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] ${errors.personId ? 'border border-red-500/50 bg-red-500/5 ring-1 ring-red-500/20' : 'border border-white/5 hover:border-white/10 focus:border-[#C8B085]/50 focus:ring-1 focus:ring-[#C8B085]/50'}`}
                                                         />
                                                     </div>
                                                 </div>
 
-                                                <div className="flex flex-col gap-2">
-                                                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">API Key</label>
+                                                <div className="flex flex-col gap-2.5">
+                                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-1">API Key</label>
                                                     <input
                                                         type={showSecrets ? "text" : "password"}
                                                         value={localConfig.apiKey}
                                                         onChange={(e) => handleChange('apiKey', e.target.value.trim())}
                                                         autoComplete="off"
                                                         spellCheck={false}
-                                                        className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiKey ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                        className={`w-full bg-zinc-900/40 backdrop-blur-md rounded-2xl px-5 py-3.5 text-sm font-mono text-zinc-100 placeholder:text-zinc-700 transition-all duration-300 outline-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] ${errors.apiKey ? 'border border-red-500/50 bg-red-500/5 ring-1 ring-red-500/20' : 'border border-white/5 hover:border-white/10 focus:border-[#C8B085]/50 focus:ring-1 focus:ring-[#C8B085]/50'}`}
                                                     />
                                                 </div>
 
-                                                <div className="flex flex-col gap-2 relative">
-                                                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-tighter">Secret Key</label>
+                                                <div className="flex flex-col gap-2.5 relative">
+                                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-1">Secret Key</label>
                                                     <input
                                                         type={showSecrets ? "text" : "password"}
                                                         value={localConfig.apiSecret}
                                                         onChange={(e) => handleChange('apiSecret', e.target.value.trim())}
                                                         autoComplete="off"
                                                         spellCheck={false}
-                                                        className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-xs font-mono text-white focus:border-[#C8B085]/40 focus:outline-none transition-colors ${errors.apiSecret ? 'border-red-500 bg-red-500/5' : 'border-white/5'}`}
+                                                        className={`w-full bg-zinc-900/40 backdrop-blur-md rounded-2xl px-5 py-3.5 text-sm font-mono text-zinc-100 placeholder:text-zinc-700 transition-all duration-300 outline-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] pr-12 ${errors.apiSecret ? 'border border-red-500/50 bg-red-500/5 ring-1 ring-red-500/20' : 'border border-white/5 hover:border-white/10 focus:border-[#C8B085]/50 focus:ring-1 focus:ring-[#C8B085]/50'}`}
                                                     />
-                                                    <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-9 text-zinc-600 hover:text-white transition-colors"><Shield size={14} /></button>
+                                                    <button onClick={() => setShowSecrets(!showSecrets)} className="absolute right-4 top-[38px] w-8 h-8 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors duration-200">
+                                                        <Shield size={16} />
+                                                    </button>
                                                 </div>
 
                                                 {/* API Risk Disclosure Link */}
