@@ -328,7 +328,7 @@ def login_and_fetch_pnl(
                     category = "Futures"
                 elif bid in ["F002", "9162"]:
                     category = "Futures"
-                elif acc_id_str.startswith("0") or "SUB" in atype_upper or "H" in atype_upper:
+                elif "SUB" in atype_upper or "H" in atype_upper:
                     category = "SubBrokerage"
                 choices.append({
                     "branch_code": str(bid),
