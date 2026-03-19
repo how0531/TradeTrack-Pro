@@ -855,27 +855,20 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             <div className="absolute -left-3 -top-5 sm:-left-4 sm:-top-6 text-6xl sm:text-7xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">1</div>
                                             <div className="relative z-10 pt-1">
                                                 <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">取得 API 金鑰與憑證</h5>
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:px-4 rounded-2xl bg-amber-500-[0.03] border border-amber-500/20 backdrop-blur-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
-                                                    <div className="flex items-start gap-2.5">
-                                                        <div className="flex flex-col gap-0.5 min-w-0">
-                                                            <span className="text-xs font-medium text-zinc-400">請前往永豐金證券官網開通 Shioaji API，以取得登入所需之金鑰</span>
-                                                        </div>
-                                                    </div>
-                                                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                                <div className="flex gap-3 p-3 sm:px-4 rounded-2xl bg-amber-500-[0.03] border border-amber-500/20 backdrop-blur-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
                                                     <button
                                                         onClick={() => setShowApiHelper(true)}
-                                                        className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-transparent hover:bg-white/5 border border-white/20 hover:border-white/50 text-zinc-300 hover:text-white text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group uppercase tracking-wider"
+                                                        className="flex-1 px-3 py-2.5 sm:py-2 rounded-xl bg-transparent hover:bg-white/5 border border-white/20 hover:border-white/50 text-zinc-300 hover:text-white text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all group uppercase tracking-wider"
                                                     >
-                                                        如何開通? <HelpCircle size={10} className="group-hover:scale-110 transition-transform" />
+                                                        查看開通步驟 <HelpCircle size={12} className="group-hover:scale-110 transition-transform" />
                                                     </button>
                                                     <button
                                                         onClick={() => window.open('https://www.sinotrade.com.tw/newweb/PythonAPIKey/', '_blank')}
-                                                        className="shrink-0 w-full sm:w-auto px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[9px] font-bold flex items-center justify-center sm:justify-start gap-1 transition-all group border border-amber-500/20 uppercase tracking-wider"
+                                                        className="flex-1 px-3 py-2.5 sm:py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all group border border-amber-500/20 uppercase tracking-wider"
                                                     >
-                                                        前往申請 <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
+                                                        前往申請 <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
                                                     </button>
                                                 </div>
-                                            </div>
                                         </div>
                                     </div>
 
