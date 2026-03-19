@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.3] - 2026-03-19
+
+### Performance
+- **後端架構革新與效能破界 (Cloud PnL Speedup)**：
+  - 徹底移除了 Shioaji 執行環境在 `is_futures` 判斷時的同步延遲策略與重試邏輯，改採「Sequential-Fast 平行化」查詢架構。
+  - 雲端環境（Render）在喚醒 (熱啟動) 狀態下，現在讀取完整 11 個月、雙帳戶（期貨 + 台股）資料僅需 **6 小秒**，效能直接飆升，不再發生數分鐘阻塞！
+
+### Fixed / Changed
+- **前端智慧請求整併 (UI Request Grouping)**：修復了前端 `SyncDateModal` 中因為「不同掛載目標投資組合」而將期貨和證券的查詢「被硬性拆分為 6 大塊」的 UI 迴圈邏輯。現在前端無論勾選多少個券商帳戶，皆會 100% 打包成單一請求，並根據回傳 Payload 自動智慧導流進相對應的 Portfolio，徹底杜絕重複 Login Shioaji 的延遲。
+- **UIUX 元件左對齊強迫症修復**：修正 `BrokerSettings.tsx` 中「取得 API 金鑰與憑證」與「輸入用戶資訊」容器不在同一個基準垂線的問題。現在會將文案統整為外層 `h5` 標題（並附上 `pl-1`），同時精簡活動框 (Action Box) 中多餘的敘述，讓兩顆按鈕 (`查看開通步驟`、`前往申請`) 平衡且完美對稱填滿空間。
+- **「0開頭」複委託誤判阻斷**：修復了 `backend/core/pnl.py` 裡過度嚴苛的防呆正規檢查——原本帳戶名稱若為 0 開頭 (如 `0264298`) 會無條件被判定成 `SubBrokerage` 並遭後端剔除。修改後將全面依賴券商端 API 發出的 Type Enum 來作為唯一認定標準。
+
 ## [3.0.2] - 2026-03-18
 
 ### Fixed
