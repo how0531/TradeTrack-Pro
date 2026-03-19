@@ -103,8 +103,8 @@ export const fetchBrokerPnl = async (
         }
 
         try {
-            // ✅ 單次請求：不再切分日期，直接送完整區間
-            if (onProgress) onProgress(1, 1, startStr, endStr);
+            // ✅ 單次請求：先建立背景 Job，再輪詢拿結果 (V3.0.4 引入)
+            if (onProgress) onProgress(1, 100, "準備啟動同步任務...", "");
 
             const payload = {
                 apiKey: config.apiKey,
@@ -114,35 +114,90 @@ export const fetchBrokerPnl = async (
                 caPassword: config.caPassword,
                 caContent: config.caContent,
                 branchCode: config.branchCode,
-                // accountType 已移除 — 後端一次查詢所有帳號類型
                 environment: config.environment || 'production',
                 startDate: startStr,
                 endDate: endStr
             };
 
-            const { ok, status, data: result } = await backendFetch('/api/broker/pnl', {
+            // 1. 建立背景任務
+            const { ok, status, data: createResult } = await backendFetch('/api/jobs/pnl', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
-                timeout: 120000,
+                timeout: 30000,
             });
 
-            if (!ok) {
+            if (!ok || createResult?.status === 'error') {
                 if (status >= 500) {
-                    const errDetail = result.message || result.error || '';
-                    throw new Error(`後端伺服器錯誤 (${status})${errDetail ? '：' + errDetail : ''}，請稍後重試。`);
+                    throw new Error(`建立同步任務失敗 (${status})，請稍後重試。`);
                 }
-
-                let errMsg = result.message || result.error || `後端錯誤 (${status})`;
+                let errMsg = createResult?.message || createResult?.error || `後端錯誤 (${status})`;
                 if (typeof errMsg === 'string') {
                     if (errMsg.includes('key:') && errMsg.includes('not exist')) {
                         errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
-                    } else if (result.ca_error || errMsg.includes('CA') || errMsg.includes('憑證未啟動')) {
+                    } else if (createResult?.ca_error || errMsg.includes('CA') || errMsg.includes('憑證未啟動')) {
                         errMsg = '⚠️ CA 憑證未啟動：請至「設定」→ 帳號設定 → 重新上傳 .pfx 憑證檔案。雲端部署不支援本地路徑。';
                     }
                 }
                 throw new Error(errMsg);
             }
+
+            const jobId = createResult.job_id;
+            if (!jobId) {
+                throw new Error('未取得 Job ID，請確認後端是否支援。');
+            }
+
+            // 2. 輪詢進度
+            let jobResult: any = null;
+            let pollCount = 0;
+            const maxPolls = 150; // 最大等 5 分鐘 (每2秒 1 次)
+
+            while (pollCount < maxPolls) {
+                await new Promise(r => setTimeout(r, 2000));
+                pollCount++;
+                
+                try {
+                    const { ok: statOk, data: statData } = await backendFetch(`/api/jobs/${jobId}/status`, {
+                        method: 'GET',
+                        timeout: 10000,
+                        autoWake: false // 不要因為 polling 失敗就觸發冷啟動重試
+                    });
+
+                    if (statOk && statData.status === 'success') {
+                        const job = statData.job;
+                        
+                        // 回報進度給 UI
+                        if (onProgress && job.progress > 0) {
+                            // 利用 startStr 傳遞文字訊息給 SyncDateModal
+                            onProgress(job.progress, 100, String(job.progress_msg), "");
+                        }
+
+                        if (job.status === 'done') {
+                            // 3. 取得最終結果
+                            const { ok: resOk, data: finalData } = await backendFetch(`/api/jobs/${jobId}/result`, {
+                                method: 'GET',
+                                timeout: 30000
+                            });
+                            
+                            if (resOk) {
+                                jobResult = finalData;
+                                break;
+                            }
+                        } else if (job.status === 'error') {
+                            throw new Error(job.error || '背景任務執行失敗');
+                        }
+                    }
+                } catch (pollErr: any) {
+                    console.warn(`[POLLING] Job ${jobId} failed to get status:`, pollErr);
+                }
+            }
+
+            if (!jobResult) {
+                throw new Error('同步任務超時 (超過 5 分鐘)，伺服器可能因過載中斷。請稍後再試。');
+            }
+
+            // 取代原本的單一 result
+            const result = jobResult;
 
             if (result.status === 'error') {
                 throw new Error(result.message || result.error || '後端擷取資料失敗');

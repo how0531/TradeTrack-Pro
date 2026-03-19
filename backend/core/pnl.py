@@ -215,6 +215,7 @@ def login_and_fetch_pnl(
     branch_filter=None,
     type_filter=None,      # Kept for backwards compatibility but IGNORED
     profile_only=False,
+    progress_callback=None,
 ):
     """
     Optimized PnL fetcher:
@@ -225,6 +226,9 @@ def login_and_fetch_pnl(
     """
     _log(f"--- START REQUEST ---")
     _log(f"Params: Sim={simulation}, PersonID={person_id}, BranchFilter={branch_filter}")
+
+    if progress_callback:
+        progress_callback(5, "環境初始化中...")
 
     # 1. Handle Dynamic CA
     temp_ca_path = None
@@ -241,10 +245,16 @@ def login_and_fetch_pnl(
 
     try:
         # 2. Get API Session (reuses existing if same credentials)
+        if progress_callback:
+            progress_callback(10, "正在登入永豐金 API...")
+            
         manager = get_session_manager()
         api = manager.get_api(
             api_key, secret_key, person_id, final_ca_path, ca_password, simulation=simulation
         )
+
+        if progress_callback:
+            progress_callback(20, "API 登入成功，檢查憑證狀態...")
 
         # 3. Check CA activation
         ca_is_active = manager.ensure_ca_active(final_ca_path, ca_password, person_id)
@@ -260,6 +270,9 @@ def login_and_fetch_pnl(
                 }
 
         # 4. List Accounts
+        if progress_callback:
+            progress_callback(30, "正在取得帳號列表...")
+            
         try:
             accounts = api.list_accounts()
         except Exception as acc_err:
@@ -362,11 +375,20 @@ def login_and_fetch_pnl(
         # 🚀 Sequential-fast account queries
         # ⚠️ Shioaji C++ API is NOT thread-safe — parallel calls crash
         # ════════════════════════════════════════════════
+        # ════════════════════════════════════════════════
         results = []
 
-        _log(f"🚀 Starting sequential-fast fetch for {len(valid_accounts)} accounts...")
+        total_accs = len(valid_accounts)
+        _log(f"🚀 Starting sequential-fast fetch for {total_accs} accounts...")
+        if progress_callback:
+            progress_callback(40, f"準備同步 {total_accs} 個帳號的損益資料...")
 
-        for acc in valid_accounts:
+        for i, acc in enumerate(valid_accounts):
+            acc_display = f"{acc.account_id} ({getattr(acc, 'account_type', 'Unknown')})"
+            if progress_callback:
+                pct = 40 + int((i / total_accs) * 50)  # 40% to 90%
+                progress_callback(pct, f"正在下載帳號 {acc_display} [{i+1}/{total_accs}]...")
+                
             result = _fetch_single_account(api, acc, start_date, end_date, ca_is_active)
             results.append((acc, result))
 

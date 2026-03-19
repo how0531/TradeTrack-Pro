@@ -9,7 +9,8 @@ import traceback
 
 try:
     from core.pnl import login_and_fetch_pnl, verify_simulation_account
-    print(f"DEBUG: Imported pnl module successfully", flush=True)
+    from core import job_store
+    print(f"DEBUG: Imported core modules successfully", flush=True)
 except ImportError as e:
     print(f"Error importing core.pnl: {e}")
     # Fallback for dev environment path issues
@@ -188,6 +189,121 @@ def get_broker_pnl():
         print(f"\n[EXCEPTION] P&L Error: {str(e)}", flush=True)
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ==========================================
+# 🚀 異步 Job 系統端點 (V3.0.4 導入)
+# ==========================================
+
+from threading import Thread
+
+def _run_pnl_job(job_id, data):
+    """背景執行 PnL 同步的工作執行緒"""
+    env_pref = data.get("environment", "production")
+    is_simulation = env_pref == "simulation"
+    
+    # 建立一個拋轉進度的小型回呼函數
+    def prog_cb(pct, msg):
+        job_store.update_job_progress(job_id, pct, msg)
+
+    try:
+        job_store.update_job_progress(job_id, 1, "啟動背景同步...")
+        
+        result = login_and_fetch_pnl(
+            api_key=data["apiKey"],
+            secret_key=data["apiSecret"],
+            person_id=data["personId"],
+            ca_path=data["caPath"],
+            ca_password=data["caPassword"],
+            ca_content=data.get("caContent"),
+            start_date=data.get("startDate"),
+            end_date=data.get("endDate"),
+            simulation=is_simulation,
+            branch_filter=data.get("branchCode"),
+            type_filter=data.get("accountType"),
+            progress_callback=prog_cb
+        )
+        
+        if result.get("status") == "error":
+            job_store.fail_job(job_id, result.get("message", "未知錯誤"))
+        else:
+            # 轉換為前端預期的格式
+            final_result = {
+                "status": "success",
+                "total_pnl": result.get("total_pnl", 0),
+                "daily_results": result.get("daily_results", []),
+                "details": result.get("details", []),
+                "username": result.get("username"),
+                "branchCode": result.get("branch_code"),
+                "ca_status": result.get("ca_status"),
+                "empty_reason": result.get("empty_reason"),
+                "summary": result.get("summary", {})
+            }
+            job_store.complete_job(job_id, final_result)
+            
+    except Exception as e:
+        print(f"❌ [Job Failed] {job_id}: {str(e)}", flush=True)
+        traceback.print_exc()
+        job_store.fail_job(job_id, str(e))
+        
+    finally:
+        # 定期清理老舊任務 (順便執行)
+        job_store.cleanup_old_jobs()
+
+@app.route("/api/jobs/pnl", methods=["POST"])
+def create_pnl_job():
+    """建立非同步券商損益查詢 Job"""
+    try:
+        data = request.json
+        print(f"\n{'='*20} CREATING ASYNC PNL JOB {'='*20}", flush=True)
+
+        required_fields = ["apiKey", "apiSecret", "personId", "caPath", "caPassword", "startDate", "endDate"]
+        missing_fields = [field for field in required_fields if not data.get(field)]
+
+        if missing_fields:
+            error_msg = f"缺少必要欄位: {', '.join(missing_fields)}"
+            return jsonify({"status": "error", "message": error_msg}), 400
+
+        # 分配 Job ID
+        job_id = job_store.create_job()
+        
+        # 啟動背景執行緒
+        thread = Thread(target=_run_pnl_job, args=(job_id, data))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({"status": "success", "job_id": job_id})
+        
+    except Exception as e:
+        print(f"\n[EXCEPTION] Create Job Error: {str(e)}", flush=True)
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/jobs/<job_id>/status", methods=["GET"])
+def get_job_status(job_id):
+    """輪詢 Job 的執行進度與狀態"""
+    status = job_store.get_job_status(job_id)
+    if not status:
+        return jsonify({"status": "error", "message": "任務不存在或已過期 (Job not found)"}), 404
+        
+    return jsonify({"status": "success", "job": status})
+
+@app.route("/api/jobs/<job_id>/result", methods=["GET"])
+def get_job_result(job_id):
+    """拿取 Job 最終完成的結果"""
+    job = job_store.get_job_result(job_id)
+    if not job:
+        return jsonify({"status": "error", "message": "任務不存在或已過期 (Job not found)"}), 404
+        
+    if job["status"] != "done":
+        return jsonify({
+            "status": "error", 
+            "message": f"任務尚未完成，目前狀態: {job['status']}"
+        }), 400
+        
+    return jsonify(job["result"])
+
+# ==========================================
 
 
 @app.route("/api/broker/verify", methods=["POST"])
