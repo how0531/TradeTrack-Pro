@@ -329,9 +329,15 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       const startD = new Date(effectiveStart.replace(/-/g, '/'));
       const endD = new Date(effectiveEnd.replace(/-/g, '/'));
 
-      // Group selections by (Config ID + Target Portfolio ID)
-      // ✅ 不再區分 S/F 類型，一次查詢所有帳號類型
-      const fetchGroups = new Map<string, { config: BrokerConfig, codes: Set<string>, targetPid: string, configId: string }>();
+      // Group selections by Config ID only
+      // ✅ 不再區分 S/F 類型或投資組合，一次登入查詢所有帳號
+      const fetchGroups = new Map<string, { 
+        config: BrokerConfig; 
+        codes: Set<string>; 
+        configId: string;
+        codeToTargetPid: Map<string, string>;
+        codeToSourceKey: Map<string, string>;
+      }>();
 
       console.log('🔍 [DEBUG] Selected Config IDs:', effectiveIds);
       console.log('🔍 [DEBUG] Account Portfolio Map:', accountPortfolioMap);
@@ -372,18 +378,23 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         // Fallback to default if still null
         if (!targetPid) targetPid = targetPortfolioId;
 
-        // Group by config + targetPid (不再分 S/F 類型)
-        const groupKey = `${confId}|${targetPid}`;
+        // Group by config only (不再分 S/F 類型與投資組合，單一登入取得所有)
+        const groupKey = confId;
         if (!fetchGroups.has(groupKey)) {
           fetchGroups.set(groupKey, {
             config: original,
             codes: new Set(),
-            targetPid: targetPid,
             configId: original.id,
+            codeToTargetPid: new Map(),
+            codeToSourceKey: new Map()
           });
         }
+        
+        const group = fetchGroups.get(groupKey)!;
         if (code && code !== 'undefined') {
-          fetchGroups.get(groupKey)!.codes.add(code);
+          group.codes.add(code);
+          group.codeToTargetPid.set(code, targetPid);
+          group.codeToSourceKey.set(code, key);
         }
       });
 
@@ -394,11 +405,11 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       const fetchErrors: string[] = []; // C3: 累積每個 group 的錯誤訊息
 
       // Iterate and fetch for each group
-      for (const [key, group] of fetchGroups) {
-        const { config, codes, targetPid, configId } = group;
+      for (const [groupKey, group] of fetchGroups) {
+        const { config, codes, configId, codeToTargetPid, codeToSourceKey } = group;
         const filterCodeStr = Array.from(codes).join(',');
 
-        console.log(`🌐 [DEBUG] Fetching for Config: ${config.id}, TargetPID: ${targetPid}, FilterCodes: ${filterCodeStr}`);
+        console.log(`🌐 [DEBUG] Fetching for Config: ${config.id}, FilterCodes: ${filterCodeStr}`);
 
         // Dynamic progress based on group processing
         completedGroups++;
@@ -434,27 +445,41 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
              setLoadingProgress(baseProgress + chunkProgress);
              setLoadingMessage(`正在下載 ${firstBranchName}${branchSuffix} 的交易資料...`);
           });
-          console.log(`✅ [DEBUG] Fetch Success: ${key} -> ${result.details?.length || 0} trades`);
+          console.log(`✅ [DEBUG] Fetch Success: ${groupKey} -> ${result.details?.length || 0} trades`);
 
           if (result.emptyReason === 'ca_not_activated') {
             anyCaNotActivated = true;
           }
 
-          // Assign Portfolio ID immediately
+          // Assign Portfolio ID immediately map back to correct portfolio based on trade accountId
           if (result.details) {
-            const taggedDetails = result.details.map(d => ({
-              ...d,
-              portfolioId: targetPid, // Override with specific target
-              configId: configId, // Track source config for reactive updates
-              sourceKey: key,     // CRITICAL: Track the EXACT source key to separate Futures/Stock mappings
-              selected: true,
-              isDuplicate: false
-            }));
+            const taggedDetails = result.details.map(d => {
+              const tradeAccountId = String(d.accountId || '');
+              
+              // 🧠 Match exact account ID back to its designated Portfolio ID
+              let assignedPid = codeToTargetPid.get(tradeAccountId);
+              let assignedSourceKey = codeToSourceKey.get(tradeAccountId);
+              
+              if (!assignedPid) {
+                 // Fallback if backend returned an unexpected account
+                 assignedPid = Array.from(codeToTargetPid.values())[0] || targetPortfolioId;
+                 assignedSourceKey = Array.from(codeToSourceKey.values())[0] || `${configId}|${tradeAccountId}|0`;
+              }
+
+              return {
+                ...d,
+                portfolioId: assignedPid,
+                configId: configId,
+                sourceKey: assignedSourceKey,     // CRITICAL: Used for updating reactive accounts later
+                selected: true,
+                isDuplicate: false
+              };
+            });
             mergedDetails.push(...taggedDetails);
           }
         } catch (err: any) {
           const errMsg = err?.message || '未知錯誤';
-          console.error(`❌ [DEBUG] Fetch Failed for ${key}:`, err);
+          console.error(`❌ [DEBUG] Fetch Failed for ${groupKey}:`, err);
           fetchErrors.push(`${firstBranchName}${branchSuffix}: ${errMsg}`);
         }
       }

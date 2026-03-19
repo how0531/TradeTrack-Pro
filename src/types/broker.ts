@@ -45,6 +45,7 @@ export interface BrokerAccount {
 }
 
 export interface TransactionDetail {
+  accountId?: string;
   date: string;       // 成交日期
   category: string;   // 類別 (現股)
   code: string;       // 商品 (2890 永豐金)
