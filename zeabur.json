@@ -1,5 +1,5 @@
 {
   "build_type": "static",
-  "build_command": "npm install && npm run build",
+  "build_command": "VITE_API_URL=https://tradetrack-pro.onrender.com npm install && npm run build",
   "output_dir": "dist"
 }
