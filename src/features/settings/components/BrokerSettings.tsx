@@ -854,10 +854,11 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                             {/* Beautiful floating number aligned with content */}
                                             <div className="absolute -left-3 -top-5 sm:-left-4 sm:-top-6 text-6xl sm:text-7xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">1</div>
                                             <div className="relative z-10 pt-1">
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-amber-500-[0.02] border border-amber-500/10 backdrop-blur-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
+                                                <h5 className="text-sm font-bold text-[#C8B085] mb-4 uppercase tracking-widest pl-1">取得 API 金鑰與憑證</h5>
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:px-4 rounded-2xl bg-amber-500-[0.03] border border-amber-500/20 backdrop-blur-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
                                                     <div className="flex items-start gap-2.5">
                                                         <div className="flex flex-col gap-0.5 min-w-0">
-                                                            <span className="text-xs sm:text-sm font-bold text-[#C8B085] uppercase tracking-wider">取得 API 金鑰與憑證</span>
+                                                            <span className="text-xs font-medium text-zinc-400">請前往永豐金證券官網開通 Shioaji API，以取得登入所需之金鑰</span>
                                                         </div>
                                                     </div>
                                                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -882,7 +883,7 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
                                     <div className="relative mt-12">
                                         <div className="absolute -left-3 -top-5 sm:-left-4 sm:-top-6 text-6xl sm:text-7xl font-black text-white/[0.03] select-none pointer-events-none font-sans leading-none tracking-tighter">2</div>
                                         <div className="relative z-10 pt-1">
-                                            <h5 className="text-sm font-bold text-[#C8B085] mb-6 uppercase tracking-widest">輸入用戶資訊</h5>
+                                            <h5 className="text-sm font-bold text-[#C8B085] mb-6 uppercase tracking-widest pl-1">輸入用戶資訊</h5>
                                             <div className="space-y-6">
                                                 <div className="grid grid-cols-1 gap-6">
                                                     <div className="flex flex-col gap-2.5">
