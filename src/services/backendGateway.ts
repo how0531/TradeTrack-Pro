@@ -13,15 +13,21 @@
 
 // ─── API Base Config ───
 
+/** 正式環境後端 URL（Render 部署） */
+const PRODUCTION_BACKEND = 'https://tradetrack-pro.onrender.com';
+
 const getApiBase = (): string => {
   const env = (import.meta as any).env;
+  // 1. 優先使用環境變數（本地開發 or Zeabur 設定）
   if (env?.VITE_API_URL && env.VITE_API_URL.startsWith('http')) {
     return env.VITE_API_URL;
   }
   if (env?.VITE_API_HOST) {
     return `https://${env.VITE_API_HOST}`;
   }
-  return '';
+  // 2. Fallback：直接指向正式後端
+  //    避免空字串導致 API 請求打到前端自身（靜態伺服器回 405）
+  return PRODUCTION_BACKEND;
 };
 
 export const API_BASE = getApiBase();
