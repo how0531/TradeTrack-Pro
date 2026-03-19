@@ -270,16 +270,21 @@ export const backendFetch = async <T = any>(
 /**
  * 檢查後端是否就緒（簡單版），結合 gateway 狀態
  */
-export const validateBackendReady = async (): Promise<boolean> => {
+export const validateBackendReady = async (onProgress?: (msg: string) => void): Promise<boolean> => {
   if (_status === 'online') return true;
 
+  // First quick check (8s)
+  onProgress?.("正在檢查後端伺服器連線...");
   const alive = await healthCheck(8000);
   if (alive) {
     setStatus('online');
     return true;
   }
 
-  return false;
+  // If not alive, it's likely sleeping (Render free tier). Trigger full wake up process (up to 90s).
+  console.log('[Gateway] Backend not ready, triggering full wake up process...');
+  const woke = await doWakeUp(onProgress);
+  return woke;
 };
 
 /**

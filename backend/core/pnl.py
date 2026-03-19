@@ -359,24 +359,16 @@ def login_and_fetch_pnl(
         _log(f"📅 Date range: {start_date} → {end_date}")
 
         # ════════════════════════════════════════════════
-        # 🚀 PARALLEL account queries via threading
+        # 🚀 Sequential-fast account queries
+        # ⚠️ Shioaji C++ API is NOT thread-safe — parallel calls crash
         # ════════════════════════════════════════════════
-        results = [None] * len(valid_accounts)
-        threads = []
+        results = []
 
-        def _worker(idx, acc):
-            results[idx] = _fetch_single_account(api, acc, start_date, end_date, ca_is_active)
+        _log(f"🚀 Starting sequential-fast fetch for {len(valid_accounts)} accounts...")
 
-        _log(f"🚀 Starting PARALLEL fetch for {len(valid_accounts)} accounts...")
-
-        for i, acc in enumerate(valid_accounts):
-            t = threading.Thread(target=_worker, args=(i, acc), daemon=True)
-            threads.append(t)
-            t.start()
-
-        # Wait for all threads (max 60s per thread)
-        for t in threads:
-            t.join(timeout=60)
+        for acc in valid_accounts:
+            result = _fetch_single_account(api, acc, start_date, end_date, ca_is_active)
+            results.append((acc, result))
 
         # ════════════════════════════════════════════════
         # Aggregate results
@@ -388,14 +380,7 @@ def login_and_fetch_pnl(
         final_empty_reason = None
         account_errors = []
 
-        for i, acc in enumerate(valid_accounts):
-            result = results[i]
-            if result is None:
-                # Thread timed out
-                account_errors.append(f"帳號 {acc.account_id}: 查詢超時 (60s)")
-                _log(f"❌ [Timeout] {acc.account_id} query timed out")
-                continue
-
+        for acc, result in results:
             pnl, acc_dets, equity, open_pnl, empty_reason = result
 
             if empty_reason and str(empty_reason).startswith("error:"):

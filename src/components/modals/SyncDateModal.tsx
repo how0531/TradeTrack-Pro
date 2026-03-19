@@ -25,7 +25,7 @@ import {
   fetchBrokerPnl,
   fetchBrokerProfile,
 } from "../../services/brokerService";
-import { onBackendStatusChange, getBackendStatus, wakeUpBackendViaGateway } from '../../services/backendGateway';
+import { onBackendStatusChange, getBackendStatus, wakeUpBackendViaGateway, validateBackendReady } from '../../services/backendGateway';
 import { getLocalDateStr, formatDateWithWeekday } from "../../utils/format";
 import { formatSymbolCode } from "../../utils/symbolNames";
 import { CustomDateRangeModal } from "./CustomDateRangeModal";
@@ -312,6 +312,16 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
       // 呼叫後端 (支援多帳號合併、篩選)
       console.log("📞 [PERF] 步驟2 - 準備呼叫後端 API...");
+      setLoadingProgress(20);
+      setLoadingMessage("正在確認後端伺服器狀態...");
+
+      // 🛡️ CRITICAL STABILITY FIX: Ensure backend is awake BEFORE starting the 120s timeout query
+      // 傳遞 setLoadingMessage 讓畫面可以看到「正在喚醒後端... (1/15)」等進度
+      const isBackendReady = await validateBackendReady((msg) => setLoadingMessage(msg));
+      if (!isBackendReady) {
+        throw new Error("無法連接後端伺服器，或伺服器冷啟動超時。請稍後再試。");
+      }
+
       setLoadingProgress(30);
       setLoadingMessage("正在登入券商 API...");
       const step2Start = performance.now();
