@@ -319,10 +319,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       const startD = new Date(effectiveStart.replace(/-/g, '/'));
       const endD = new Date(effectiveEnd.replace(/-/g, '/'));
 
-      // Group selections by (Config ID + Target Portfolio ID + Account Type)
-      // Key: `configId|targetPortfolioId|type`
-      // CRITICAL: Must separate Futures and Stock accounts even from same broker config
-      const fetchGroups = new Map<string, { config: BrokerConfig, codes: Set<string>, targetPid: string, configId: string, type: 'S' | 'F' }>();
+      // Group selections by (Config ID + Target Portfolio ID)
+      // ✅ 不再區分 S/F 類型，一次查詢所有帳號類型
+      const fetchGroups = new Map<string, { config: BrokerConfig, codes: Set<string>, targetPid: string, configId: string }>();
 
       console.log('🔍 [DEBUG] Selected Config IDs:', effectiveIds);
       console.log('🔍 [DEBUG] Account Portfolio Map:', accountPortfolioMap);
@@ -335,15 +334,13 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
         if (!original) return;
 
-        // 🔍 CRITICAL FIX: Determine account type FIRST based on the specific branch
         const allBranches = (original.branch || '').split(',');
         const specificBranchName = allBranches[subIdx] || '';
-        const type: 'S' | 'F' = (specificBranchName.includes('期貨') || specificBranchName.includes('Futures') || specificBranchName.includes('Option')) ? 'F' : 'S';
 
         // Display Name for Progress
         const progressName = specificBranchName || original.branch || '帳戶';
 
-        console.log(`🔍 [DEBUG] Account ${key} -> Branch: "${specificBranchName}" -> Type: ${type}`);
+        console.log(`🔍 [DEBUG] Account ${key} -> Branch: "${specificBranchName}"`);
 
         // Determine target portfolio: mapped specific > global target
         let targetPid = accountPortfolioMap[key];
@@ -351,13 +348,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         // 🧠 Smart Auto-Detection:
         // If no explicit mapping exists, try to guess based on branch name
         if (!targetPid) {
-          if (type === 'F') {
-            // Try to find a portfolio named "期貨" or "Futures"
+          // Smart auto-detect: futures accounts → 期貨 portfolio
+          const isFuturesAccount = specificBranchName.includes('期貨') || specificBranchName.includes('Futures');
+          if (isFuturesAccount) {
             const futuresPortfolio = portfolios.find(p => p.name.includes('期貨') || p.name.includes('Futures'));
             if (futuresPortfolio) {
-              console.log(`🤖 [SMART] Auto-detected Futures account: ${specificBranchName} -> ${futuresPortfolio.name}`);
               targetPid = futuresPortfolio.id;
-              // IMPORTANT: Persist this auto-detection to state so UI dropdown matches
               setAccountPortfolioMap(prev => ({ ...prev, [key]: futuresPortfolio.id }));
             }
           }
@@ -366,15 +362,14 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         // Fallback to default if still null
         if (!targetPid) targetPid = targetPortfolioId;
 
-        // Group by config + targetPid + type (CRITICAL: type must be part of key)
-        const groupKey = `${confId}|${targetPid}|${type}`;
+        // Group by config + targetPid (不再分 S/F 類型)
+        const groupKey = `${confId}|${targetPid}`;
         if (!fetchGroups.has(groupKey)) {
           fetchGroups.set(groupKey, {
             config: original,
             codes: new Set(),
             targetPid: targetPid,
             configId: original.id,
-            type: type  // Store the determined type
           });
         }
         if (code && code !== 'undefined') {
@@ -390,10 +385,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
       // Iterate and fetch for each group
       for (const [key, group] of fetchGroups) {
-        const { config, codes, targetPid, configId, type } = group;
+        const { config, codes, targetPid, configId } = group;
         const filterCodeStr = Array.from(codes).join(',');
 
-        console.log(`🌐 [DEBUG] Fetching for Config: ${config.id}, TargetPID: ${targetPid}, FilterCodes: ${filterCodeStr}, Type: ${type}`);
+        console.log(`🌐 [DEBUG] Fetching for Config: ${config.id}, TargetPID: ${targetPid}, FilterCodes: ${filterCodeStr}`);
 
         // Dynamic progress based on group processing
         completedGroups++;
@@ -414,11 +409,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         if (!firstBranchName) firstBranchName = '帳戶';
 
         const branchSuffix = codes.size > 1 ? '等多筆' : '';
-        const typeName = type === 'F' ? '期貨' : '證券';
 
-        setLoadingMessage(`正在同步 (${typeName})...`);
+        setLoadingMessage(`正在同步 ${firstBranchName}${branchSuffix}...`);
 
-        const requestConfig = { ...config, branchCode: filterCodeStr, accountType: type };
+        const requestConfig = { ...config, branchCode: filterCodeStr };
 
         try {
           // Fetch
@@ -428,8 +422,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
              const baseProgress = 30 + Math.floor(((completedGroups - 1) / totalGroups) * 50);
              const chunkProgress = Math.floor((chunkCurrent / chunkTotal) * (50 / totalGroups));
              setLoadingProgress(baseProgress + chunkProgress);
-             // Update message to show chunk
-             setLoadingMessage(`下載中 ${chunkCurrent}/${chunkTotal} (${typeName})`);
+             setLoadingMessage(`正在下載 ${firstBranchName}${branchSuffix} 的交易資料...`);
           });
           console.log(`✅ [DEBUG] Fetch Success: ${key} -> ${result.details?.length || 0} trades`);
 
@@ -452,7 +445,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         } catch (err: any) {
           const errMsg = err?.message || '未知錯誤';
           console.error(`❌ [DEBUG] Fetch Failed for ${key}:`, err);
-          fetchErrors.push(`${firstBranchName}(${typeName}): ${errMsg}`);
+          fetchErrors.push(`${firstBranchName}${branchSuffix}: ${errMsg}`);
         }
       }
 

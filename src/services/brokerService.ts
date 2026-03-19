@@ -77,7 +77,7 @@ export const fetchBrokerPnl = async (
 ): Promise<BrokerSyncResult> => {
     const startTime = performance.now();
     console.log('🔍 [PERF] fetchBrokerPnl 開始:', new Date().toISOString());
-    // Helper to avoid timezone shift when using toISOString() on local dates
+
     const formatLocalYYYYMMDD = (d: Date) => {
         const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -87,7 +87,6 @@ export const fetchBrokerPnl = async (
 
     const startStr = formatLocalYYYYMMDD(startDate);
     const endStr = formatLocalYYYYMMDD(endDate);
-
     console.log('📅 [PERF] 日期範圍:', startStr, '→', endStr);
 
     if (!config.isConnected) {
@@ -99,75 +98,33 @@ export const fetchBrokerPnl = async (
     }
 
     if (config.provider === 'shioaji') {
-        // ===== 實際使用 config 中的憑證 =====
-        // 驗證必要欄位是否已填寫
         if (!config.apiKey || !config.apiSecret || !config.personId || !config.caPath) {
             throw new Error('P&L 擷取失敗：缺少必要憑證資訊 (Missing credentials)');
         }
 
-        // ===== 嘗試呼叫 Python 後端 (Date Chunking) =====
         try {
-            // Function to generate date chunks (max 31 days per chunk)
-            const getChunks = (start: Date, end: Date) => {
-                const chunks = [];
-                let currentStart = new Date(start);
-                while (currentStart <= end) {
-                    let currentEnd = new Date(currentStart);
-                    currentEnd.setDate(currentStart.getDate() + 30); // 31 days inclusive
-                    if (currentEnd > end) currentEnd = new Date(end);
-                    chunks.push({ start: new Date(currentStart), end: new Date(currentEnd) });
-                    currentStart = new Date(currentEnd);
-                    currentStart.setDate(currentStart.getDate() + 1);
-                }
-                return chunks;
+            // ✅ 單次請求：不再切分日期，直接送完整區間
+            if (onProgress) onProgress(1, 1, startStr, endStr);
+
+            const payload = {
+                apiKey: config.apiKey,
+                apiSecret: config.apiSecret,
+                personId: config.personId,
+                caPath: config.caPath,
+                caPassword: config.caPassword,
+                caContent: config.caContent,
+                branchCode: config.branchCode,
+                // accountType 已移除 — 後端一次查詢所有帳號類型
+                environment: config.environment || 'production',
+                startDate: startStr,
+                endDate: endStr
             };
 
-            const dateChunks = getChunks(startDate, endDate);
-            console.log(`⏱️ [CHUNK] 將查詢區間切分為 ${dateChunks.length} 個區塊`);
-
-            let aggregatedResult: BrokerSyncResult = {
-                totalPnl: 0,
-                dailyResults: [],
-                details: [],
-            };
-
-            const fetchStartTime = performance.now();
-
-            // Sequentially fetch chunks to avoid overloading the server completely
-            for (let i = 0; i < dateChunks.length; i++) {
-                const chunk = dateChunks[i];
-                const chunkStartStr = formatLocalYYYYMMDD(chunk.start);
-                const chunkEndStr = formatLocalYYYYMMDD(chunk.end);
-                
-                console.log(`⏳ [CHUNK ${i+1}/${dateChunks.length}] 正在拉取: ${chunkStartStr} → ${chunkEndStr}`);
-                
-                // Invoke callback if provided
-                if (onProgress) {
-                    onProgress(i + 1, dateChunks.length, chunkStartStr, chunkEndStr);
-                }
-
-                const payload = {
-                    apiKey: config.apiKey,
-                    apiSecret: config.apiSecret,
-                    personId: config.personId,
-                    caPath: config.caPath,
-                    caPassword: config.caPassword,
-                    caContent: config.caContent, // 傳送 Base64 憑證內容
-                    branchCode: config.branchCode, // 傳遞分公司代碼
-                    accountType: config.accountType, // 傳遞帳號類型 (S/F)
-                    environment: config.environment || 'production', // 傳遞環境設定
-                    startDate: chunkStartStr,
-                    endDate: chunkEndStr
-                };
-
-            // ... (Logging omitted for brevity) ...
-
-            // ✅ 統一透過 Gateway 發送請求（自動 retry + 自動喚醒 + 統一 timeout）
             const { ok, status, data: result } = await backendFetch('/api/broker/pnl', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
-                timeout: 120000, // PnL 查詢可能較慢，給 120s
+                timeout: 120000,
             });
 
             if (!ok) {
@@ -187,51 +144,24 @@ export const fetchBrokerPnl = async (
                 throw new Error(errMsg);
             }
 
-            // 處理 HTTP 200 但帶有業務邏輯錯誤
             if (result.status === 'error') {
-                console.error(`❌ [PNL] Backend returned error status:`, result.message);
                 throw new Error(result.message || result.error || '後端擷取資料失敗');
             }
 
-                // Aggregation
-                if (result.status === 'success' && result.details) {
-                    aggregatedResult.details.push(...(result.details || []));
-                    aggregatedResult.totalPnl += (result.total_pnl || 0);
-                    // Combine daily results
-                    if (result.daily_results) {
-                        result.daily_results.forEach((dr: any) => {
-                            const existing = aggregatedResult.dailyResults.find(d => d.date === dr.date);
-                            if (existing) existing.pnl += dr.pnl;
-                            else aggregatedResult.dailyResults.push(dr);
-                        });
-                    }
-                    aggregatedResult.caStatus = result.ca_status; // Keep the latest status
-                    
-                    // If we get real details, we overwrite the emptyReason
-                    if (result.details.length > 0) {
-                        aggregatedResult.emptyReason = undefined; 
-                    } else if (result.empty_reason && !aggregatedResult.details.length) {
-                        aggregatedResult.emptyReason = result.empty_reason;
-                    }
-                } else {
-                    // 無法識別的回應格式
-                    throw new Error(`後端回應異常：無法識別的資料格式。請重試或聯絡支援。`);
-                }
-            } // end loop
+            const totalTime = performance.now() - startTime;
+            console.log(`✅ [PNL] 成功取得 ${result.details?.length || 0} 筆，耗時: ${totalTime.toFixed(0)}ms`);
 
-            const totalTime = performance.now() - fetchStartTime;
-            console.log(`✅ [PNL] 成功取得資料，共 ${aggregatedResult.details.length} 筆，總耗時: ${totalTime.toFixed(2)}ms`);
-
-            // Sort finally
-            aggregatedResult.details.sort((a, b) => b.date.localeCompare(a.date));
-            aggregatedResult.dailyResults.sort((a, b) => b.date.localeCompare(a.date));
-
-            return aggregatedResult;
+            const syncResult: BrokerSyncResult = {
+                totalPnl: result.total_pnl || 0,
+                dailyResults: result.daily_results || [],
+                details: (result.details || []).sort((a: any, b: any) => b.date.localeCompare(a.date)),
+                caStatus: result.ca_status,
+                emptyReason: result.empty_reason,
+            };
+            return syncResult;
 
         } catch (fetchError: any) {
-            // 網路錯誤：後端不可達 - 拋出明確錯誤而非假資料
-            if (fetchError.message?.includes('fetch') || fetchError.message?.includes('NetworkError') || fetchError.message?.includes('Backend unreachable')) {
-                console.error('❌ [PNL] Backend unreachable');
+            if (fetchError.message?.includes('fetch') || fetchError.message?.includes('NetworkError')) {
                 throw new Error('無法連接後端伺服器，請確認後端是否已啟動。');
             }
             throw fetchError;
