@@ -16,6 +16,7 @@ except ImportError as e:
     # Fallback for dev environment path issues
     try: 
         from backend.core.pnl import login_and_fetch_pnl, verify_simulation_account
+        from backend.core import job_store
         print(f"DEBUG: Imported from backend.core.pnl (fallback)", flush=True)
     except:
         print(f"Critical Import Error: {e}")
