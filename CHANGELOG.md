@@ -33,6 +33,7 @@ All notable changes to this project will be documented in this file.
 - **`BackendContext` 重構**：改為訂閱 `backendGateway` 單一狀態來源，移除冗餘的獨立 health check 輪詢與 30 秒計時器。
 - **`useBrokerStatus.ts` 移除**：功能已整合至 `BackendContext`，廢棄檔案刪除。
 - **Render worker 調整**：`gunicorn` workers 從 2 調整為 1，加入 `--timeout 120`，減少 Render 免費方案記憶體壓力。
+- **Zeabur 部署 Node 環境修正**：於 `package.json` 加入 `engines` 強制指定 Node.js 20 以上版本，根治靜態部署時容器自動執行 `npm update -g npm` 而拋出 `promise-retry` 遺失的崩潰問題。
 
 ## [3.0.3] - 2026-03-19
 
