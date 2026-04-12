@@ -46,23 +46,27 @@ export interface BrokerAccount {
 
 export interface TransactionDetail {
   accountId?: string;
-  date: string;       // 成交日期
-  category: string;   // 類別 (現股)
-  code: string;       // 商品 (2890 永豐金)
-  quantity: number;   // 成交數量
-  price: number;      // 成交價格
-  buyAmt: number;     // 買進金額
-  sellAmt: number;    // 賣出金額
-  pnl: number;        // 損益
-  yield: number;      // 報酬率 (%)
-  orderNo: string;    // 委託單號
-  currency: string;   // 幣別
+  date: string;
+  category: string;
+  code: string;
+  quantity: number;
+  price: number;
+  buyAmt: number;
+  sellAmt: number;
+  pnl: number;
+  yield: number;
+  orderNo: string;
+  currency?: string;
+  entryPrice?: number;
+  exitPrice?: number;
 }
 
 export interface BrokerSyncResult {
   totalPnl: number;
   dailyResults: { date: string; pnl: number }[];
   details: TransactionDetail[];
+  caStatus?: 'activated' | 'not_activated';
+  emptyReason?: 'ca_not_activated' | 'no_trades_in_range' | string | null;
 }
 
-export type BackendStatus = 'ready' | 'server_only' | 'offline' | 'checking' | 'sleeping';
+// BackendStatus is defined in src/context/BackendContext.tsx

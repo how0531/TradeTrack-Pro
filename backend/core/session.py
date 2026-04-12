@@ -142,11 +142,11 @@ class ShioajiSessionManager:
 
             return self.api
 
-    def ensure_ca_active(self, ca_path, ca_password, person_id):
+    def ensure_ca_active(self, ca_path, ca_password, person_id, force=False):
         """
         每次 PnL 查詢前必須呼叫。確保 CA 處於活躍狀態。
-        - 從未啟動 → 嘗試啟動
-        - 已啟動但超過有效期 → 重新啟動（防止 Shioaji 內部超時）
+        - force=True  → 無條件重新啟動（PnL 查詢時使用，避免 Shioaji 內部狀態失效卻被快取遮蔽）
+        - force=False → 只在從未啟動或超過有效期時才重新啟動
         回傳 True 表示 CA 已啟動，False 表示啟動失敗。
         """
         if not self.api:
@@ -154,17 +154,18 @@ class ShioajiSessionManager:
             return False
 
         # 判斷是否需要重新啟動
-        needs_activation = False
-        reason = ""
+        needs_activation = force
+        reason = "強制重新啟動 (PnL 查詢前)" if force else ""
 
-        if not self.ca_activated:
-            needs_activation = True
-            reason = "CA 從未成功啟動"
-        elif self.ca_activated_time:
-            elapsed = (datetime.now() - self.ca_activated_time).total_seconds()
-            if elapsed > _CA_EXPIRY_SECONDS:
+        if not force:
+            if not self.ca_activated:
                 needs_activation = True
-                reason = f"CA 已超過 {_CA_EXPIRY_SECONDS // 60} 分鐘有效期"
+                reason = "CA 從未成功啟動"
+            elif self.ca_activated_time:
+                elapsed = (datetime.now() - self.ca_activated_time).total_seconds()
+                if elapsed > _CA_EXPIRY_SECONDS:
+                    needs_activation = True
+                    reason = f"CA 已超過 {_CA_EXPIRY_SECONDS // 60} 分鐘有效期"
 
         if needs_activation:
             print(f"DEBUG: [CA] 重新啟動原因: {reason}", flush=True)
@@ -195,16 +196,17 @@ class ShioajiSessionManager:
                 ca_passwd=ca_password,
                 person_id=person_id,
             )
-            # 驗證回傳值：activate_ca 可能回傳 False 或非 True 值表示失敗
-            if result is False:
+            # 驗證回傳值：activate_ca 成功時回傳 SystemRandom 物件 (truthy)
+            # 失敗時可能回傳 False 或 None（部分版本）— 統一用 not result 判斷
+            if not result:
                 self.ca_activated = False
                 self.ca_activated_time = None
-                print(f"WARNING: [CA] ❌ activate_ca returned False — CA not activated", flush=True)
+                print(f"WARNING: [CA] ❌ activate_ca returned {result!r} — CA not activated", flush=True)
                 return False
             else:
                 self.ca_activated = True
                 self.ca_activated_time = datetime.now()
-                print(f"DEBUG: [CA] ✅ CA Activated successfully! Result: {result}", flush=True)
+                print(f"DEBUG: [CA] ✅ CA Activated successfully! Result type: {type(result).__name__}", flush=True)
                 return True
         except Exception as e:
             self.ca_activated = False

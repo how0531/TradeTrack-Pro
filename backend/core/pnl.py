@@ -114,20 +114,32 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
             except Exception as me:
                 _log(f"⚠️ [Futures Extra] {acc_id}: {me}")
 
+        # Ensure dates are datetime.date objects — Shioaji requires datetime.date, not strings
+        from datetime import date as _date
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d").date() if isinstance(start_date, str) else start_date
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").date() if isinstance(end_date, str) else end_date
+        except ValueError as ve:
+            _log(f"❌ [Date Error] Invalid date format: {ve}")
+            return 0, [], 0, 0, f"error:日期格式錯誤，請確認日期是否為 YYYY-MM-DD 格式 ({ve})"
+
         # Core: list_profit_loss — single attempt, no redundant retry sleep
         pnl_data = None
         try:
-            pnl_data = api.list_profit_loss(target_account, start_date, end_date)
+            pnl_data = api.list_profit_loss(target_account, start_dt, end_dt)
         except Exception as api_e:
             err_str = str(api_e)
             if "406" in err_str or "Account Not Acceptable" in err_str:
                 _log(f"ℹ️ [Skip 406] {acc_id} not supported by list_profit_loss")
                 pnl_data = []
+            elif "date" in err_str.lower() or "invalid" in err_str.lower():
+                _log(f"❌ [Date Error] {acc_id}: {api_e}")
+                return 0, [], 0, 0, f"error:日期範圍無效，請確認起訖日期是否正確 ({api_e})"
             else:
                 # Single retry on non-406 errors
                 _log(f"⚠️ [Retry] {acc_id} first attempt failed: {api_e}")
                 try:
-                    pnl_data = api.list_profit_loss(target_account, start_date, end_date)
+                    pnl_data = api.list_profit_loss(target_account, start_dt, end_dt)
                 except Exception as retry_e:
                     _log(f"❌ [Failed] {acc_id} retry also failed: {retry_e}")
                     return 0, [], 0, 0, f"error:{retry_e}"
@@ -257,14 +269,22 @@ def login_and_fetch_pnl(
             progress_callback(20, "API 登入成功，檢查憑證狀態...")
 
         # 3. Check CA activation
-        ca_is_active = manager.ensure_ca_active(final_ca_path, ca_password, person_id)
+        # force=True for PnL mode: always re-activate to avoid stale local flag masking Shioaji internal state loss
+        ca_is_active = manager.ensure_ca_active(final_ca_path, ca_password, person_id, force=not profile_only)
 
         if not ca_is_active:
-            _log("⚠️ CA NOT ACTIVATED — PnL queries may return empty results!")
-            if not profile_only and not ca_content and (not ca_path or not os.path.exists(ca_path)):
+            _log("⚠️ CA NOT ACTIVATED — aborting PnL fetch to avoid silent empty results.")
+            if not profile_only:
+                # 根據情況給出最具體的錯誤訊息
+                if ca_content:
+                    msg = "CA 憑證啟動失敗：已上傳 .pfx 但 activate_ca 未成功，請確認憑證密碼是否正確。"
+                elif not ca_path or not os.path.exists(ca_path):
+                    msg = "CA 憑證未啟動：雲端伺服器找不到 .pfx 檔案。請在設定頁面重新上傳憑證檔案 (.pfx)。"
+                else:
+                    msg = "CA 憑證啟動失敗，請確認憑證密碼是否正確或重新上傳 .pfx 檔案。"
                 return {
                     "status": "error",
-                    "message": "CA 憑證未啟動：雲端伺服器找不到 .pfx 檔案。請在設定頁面重新上傳憑證檔案 (.pfx)。",
+                    "message": msg,
                     "details": [],
                     "ca_error": True
                 }
@@ -369,6 +389,30 @@ def login_and_fetch_pnl(
             end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = _normalize_date(start_date)
         end_date = _normalize_date(end_date)
+
+        # Validate date range
+        try:
+            from datetime import date as _date
+            start_dt_check = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end_dt_check = datetime.strptime(end_date, "%Y-%m-%d").date()
+            today = _date.today()
+
+            if start_dt_check > end_dt_check:
+                return {
+                    "status": "error",
+                    "message": f"日期範圍錯誤：起始日期 ({start_date}) 不可晚於結束日期 ({end_date})，請重新選擇。",
+                    "details": []
+                }
+            if end_dt_check > today:
+                end_date = today.strftime("%Y-%m-%d")
+                _log(f"⚠️ [Date] 結束日期超過今天，自動調整為今天: {end_date}")
+        except ValueError as ve:
+            return {
+                "status": "error",
+                "message": f"日期格式錯誤，請確認日期為 YYYY-MM-DD 格式：{ve}",
+                "details": []
+            }
+
         _log(f"📅 Date range: {start_date} → {end_date}")
 
         # ════════════════════════════════════════════════
@@ -437,6 +481,12 @@ def login_and_fetch_pnl(
         # Sort by date descending
         details.sort(key=lambda x: x["date"], reverse=True)
 
+        # Aggregate daily results
+        daily_map = {}
+        for d in details:
+            daily_map[d["date"]] = round(daily_map.get(d["date"], 0) + d["pnl"], 2)
+        daily_results = [{"date": k, "pnl": v} for k, v in sorted(daily_map.items())]
+
         # Metadata
         signed_ids = []
         branch_codes = set()
@@ -450,6 +500,7 @@ def login_and_fetch_pnl(
         result = {
             "status": "success",
             "total_pnl": round(total_pnl, 2),
+            "daily_results": daily_results,
             "details": details,
             "details_count": len(details),
             "branch_code": branch_filter or ",".join(sorted(list(branch_codes))) or "ALL",
@@ -472,12 +523,29 @@ def login_and_fetch_pnl(
 
     except Exception as e:
         import traceback
-        _log(f"Exception: {str(e)}")
+        err_str = str(e)
+        _log(f"Exception: {err_str}")
         _log(traceback.format_exc())
+
+        # Classify common Shioaji / network errors into user-friendly messages
+        friendly_msg = err_str
+        if "key:" in err_str and "not exist" in err_str:
+            friendly_msg = "API Key 無效或不存在，請至「設定」重新確認 API Key。"
+        elif "Account Not Acceptable" in err_str:
+            friendly_msg = "帳號授權失敗：該帳號尚未開通 API 權限。請至「帳號管理」執行驗證。"
+        elif "CA" in err_str or "activate_ca" in err_str or "憑證" in err_str:
+            friendly_msg = "CA 憑證錯誤：請至「設定」重新上傳 .pfx 憑證並確認密碼正確。"
+        elif "timeout" in err_str.lower() or "timed out" in err_str.lower() or "Timeout" in err_str:
+            friendly_msg = "登入逾時：連線永豐金 API 超過時限，請檢查網路連線後重試。"
+        elif "Connection" in err_str or "connect" in err_str.lower():
+            friendly_msg = "無法連接永豐金 API，請確認網路連線是否正常。"
+        elif "simulation" in err_str.lower() and "production" in err_str.lower():
+            friendly_msg = "環境設定錯誤：帳號環境不符（正式/模擬），請至「設定」確認帳號環境。"
+
         return {
             "status": "error",
-            "message": str(e),
-            "error": str(e),
+            "message": friendly_msg,
+            "error": err_str,
             "details": [],
             "environment": "simulation" if simulation else "production"
         }

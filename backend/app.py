@@ -59,8 +59,11 @@ def get_broker_profile():
         print(f"Person ID: {data.get('personId')}", flush=True)
         print(f"CA Path: {data.get('caPath')}", flush=True)
 
-        required_fields = ["apiKey", "apiSecret", "personId", "caPath", "caPassword"]
+        required_fields = ["apiKey", "apiSecret", "personId", "caPassword"]
         missing_fields = [field for field in required_fields if not data.get(field)]
+        # caPath OR caContent is required (caContent takes priority for cloud deployment)
+        if not data.get("caPath") and not data.get("caContent"):
+            missing_fields.append("caPath (or caContent)")
 
         if missing_fields:
             error_msg = f"缺少必要欄位 (Missing fields): {', '.join(missing_fields)}"
@@ -130,16 +133,10 @@ def get_broker_pnl():
             f"Date Range: {data.get('startDate')} to {data.get('endDate')}", flush=True
         )
 
-        required_fields = [
-            "apiKey",
-            "apiSecret",
-            "personId",
-            "caPath",
-            "caPassword",
-            "startDate",
-            "endDate",
-        ]
+        required_fields = ["apiKey", "apiSecret", "personId", "caPassword", "startDate", "endDate"]
         missing_fields = [field for field in required_fields if not data.get(field)]
+        if not data.get("caPath") and not data.get("caContent"):
+            missing_fields.append("caPath (or caContent)")
 
         if missing_fields:
             error_msg = f"缺少必要欄位 (Missing fields): {', '.join(missing_fields)}"
@@ -258,8 +255,10 @@ def create_pnl_job():
         data = request.json
         print(f"\n{'='*20} CREATING ASYNC PNL JOB {'='*20}", flush=True)
 
-        required_fields = ["apiKey", "apiSecret", "personId", "caPath", "caPassword", "startDate", "endDate"]
+        required_fields = ["apiKey", "apiSecret", "personId", "caPassword", "startDate", "endDate"]
         missing_fields = [field for field in required_fields if not data.get(field)]
+        if not data.get("caPath") and not data.get("caContent"):
+            missing_fields.append("caPath (or caContent)")
 
         if missing_fields:
             error_msg = f"缺少必要欄位: {', '.join(missing_fields)}"
@@ -317,8 +316,10 @@ def verify_broker_account():
         print(f"\n{'='*20} VERIFICATION REQUEST {'='*20}", flush=True)
         print(f"Account: {data.get('accountId')}", flush=True)
 
-        required_fields = ["apiKey", "apiSecret", "personId", "caPath", "caPassword", "accountId"]
+        required_fields = ["apiKey", "apiSecret", "personId", "caPassword", "accountId"]
         missing_fields = [field for field in required_fields if not data.get(field)]
+        if not data.get("caPath") and not data.get("caContent"):
+            missing_fields.append("caPath (or caContent)")
 
         if missing_fields:
             return jsonify({"status": "error", "message": f"缺少必要欄位: {', '.join(missing_fields)}"}), 400

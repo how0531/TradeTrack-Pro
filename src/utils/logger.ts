@@ -15,8 +15,8 @@ interface LogOptions {
 }
 
 class Logger {
-  private isDev = import.meta.env.DEV;
-  private isProduction = import.meta.env.PROD;
+  private isDev = (import.meta as any).env?.DEV ?? false;
+  private isProduction = (import.meta as any).env?.PROD ?? false;
 
   private log(level: LogLevel, emoji: string, message: string, options: LogOptions = {}) {
     const { data, timestamp = true } = options;

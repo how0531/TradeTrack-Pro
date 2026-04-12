@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.1.1] - 2026-04-12
+
+### Fixed — 券商同步根本問題修復
+
+- **`list_profit_loss` 型別錯誤**：Shioaji SDK 要求傳入 `datetime.date` 物件，舊版誤傳字串導致靜默回傳空值。現於 `_fetch_single_account` 中強制轉型，並補齊錯誤日期格式的 early-return 保護。
+- **CA 憑證狀態偽陽性**：`activate_ca` 在部分 SDK 版本回傳 `None` 而非 `False` 表示失敗，原先 `if result is False` 判斷遺漏此情況，導致 CA 狀態被誤標為「已啟動」。改以 `if not result` 統一攔截。
+- **CA 本地快取遮蔽 Shioaji 內部失效**：Session 中的 `ca_activated` 旗標（最長快取 30 分鐘）無法反映 Shioaji 底層 CA 狀態的實際失效。修復方式：PnL 查詢前一律以 `force=True` 強制重新呼叫 `activate_ca`，確保狀態同步。
+- **CA 啟動失敗訊息模糊**：現區分三種情況給出對應提示——①已上傳 caContent 但 activate_ca 未成功（密碼可能錯誤）、②雲端找不到 .pfx 檔案（需重新上傳）、③其他啟動失敗。
+- **日期範圍未驗證**：新增後端防護——起始日晚於結束日直接回傳明確錯誤；結束日超過今天自動截斷為今天，不再送出無效請求給 Shioaji。
+- **例外分類過於籠統**：後端最外層 `except` 現對常見錯誤分類為使用者友善訊息（API Key 無效、帳號授權、CA 錯誤、登入逾時、網路連線失敗、環境不符），取代原本直接拋出 SDK 原始訊息。
+- **`caPath` 驗證阻斷雲端部署**：所有後端端點（`/api/broker/profile`、`/api/jobs/pnl`、`/api/broker/verify`）的必填欄位驗證改為接受 `caPath` 或 `caContent` 二擇一，不再強制需要本地路徑。
+
+### Added
+
+- **每日損益彙總回應**：後端 PnL 回應新增 `daily_results` 欄位，前端不再需要自行計算。
+- **CA 狀態與空資料原因欄位**：`BrokerSyncResult` 新增 `caStatus`、`emptyReason`，供前端區分「CA 未啟動」與「區間無交易」兩種空值情況。
+- **前端型別補齊**：`TransactionDetail` 新增 `entryPrice`、`exitPrice` 可選欄位。
+
+### Changed — 行動端同步體驗優化
+
+- **智慧日期預填**：`SyncDateModal` 開啟時自動將起始日設為上次同步結束日的隔天，終止日設為今天，省去手動調整。
+- **「上次至今」快速按鈕**：有上次同步紀錄時顯示，一鍵還原最常用日期範圍。
+- **連線後自動同步 (`autoSyncOnWake`)**：後端從休眠恢復為 online 後，自動觸發同步，不需使用者再次點擊。
+- **休眠覆蓋層重設計**：顯示「同步意圖卡」預覽即將同步的日期與帳號數，並提供自動同步開關，取代原本僅顯示旋轉動畫的等待畫面。
+- **Footer 按鈕語境化**：休眠/連線中狀態下按鈕樣式改為藍色，文字顯示「連線後自動同步」或「立即啟動同步」。
+
+### Infrastructure
+
+- **`BackendContext` 重構**：改為訂閱 `backendGateway` 單一狀態來源，移除冗餘的獨立 health check 輪詢與 30 秒計時器。
+- **`useBrokerStatus.ts` 移除**：功能已整合至 `BackendContext`，廢棄檔案刪除。
+- **Render worker 調整**：`gunicorn` workers 從 2 調整為 1，加入 `--timeout 120`，減少 Render 免費方案記憶體壓力。
+
 ## [3.0.3] - 2026-03-19
 
 ### Performance

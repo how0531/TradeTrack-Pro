@@ -1,7 +1,20 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { validateBackendStatus, wakeUpBackend } from '../services/brokerService';
+import {
+    onBackendStatusChange,
+    getBackendStatus,
+    wakeUpBackendViaGateway,
+    preemptiveWake,
+    type BackendGatewayStatus,
+} from '../services/backendGateway';
 
 export type BackendStatus = 'checking' | 'online' | 'offline' | 'sleeping';
+
+const gatewayToContext = (s: BackendGatewayStatus): BackendStatus => {
+    if (s === 'online') return 'online';
+    if (s === 'waking') return 'sleeping';
+    if (s === 'offline') return 'offline';
+    return 'checking'; // 'unknown'
+};
 
 interface BackendContextType {
     status: BackendStatus;
@@ -11,46 +24,25 @@ interface BackendContextType {
 const BackendContext = createContext<BackendContextType | undefined>(undefined);
 
 export const BackendProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [status, setStatus] = useState<BackendStatus>('checking');
+    const [status, setStatus] = useState<BackendStatus>(() =>
+        gatewayToContext(getBackendStatus())
+    );
     const isWakingRef = useRef(false);
 
-    const checkAndWake = async () => {
-        if (isWakingRef.current) return;
-        
-        // 初始狀態檢查
-        const currentStatus = await validateBackendStatus(0); // 嘗試 0 次重試，加快初始判定
-        
-        if (currentStatus === 'sleeping') {
-            setStatus('sleeping');
-            isWakingRef.current = true;
-            // 進入漸進式喚醒輪詢階段
-            const wakeResult = await wakeUpBackend();
-            setStatus(wakeResult.success ? 'online' : 'offline');
-            isWakingRef.current = false;
-        } else {
-            setStatus(currentStatus === 'ready' ? 'online' : currentStatus);
-        }
-    };
-
-    // 背景提早啟動：無論使用者有沒有點擊，只要 App 載入就先觸發檢測與喚醒，消滅等待時間
+    // 訂閱 gateway 單一狀態來源，不再自行發 health check
     useEffect(() => {
-        checkAndWake();
+        const unsub = onBackendStatusChange((s) => setStatus(gatewayToContext(s)));
+        // App 載入時觸發 gateway 的 pre-emptive wake（已做 singleton 防重複）
+        preemptiveWake();
+        return () => { unsub(); };
     }, []);
 
-    // 當狀態並非 online 且沒有正在喚醒時，每 30 秒定期檢測一次
-    useEffect(() => {
-        const interval = setInterval(() => {
-            if (status !== 'online' && !isWakingRef.current) {
-                checkAndWake();
-            }
-        }, 30000);
-        return () => clearInterval(interval);
-    }, [status]);
-
     const wake = async () => {
-        // 提供手動觸發的介面給 UI
-        setStatus('checking');
-        await checkAndWake();
+        if (isWakingRef.current) return;
+        isWakingRef.current = true;
+        setStatus('sleeping');
+        await wakeUpBackendViaGateway();
+        isWakingRef.current = false;
     };
 
     return (

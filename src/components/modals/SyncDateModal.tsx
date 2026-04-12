@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -25,7 +25,7 @@ import {
   fetchBrokerPnl,
   fetchBrokerProfile,
 } from "../../services/brokerService";
-import { onBackendStatusChange, getBackendStatus, wakeUpBackendViaGateway, validateBackendReady } from '../../services/backendGateway';
+import { validateBackendReady } from '../../services/backendGateway';
 import { getLocalDateStr, formatDateWithWeekday } from "../../utils/format";
 import { formatSymbolCode } from "../../utils/symbolNames";
 import { CustomDateRangeModal } from "./CustomDateRangeModal";
@@ -122,6 +122,14 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [showMapping, setShowMapping] = useState(false);
 
+  // 📱 Mobile UX: 上次同步日期追蹤 + 連線後自動同步
+  const LAST_SYNC_KEY = 'last_sync_end_date';
+  const [lastSyncDate, setLastSyncDate] = useLocalStorage<string>(LAST_SYNC_KEY, '');
+  const [autoSyncOnWake, setAutoSyncOnWake] = useLocalStorage<boolean>('sync_auto_on_wake', true);
+  const prevBackendStatusRef = useRef<string>('');
+  // handleFetchRef: always points to the latest handleFetch, avoids stale closure in effects
+  const handleFetchRef = useRef<() => void>(() => {});
+
   // --- Effects ---
   useEffect(() => {
     if (isOpen) {
@@ -132,14 +140,45 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       if (!targetPortfolioId && portfolios.length > 0) {
         setTargetPortfolioId(portfolios[0].id);
       }
+
+      // 📱 Smart date default: start from day after last sync
+      if (lastSyncDate) {
+        const lastDt = new Date(lastSyncDate.replace(/-/g, '/'));
+        lastDt.setDate(lastDt.getDate() + 1);
+        const nextStart = getLocalDateStr(lastDt);
+        if (nextStart <= today) {
+          setStartDate(nextStart);
+          setEndDate(today);
+        }
+      }
     } else {
       // Reset
       setStep(1);
       setStatus("idle");
       setTransactions([]);
+      prevBackendStatusRef.current = '';
     }
 
   }, [isOpen, portfolios]);
+
+  // 📱 Auto-proceed: backend 從休眠恢復後自動開始同步
+  useEffect(() => {
+    const prev = prevBackendStatusRef.current;
+    prevBackendStatusRef.current = backendStatus;
+
+    if (
+      isOpen &&
+      step === 1 &&
+      status !== 'loading' &&
+      backendStatus === 'online' &&
+      prev !== 'online' && prev !== '' &&  // must be a real transition
+      autoSyncOnWake &&
+      selectedConfigIds.length > 0
+    ) {
+      const timer = setTimeout(() => handleFetchRef.current(), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [backendStatus]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-Sync Execution
   useEffect(() => {
@@ -186,6 +225,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   }, [isOpen, configs, autoSyncParams]);
 
   // --- Handlers ---
+
+  // Keep handleFetchRef pointing to the latest handleFetch (defined below)
+  // This lets effects call handleFetch without stale-closure issues
+  useLayoutEffect(() => {
+    handleFetchRef.current = () => handleFetch();
+  });
 
   /**
    * ✅ 樂觀更新策略載入帳號設定
@@ -284,6 +329,25 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     // Validate Date (Prevent frontend state issues)
     if (!effectiveStart || !effectiveEnd) {
       setResultMsg("日期範圍錯誤，請重新選擇");
+      return;
+    }
+
+    // Strict date validation before hitting backend
+    const startDt = new Date(effectiveStart.replace(/-/g, '/'));
+    const endDt = new Date(effectiveEnd.replace(/-/g, '/'));
+    const todayDt = new Date();
+    todayDt.setHours(23, 59, 59, 999);
+
+    if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) {
+      setResultMsg("日期格式錯誤，請重新選擇日期");
+      return;
+    }
+    if (startDt > endDt) {
+      setResultMsg("起始日期不可晚於結束日期，請重新選擇");
+      return;
+    }
+    if (endDt > todayDt) {
+      setResultMsg("結束日期不可超過今天");
       return;
     }
 
@@ -797,6 +861,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
   const handleConfirmImport = () => {
     const finalTrades = transactions.filter((t) => t.selected);
+    // 📱 記住本次同步結束日期，供下次開啟時自動預填
+    if (endDate) setLastSyncDate(endDate);
     if (onSuccess) onSuccess(finalTrades);
     onClose();
   };
@@ -876,36 +942,66 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
           {/* ====== FULL-SCREEN SLEEPING OVERLAY ====== */}
           {step === 1 && backendStatus === 'sleeping' && status !== 'loading' && (
-            <div className="flex flex-col items-center justify-center py-10 gap-8 animate-in fade-in zoom-in-95 duration-500">
+            <div className="flex flex-col items-center justify-center py-8 gap-6 animate-in fade-in zoom-in-95 duration-500">
               {/* Concentric Pulse Rings */}
-              <div className="relative w-28 h-28 flex items-center justify-center">
+              <div className="relative w-20 h-20 flex items-center justify-center">
                 <div className="absolute inset-0 rounded-full border-2 border-blue-400/30 animate-[pulse-ring_3s_ease-out_infinite]" />
                 <div className="absolute inset-[-12px] rounded-full border border-blue-500/15 animate-[pulse-ring-outer_3.5s_ease-out_infinite_0.5s]" />
-                <div className="absolute inset-[-24px] rounded-full border border-indigo-500/10 animate-[pulse-ring-outer_4s_ease-out_infinite_1s]" />
-                <div className="w-20 h-20 rounded-[28px] bg-gradient-to-br from-blue-500/20 to-indigo-600/10 border border-blue-400/20 flex items-center justify-center shadow-[0_0_60px_rgba(59,130,246,0.15)] backdrop-blur-xl">
-                  <Zap size={28} className="text-blue-400 animate-[breathe_2s_ease-in-out_infinite]" />
+                <div className="w-16 h-16 rounded-[22px] bg-gradient-to-br from-blue-500/20 to-indigo-600/10 border border-blue-400/20 flex items-center justify-center shadow-[0_0_60px_rgba(59,130,246,0.15)] backdrop-blur-xl">
+                  <Zap size={22} className="text-blue-400 animate-[breathe_2s_ease-in-out_infinite]" />
                 </div>
               </div>
 
               {/* Status Text */}
-              <div className="text-center space-y-3 max-w-[280px]">
-                <h3 className="text-[13px] font-black uppercase tracking-[0.3em] text-blue-400 stagger-1">
+              <div className="text-center space-y-2 max-w-[260px]">
+                <h3 className="text-[12px] font-black uppercase tracking-[0.3em] text-blue-400 stagger-1">
                   ESTABLISHING CONNECTION
                 </h3>
-                <p className="text-[11px] text-zinc-500 leading-relaxed font-medium stagger-2">
-                  雲端伺服器正在從休眠狀態中甚醒。此過程通常需要
+                <p className="text-[10px] text-zinc-500 leading-relaxed font-medium stagger-2">
+                  雲端伺服器從休眠中甦醒，通常需要
                   <span className="text-blue-400 font-black mx-1">60–90</span>秒。
                 </p>
               </div>
 
               {/* Shimmer Progress Bar */}
-              <div className="w-48 stagger-3">
-                <div className="h-[3px] bg-white/5 rounded-full overflow-hidden">
+              <div className="w-40 stagger-3">
+                <div className="h-[2px] bg-white/5 rounded-full overflow-hidden">
                   <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-blue-500/60 to-transparent animate-[shimmer-bar_2s_ease-in-out_infinite] rounded-full" />
                 </div>
-                <p className="text-center mt-3 text-[9px] font-mono text-zinc-600 uppercase tracking-widest">
-                  AUTO-RETRY ACTIVE
-                </p>
+              </div>
+
+              {/* 📱 Sync Intent Preview — shows what will be synced when ready */}
+              <div className="w-full max-w-[280px] bg-white/[0.03] border border-white/5 rounded-2xl p-4 space-y-3 stagger-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">連線後將同步</span>
+                  <span className="text-[10px] font-bold font-mono text-zinc-300">
+                    {startDate} → {endDate}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">帳號</span>
+                  <span className="text-[10px] font-bold text-zinc-400">
+                    {selectedConfigIds.length > 0
+                      ? `${selectedConfigIds.length} 個帳號已選`
+                      : '尚未選擇帳號'}
+                  </span>
+                </div>
+                {/* Auto-sync toggle */}
+                <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                  <label htmlFor="auto-sync-on-wake" className="text-[9px] font-bold text-zinc-500 cursor-pointer select-none flex items-center gap-1.5">
+                    <Activity size={9} className={autoSyncOnWake ? "text-blue-400" : "text-zinc-600"} />
+                    連線後自動同步
+                  </label>
+                  <button
+                    id="auto-sync-on-wake"
+                    role="switch"
+                    aria-checked={autoSyncOnWake}
+                    onClick={() => setAutoSyncOnWake(!autoSyncOnWake)}
+                    className={`relative w-8 h-4 rounded-full transition-colors duration-300 flex-shrink-0 ${autoSyncOnWake ? 'bg-blue-500' : 'bg-white/10'}`}
+                  >
+                    <span className={`absolute top-0.5 w-3 h-3 rounded-full shadow transition-all duration-300 ${autoSyncOnWake ? 'left-[18px] bg-white' : 'left-0.5 bg-zinc-500'}`} />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -965,13 +1061,36 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                       <div className="w-1 h-3 bg-[#C8B085] rounded-full"></div>
                       日期範圍
                     </label>
-                    <div className="flex gap-1">
-                      {[5, 10, 20, 30].map((days) => {
-                        const today = new Date();
+                    <div className="flex gap-1 flex-wrap justify-end">
+                      {/* 📱 上次至今: 只在有上次同步紀錄時顯示 */}
+                      {lastSyncDate && (() => {
+                        const lastDt = new Date(lastSyncDate.replace(/-/g, '/'));
+                        lastDt.setDate(lastDt.getDate() + 1);
+                        const rangeStart = getLocalDateStr(lastDt);
+                        const rangeEnd = today;
+                        const isActive = startDate === rangeStart && endDate === rangeEnd;
+                        const isUpToDate = rangeStart > today;
+                        return !isUpToDate ? (
+                          <button
+                            key="last-to-today"
+                            onClick={() => { setStartDate(rangeStart); setEndDate(rangeEnd); }}
+                            className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all border flex items-center gap-1 ${isActive
+                              ? "bg-[#C8B085] text-black border-[#C8B085]"
+                              : "bg-[#C8B085]/10 border-[#C8B085]/30 text-[#C8B085] hover:bg-[#C8B085] hover:text-black"
+                            }`}
+                            title={`上次同步：${lastSyncDate}`}
+                          >
+                            <Activity size={7} />
+                            上次至今
+                          </button>
+                        ) : null;
+                      })()}
+                      {[10, 30].map((days) => {
+                        const todayDt = new Date();
                         const past = new Date();
-                        past.setDate(today.getDate() - days + 1);
+                        past.setDate(todayDt.getDate() - days + 1);
                         const rangeStart = getLocalDateStr(past);
-                        const rangeEnd = getLocalDateStr(today);
+                        const rangeEnd = getLocalDateStr(todayDt);
                         const isActive =
                           startDate === rangeStart && endDate === rangeEnd;
 
@@ -1661,44 +1780,6 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           </div>
 
           <div className="flex flex-col gap-3">
-            {backendStatus === 'sleeping' && (
-              <div className="bg-white/[0.03] border border-white/10 rounded-[28px] p-5 flex flex-col gap-4 backdrop-blur-3xl shadow-[0_20px_50px_rgba(80,200,255,0.08)] mb-2 group overflow-hidden relative">
-                {/* Decorative background glow */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl pointer-events-none rounded-full" />
-
-                <div className="flex items-center gap-4 relative z-10">
-                  <div className="w-10 h-10 rounded-2xl bg-[#50C8FF]/10 flex items-center justify-center text-[#50C8FF] shadow-inner">
-                    <div className="orbital-loader">
-                      <Zap size={18} className="animate-pulse" />
-                      <div className="orbital-dot" style={{ animationDelay: '0s' }} />
-                      <div className="orbital-dot" style={{ animationDelay: '-0.5s' }} />
-                      <div className="orbital-dot" style={{ animationDelay: '-1s' }} />
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-400 stagger-1">
-                      Nebula Wake-up
-                    </span>
-                    <span className="text-[10px] text-zinc-500 font-bold stagger-2">
-                      伺服器正在從星雲中甦醒...
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-2 relative z-10 pl-14">
-                  <p className="text-[10px] text-zinc-400 leading-relaxed font-medium stagger-3">
-                    Render 免費版主機進入休眠狀態。正在為您建立專屬連線，這通常需要 <span className="text-blue-400 font-black">60-90</span> 秒。
-                  </p>
-                  <div className="flex items-center gap-2 stagger-3">
-                    <Activity size={10} className="text-blue-500/50" />
-                    <div className="h-[2px] w-24 bg-white/5 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500/40 animate-[shimmer_2s_infinite]" style={{ width: '40%' }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div className="flex gap-3">
               {step === 2 && (
                 <button
@@ -1711,12 +1792,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
               <button
                 onClick={step === 1 ? () => handleFetch() : handleConfirmImport}
-                disabled={status === "loading" || backendStatus === "sleeping" || (step === 1 && selectedConfigIds.length === 0)}
-                className={`relative overflow-hidden px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-3 active:scale-95 
+                disabled={status === "loading" || (step === 1 && selectedConfigIds.length === 0)}
+                className={`relative overflow-hidden px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-3 active:scale-95
                   ${status === "loading"
                     ? "bg-[#14161B] border border-[#C8B085]/30 text-[#C8B085] w-full disabled:opacity-100 disabled:cursor-wait shadow-[0_0_30px_rgba(200,176,133,0.1)]"
-                    : backendStatus === "sleeping"
-                      ? "bg-zinc-800 text-zinc-400 w-full disabled:opacity-100 disabled:cursor-wait"
+                    : (backendStatus === "sleeping" || backendStatus === "checking") && step === 1
+                      ? "bg-blue-500/20 border border-blue-400/30 text-blue-300 w-full cursor-pointer hover:bg-blue-500/30"
                       : "bg-[#C8B085] hover:bg-[#B09870] text-black shadow-[0_4px_20px_rgba(200,176,133,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
                   }`}
               >
@@ -1746,13 +1827,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                         {loadingProgress}%
                       </span>
                     </>
-                  ) : backendStatus === "sleeping" ? (
+                  ) : (backendStatus === "sleeping" || backendStatus === "checking") && step === 1 ? (
                     <>
-                      <div className="orbital-loader mr-1 scale-75 text-zinc-400">
-                        <div className="orbital-dot" />
-                        <div className="orbital-dot" style={{ animationDelay: '-1s' }} />
-                      </div>
-                      <span className="animate-pulse tracking-[0.2em]">BOOTING...</span>
+                      <Zap size={12} className="animate-pulse text-blue-300" />
+                      <span className="tracking-[0.15em]">
+                        {autoSyncOnWake ? "連線後自動同步" : "立即啟動同步"}
+                      </span>
                     </>
                   ) : (
                     <>

@@ -93,5 +93,13 @@ export const zh: Translation = {
     share_chartOn: '顯示圖表',
     share_chartOff: '隱藏圖表',
     share_saveImage: '儲存圖片',
-    share_generating: '生成中...'
+    share_generating: '生成中...',
+
+    trade_code_placeholder: '商品代號 (e.g. TXFB6)',
+    trade_code_ph: '商品名稱或股號',
+    trade_pnl_ph: '損益%數/點數',
+    trade_qty_ph: '部位大小',
+    trade_label_code: '商品',
+    trade_label_pnl: '損益',
+    trade_label_qty: '部位',
 };

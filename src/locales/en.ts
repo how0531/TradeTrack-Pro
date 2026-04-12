@@ -93,5 +93,13 @@ export const en: Translation = {
     share_chartOn: 'Chart On',
     share_chartOff: 'Chart Off',
     share_saveImage: 'Save Image',
-    share_generating: 'Generating...'
+    share_generating: 'Generating...',
+
+    trade_code_placeholder: 'Product Code (e.g. TXFB6)',
+    trade_code_ph: 'Symbol / Code',
+    trade_pnl_ph: 'PnL % / Pts',
+    trade_qty_ph: 'Size',
+    trade_label_code: 'Symbol',
+    trade_label_pnl: 'PnL',
+    trade_label_qty: 'Size',
 };
