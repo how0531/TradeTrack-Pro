@@ -37,3 +37,9 @@ __pycache__/
 .venv/
 env/
 venv/
+
+# Backend runtime state
+backend/jobs.db
+backend/jobs.db-journal
+backend/jobs.db-wal
+backend/jobs.db-shm
