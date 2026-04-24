@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.0] - 2026-04-24
+
+### Fixed — 券商同步「伺服器已重新啟動」錯誤
+
+- **根本原因**：`backend/core/job_store.py` 原本以記憶體 dict 儲存背景同步任務。免費雲端後台 (Render / Zeabur free tier) 因閒置休眠或冷啟動重啟 Flask process 後，`_jobs` 被清空，前端輪詢 `/api/jobs/:id/status` 收到 404 → 顯示「同步失敗：伺服器已重新啟動，同步任務遺失」，使用者無從分辨是「雲端休眠」「券商 API」還是「憑證問題」。
+- **修復**：改以 SQLite (`backend/jobs.db`) 持久化 job metadata；**不儲存任何憑證或 payload**，僅保留狀態、進度、結果、錯誤訊息。伺服器重啟後任務狀態仍可查得。
+
+### Added
+
+- **啟動時 Orphan 恢復機制**：`job_store.recover_orphaned_jobs()` 於 Flask 啟動時呼叫，將上一輪仍在 `pending` / `running` 的任務標記為 `error`，並附明確訊息：「伺服器在同步過程中重啟（常見於免費雲端閒置休眠），背景任務已中斷，請重新執行同步。」避免使用者在前端看到無意義的 404。
+- **前端 404 容忍重試**：`brokerService.ts` 輪詢 job status 時若收到 404，先連續重試 3 次（每 2 秒）再放棄，以容忍冷啟動瞬斷；放棄後顯示指向雲端方案本身的訊息，引導使用者重試或升級方案。
+- **後端 404 回應增加 `reason` 欄位**：`/api/jobs/:id/status` 與 `/api/jobs/:id/result` 在任務不存在時回 `{ status: "error", reason: "job_not_found", message: "..." }`，便於前端分類處理。
+
+### Changed
+
+- **Job 保留時間由 1 小時 → 24 小時**：`cleanup_old_jobs()` 預設 `older_than_seconds` 由 `3600` 調整為 `86400`，避免使用者慢了一拍就撈不到結果。
+- **版本號同步**：`package.json` 3.0.4 → 3.2.0（補齊 CHANGELOG 進度並反映此次架構改動）；後端 `/` endpoint 回報的 `version` 由 `v1.3.1` → `v1.4.0`。
+
+### Verification
+
+- 後端新增 7 項端到端測試（CRUD、錯誤流程、orphan 恢復、冪等性、missing job、concurrent create、cleanup 24h），全部通過。
+- `.gitignore` 排除 `backend/jobs.db*` 等 SQLite 執行期檔案。
+
 ## [3.1.1] - 2026-04-12
 
 ### Fixed — 券商同步根本問題修復

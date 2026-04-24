@@ -26,6 +26,19 @@ app = Flask(__name__)
 # Explicitly allow all origins for debugging, or specify frontend URL
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+# 伺服器重啟後，把上一輪還卡在 pending/running 的任務標為 error，
+# 讓前端輪詢時能拿到明確訊息而不是 404。
+try:
+    _orphan_count = job_store.recover_orphaned_jobs()
+    if _orphan_count:
+        print(
+            f"♻️  [STARTUP] 偵測到 {_orphan_count} 個上一輪未完成的同步任務，"
+            f"已標記為 error（請用戶重新執行）",
+            flush=True,
+        )
+except Exception as _e:
+    print(f"[STARTUP] recover_orphaned_jobs failed: {_e}", flush=True)
+
 
 @app.route("/", methods=["GET"])
 def index():
@@ -36,7 +49,7 @@ def index():
             {
                 "status": "online",
                 "message": "TradeTrack-Pro Backend is active.",
-                "version": "v1.3.1",
+                "version": "v1.4.0",
                 "shioaji_version": getattr(shioaji, "__version__", "unknown"),
                 "endpoints": ["/health", "/api/broker/profile", "/api/broker/pnl"],
             }
@@ -284,8 +297,12 @@ def get_job_status(job_id):
     """輪詢 Job 的執行進度與狀態"""
     status = job_store.get_job_status(job_id)
     if not status:
-        return jsonify({"status": "error", "message": "任務不存在或已過期 (Job not found)"}), 404
-        
+        return jsonify({
+            "status": "error",
+            "reason": "job_not_found",
+            "message": "找不到此同步任務 (任務可能已逾期被清理，或從未建立)。請重新執行同步。"
+        }), 404
+
     return jsonify({"status": "success", "job": status})
 
 @app.route("/api/jobs/<job_id>/result", methods=["GET"])
@@ -293,7 +310,11 @@ def get_job_result(job_id):
     """拿取 Job 最終完成的結果"""
     job = job_store.get_job_result(job_id)
     if not job:
-        return jsonify({"status": "error", "message": "任務不存在或已過期 (Job not found)"}), 404
+        return jsonify({
+            "status": "error",
+            "reason": "job_not_found",
+            "message": "找不到此同步任務結果 (任務可能已逾期被清理)。請重新執行同步。"
+        }), 404
         
     if job["status"] != "done":
         return jsonify({

@@ -127,6 +127,10 @@ export const fetchBrokerPnl = async (
             const maxPolls = 150; // 最大等 5 分鐘 (每2秒 1 次)
             let consecutiveFailures = 0;
             const MAX_CONSECUTIVE_FAILURES = 3;
+            // 免費雲端 (Render / Zeabur free) 冷啟動或短暫重啟時，後端可能
+            // 短時間內回 404（job 尚未寫入 DB / DB 尚未讀到）。先連續重試幾次再放棄。
+            let consecutive404 = 0;
+            const MAX_CONSECUTIVE_404 = 3;
 
             while (pollCount < maxPolls) {
                 await new Promise(r => setTimeout(r, 2000));
@@ -139,10 +143,24 @@ export const fetchBrokerPnl = async (
                         autoWake: false // 不要因為 polling 失敗就觸發冷啟動重試
                     });
 
-                    // 404 = 伺服器重啟、Job 消失，無需繼續等待
+                    // 404 = Job 在後端不存在。
+                    // 可能原因：
+                    //   a) 後端（免費雲端）冷啟動中，DB 尚未就緒 → 稍等再試
+                    //   b) 後端真的重啟、任務狀態已被標為 error（新版會保留紀錄）
+                    //   c) 任務已過期被清理
                     if (statStatus === 404) {
-                        throw new Error('伺服器已重新啟動，同步任務遺失，請重新執行同步。');
+                        consecutive404++;
+                        if (consecutive404 >= MAX_CONSECUTIVE_404) {
+                            throw new Error(
+                                '雲端後台疑似休眠或重啟，且任務狀態已遺失。' +
+                                '免費方案閒置一段時間後會暫停服務，請重新執行同步；' +
+                                '若持續發生，可考慮升級後台方案或縮短同步日期範圍。'
+                            );
+                        }
+                        console.warn(`[POLLING] Job ${jobId} returned 404 (${consecutive404}/${MAX_CONSECUTIVE_404}) — 後端可能正在冷啟動，稍後重試`);
+                        continue;
                     }
+                    consecutive404 = 0;
 
                     if (statOk && statData.status === 'success') {
                         consecutiveFailures = 0; // 重置失敗計數
@@ -165,14 +183,20 @@ export const fetchBrokerPnl = async (
                                 break;
                             }
                         } else if (job.status === 'error') {
+                            // 後端明確告知錯誤（包含啟動時被標記為 orphan 的情況）
                             throw new Error(job.error || '背景任務執行失敗');
                         }
                     } else {
                         consecutiveFailures++;
                     }
                 } catch (pollErr: any) {
-                    // 已分類的錯誤（404、job error）直接往上拋
-                    if (pollErr.message?.includes('重新啟動') || pollErr.message?.includes('執行失敗')) {
+                    // 已分類的錯誤（雲端休眠、job error）直接往上拋
+                    if (
+                        pollErr.message?.includes('雲端後台') ||
+                        pollErr.message?.includes('重新啟動') ||
+                        pollErr.message?.includes('執行失敗') ||
+                        pollErr.message?.includes('伺服器在同步過程中重啟')
+                    ) {
                         throw pollErr;
                     }
                     consecutiveFailures++;
