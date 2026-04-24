@@ -550,7 +550,12 @@ def login_and_fetch_pnl(
             "environment": "simulation" if simulation else "production"
         }
     finally:
-        pass
+        # 清理臨時 CA 檔案，避免免費雲端磁碟配額累積
+        if temp_ca_path and os.path.exists(temp_ca_path):
+            try:
+                os.unlink(temp_ca_path)
+            except OSError as _cleanup_err:
+                _log(f"[CA Cleanup] Failed to remove {temp_ca_path}: {_cleanup_err}")
 
 
 def verify_simulation_account(
