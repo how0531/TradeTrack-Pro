@@ -1,7 +1,7 @@
 
 import type { BrokerConfig } from '../types';
 import type { TransactionDetail, BrokerSyncResult } from '../types/broker';
-import { backendFetch } from './backendGateway';
+import { backendFetch, validateBackendReady } from './backendGateway';
 
 export type { TransactionDetail, BrokerSyncResult };
 
@@ -77,9 +77,6 @@ export const fetchBrokerPnl = async (
         }
 
         try {
-            // ✅ 單次請求：先建立背景 Job，再輪詢拿結果 (V3.0.4 引入)
-            if (onProgress) onProgress(1, 100, "準備啟動同步任務...", "");
-
             const payload = {
                 apiKey: config.apiKey,
                 apiSecret: config.apiSecret,
@@ -93,102 +90,128 @@ export const fetchBrokerPnl = async (
                 endDate: endStr
             };
 
-            // 1. 建立背景任務
-            const { ok, status, data: createResult } = await backendFetch('/api/jobs/pnl', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-                timeout: 30000,
-            });
-
-            if (!ok || createResult?.status === 'error') {
-                if (status >= 500) {
-                    throw new Error(`建立同步任務失敗 (${status})，請稍後重試。`);
-                }
-                let errMsg = createResult?.message || createResult?.error || `後端錯誤 (${status})`;
-                if (typeof errMsg === 'string') {
-                    if (errMsg.includes('key:') && errMsg.includes('not exist')) {
-                        errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
-                    } else if (createResult?.ca_error || errMsg.includes('CA') || errMsg.includes('憑證未啟動')) {
-                        errMsg = '⚠️ CA 憑證未啟動：請至「設定」→ 帳號設定 → 重新上傳 .pfx 憑證檔案。雲端部署不支援本地路徑。';
-                    }
-                }
-                throw new Error(errMsg);
-            }
-
-            const jobId = createResult.job_id;
-            if (!jobId) {
-                throw new Error('未取得 Job ID，請確認後端是否支援。');
-            }
-
-            // 2. 輪詢進度
+            // Outer loop: auto-retry if the server restarts mid-sync (max 2 retries)
+            const MAX_JOB_RETRIES = 2;
             let jobResult: any = null;
-            let pollCount = 0;
-            const maxPolls = 150; // 最大等 5 分鐘 (每2秒 1 次)
-            let consecutiveFailures = 0;
-            const MAX_CONSECUTIVE_FAILURES = 3;
 
-            while (pollCount < maxPolls) {
-                await new Promise(r => setTimeout(r, 2000));
-                pollCount++;
+            for (let jobAttempt = 0; jobAttempt <= MAX_JOB_RETRIES; jobAttempt++) {
+                if (jobAttempt > 0) {
+                    if (onProgress) onProgress(1, 100, `伺服器重啟，重新建立同步任務 (第 ${jobAttempt}/${MAX_JOB_RETRIES} 次)...`, "");
+                    const woke = await validateBackendReady(
+                        onProgress ? (msg: string) => onProgress!(1, 100, msg, "") : undefined
+                    );
+                    if (!woke) throw new Error('後端冷啟動失敗，無法重新建立同步任務，請稍後再試。');
+                }
 
-                try {
-                    const { ok: statOk, data: statData, status: statStatus } = await backendFetch(`/api/jobs/${jobId}/status`, {
-                        method: 'GET',
-                        timeout: 10000,
-                        autoWake: false // 不要因為 polling 失敗就觸發冷啟動重試
-                    });
+                // 1. 建立背景任務
+                if (onProgress) onProgress(1, 100, "準備啟動同步任務...", "");
 
-                    // 404 = 伺服器重啟、Job 消失，無需繼續等待
-                    if (statStatus === 404) {
-                        throw new Error('伺服器已重新啟動，同步任務遺失，請重新執行同步。');
+                const { ok, status, data: createResult } = await backendFetch('/api/jobs/pnl', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    timeout: 30000,
+                });
+
+                if (!ok || createResult?.status === 'error') {
+                    if (status >= 500) {
+                        throw new Error(`建立同步任務失敗 (${status})，請稍後重試。`);
                     }
+                    let errMsg = createResult?.message || createResult?.error || `後端錯誤 (${status})`;
+                    if (typeof errMsg === 'string') {
+                        if (errMsg.includes('key:') && errMsg.includes('not exist')) {
+                            errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                        } else if (createResult?.ca_error || errMsg.includes('CA') || errMsg.includes('憑證未啟動')) {
+                            errMsg = '⚠️ CA 憑證未啟動：請至「設定」→ 帳號設定 → 重新上傳 .pfx 憑證檔案。雲端部署不支援本地路徑。';
+                        }
+                    }
+                    throw new Error(errMsg);
+                }
 
-                    if (statOk && statData.status === 'success') {
-                        consecutiveFailures = 0; // 重置失敗計數
-                        const job = statData.job;
+                const jobId = createResult.job_id;
+                if (!jobId) {
+                    throw new Error('未取得 Job ID，請確認後端是否支援。');
+                }
 
-                        // 回報進度給 UI
-                        if (onProgress && job.progress > 0) {
-                            onProgress(job.progress, 100, String(job.progress_msg), "");
+                // 2. 輪詢進度
+                let pollCount = 0;
+                const maxPolls = 150; // 最大等 5 分鐘 (每2秒 1 次)
+                let consecutiveFailures = 0;
+                const MAX_CONSECUTIVE_FAILURES = 3;
+                let serverRestarted = false;
+
+                while (pollCount < maxPolls) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    pollCount++;
+
+                    try {
+                        const { ok: statOk, data: statData, status: statStatus } = await backendFetch(`/api/jobs/${jobId}/status`, {
+                            method: 'GET',
+                            timeout: 10000,
+                            autoWake: false // 不要因為 polling 失敗就觸發冷啟動重試
+                        });
+
+                        // 404 = in-memory 架構：伺服器重啟後 Job 消失
+                        if (statStatus === 404) {
+                            serverRestarted = true;
+                            break;
                         }
 
-                        if (job.status === 'done') {
-                            // 3. 取得最終結果
-                            const { ok: resOk, data: finalData } = await backendFetch(`/api/jobs/${jobId}/result`, {
-                                method: 'GET',
-                                timeout: 30000
-                            });
+                        if (statOk && statData.status === 'success') {
+                            consecutiveFailures = 0;
+                            const job = statData.job;
 
-                            if (resOk) {
-                                jobResult = finalData;
-                                break;
+                            if (onProgress && job.progress > 0) {
+                                onProgress(job.progress, 100, String(job.progress_msg), "");
                             }
-                        } else if (job.status === 'error') {
-                            throw new Error(job.error || '背景任務執行失敗');
+
+                            if (job.status === 'done') {
+                                // 3. 取得最終結果
+                                const { ok: resOk, data: finalData } = await backendFetch(`/api/jobs/${jobId}/result`, {
+                                    method: 'GET',
+                                    timeout: 30000
+                                });
+
+                                if (resOk) {
+                                    jobResult = finalData;
+                                    break;
+                                }
+                            } else if (job.status === 'error') {
+                                // SQLite 架構：啟動時將中斷任務標記為 error
+                                if (job.error?.includes('重新啟動') || job.error?.includes('任務中斷')) {
+                                    serverRestarted = true;
+                                    break;
+                                }
+                                throw new Error(job.error || '背景任務執行失敗');
+                            }
+                        } else {
+                            consecutiveFailures++;
                         }
-                    } else {
+                    } catch (pollErr: any) {
+                        if (pollErr.message?.includes('執行失敗')) {
+                            throw pollErr;
+                        }
                         consecutiveFailures++;
+                        console.warn(`[POLLING] Job ${jobId} poll #${pollCount} failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}):`, pollErr.message);
                     }
-                } catch (pollErr: any) {
-                    // 已分類的錯誤（404、job error）直接往上拋
-                    if (pollErr.message?.includes('重新啟動') || pollErr.message?.includes('執行失敗')) {
-                        throw pollErr;
+
+                    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                        throw new Error(`連線中斷：連續 ${MAX_CONSECUTIVE_FAILURES} 次無法取得同步狀態，請確認後端是否正常運作後重試。`);
                     }
-                    consecutiveFailures++;
-                    console.warn(`[POLLING] Job ${jobId} poll #${pollCount} failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}):`, pollErr.message);
                 }
 
-                if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                    throw new Error(`連線中斷：連續 ${MAX_CONSECUTIVE_FAILURES} 次無法取得同步狀態，請確認後端是否正常運作後重試。`);
+                if (serverRestarted) {
+                    if (jobAttempt < MAX_JOB_RETRIES) continue;
+                    throw new Error('伺服器已重新啟動，同步任務遺失，自動重試失敗。請稍後再試。');
                 }
+
+                if (jobResult) break;
             }
 
             if (!jobResult) {
                 throw new Error('同步任務超時 (超過 5 分鐘)，伺服器可能因過載中斷。請稍後再試。');
             }
 
-            // 取代原本的單一 result
             const result = jobResult;
 
             if (result.status === 'error') {
