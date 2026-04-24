@@ -49,7 +49,7 @@ def index():
             {
                 "status": "online",
                 "message": "TradeTrack-Pro Backend is active.",
-                "version": "v1.4.0",
+                "version": "v1.4.1",
                 "shioaji_version": getattr(shioaji, "__version__", "unknown"),
                 "endpoints": ["/health", "/api/broker/profile", "/api/broker/pnl"],
             }
@@ -69,7 +69,7 @@ def get_broker_profile():
         data = request.json
         print(f"\n{'='*20} PROFILE REQUEST {'='*20}", flush=True)
         print(f"Keys received: {list(data.keys())}", flush=True)
-        print(f"Person ID: {data.get('personId')}", flush=True)
+        print(f"Person ID: {_mask_id(data.get('personId'))}", flush=True)
         print(f"CA Path: {data.get('caPath')}", flush=True)
 
         required_fields = ["apiKey", "apiSecret", "personId", "caPassword"]
@@ -208,6 +208,14 @@ def get_broker_pnl():
 
 from threading import Thread
 
+
+def _mask_id(pid: str) -> str:
+    """遮罩 personId / 身分證字號等 PII，僅露尾 3 碼做問題追蹤用"""
+    if not pid:
+        return "<empty>"
+    s = str(pid)
+    return "***" + s[-3:] if len(s) > 3 else "***"
+
 def _run_pnl_job(job_id, data):
     """背景執行 PnL 同步的工作執行緒"""
     env_pref = data.get("environment", "production")
@@ -335,7 +343,7 @@ def verify_broker_account():
     try:
         data = request.json
         print(f"\n{'='*20} VERIFICATION REQUEST {'='*20}", flush=True)
-        print(f"Account: {data.get('accountId')}", flush=True)
+        print(f"Account: {_mask_id(data.get('accountId'))}", flush=True)
 
         required_fields = ["apiKey", "apiSecret", "personId", "caPassword", "accountId"]
         missing_fields = [field for field in required_fields if not data.get(field)]

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.1] - 2026-04-24
+
+### Optimized — 同步熱路徑效能與安全
+
+- **SQLite 單一常駐連線** (`backend/core/job_store.py`)：原本每次 `create_job` / `update_progress` / `get_status` 都 `sqlite3.connect()` 再關閉；在 polling 熱路徑（每 1.5–5s 打一次）這筆開銷是不必要的。改用模組層級的常駐連線 + `check_same_thread=False` + `PRAGMA synchronous=NORMAL`，配合既有 WAL 模式與 `_lock` 序列化寫入。實測 8 執行緒 × 20 次 create 在 13ms 內完成。
+- **前端 Polling 指數退避** (`src/services/brokerService.ts`)：原本固定 2s polling × 150 次 = 300 次 HTTP request；改為前 5 次 1.5s（抓早期登入階段進度）之後依 `job.progress` 線性拉到 5s 上限。平均每次同步請求數降低約 40–50%，免費雲端 egress 與 CPU 壓力顯著下降。
+
+### Security
+
+- **PII 遮蔽** (`backend/app.py`)：原本 DEBUG 日誌直接印 `personId` 與 `accountId`（身分證字號 / 帳號），改以 `_mask_id()` 只露尾 3 碼 (`***123`)，避免雲端日誌保留造成的個資外流。
+- **臨時 CA 檔清理** (`backend/core/pnl.py`)：`login_and_fetch_pnl` 若以 `ca_content` 建立 `temp_ca_path`，原本只有成功路徑沒清；在 `finally` 補上 `os.unlink()`，避免免費雲端磁碟配額累積。
+
+### Versions
+
+- `package.json` 3.2.0 → 3.2.1
+- 後端 `/` endpoint `v1.4.0` → `v1.4.1`
+
 ## [3.2.0] - 2026-04-24
 
 ### Fixed — 券商同步「伺服器已重新啟動」錯誤

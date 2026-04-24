@@ -121,19 +121,30 @@ export const fetchBrokerPnl = async (
                 throw new Error('未取得 Job ID，請確認後端是否支援。');
             }
 
-            // 2. 輪詢進度
+            // 2. 輪詢進度 — 指數退避
+            // 前 5 次 1.5s 頻繁抓早期進度；之後依進度拉長到最多 5s，
+            // 在 5 分鐘總預算內明顯減少後端 polling request 數（免費雲端省 CPU / egress）。
             let jobResult: any = null;
             let pollCount = 0;
-            const maxPolls = 150; // 最大等 5 分鐘 (每2秒 1 次)
+            let elapsedMs = 0;
+            const MAX_TOTAL_MS = 5 * 60 * 1000;
             let consecutiveFailures = 0;
             const MAX_CONSECUTIVE_FAILURES = 3;
             // 免費雲端 (Render / Zeabur free) 冷啟動或短暫重啟時，後端可能
             // 短時間內回 404（job 尚未寫入 DB / DB 尚未讀到）。先連續重試幾次再放棄。
             let consecutive404 = 0;
             const MAX_CONSECUTIVE_404 = 3;
+            let lastProgress = 0;
+            const pollIntervalMs = (polls: number, progress: number) => {
+                if (polls < 5) return 1500;
+                const factor = Math.min(1, Math.max(0, progress) / 100);
+                return Math.round(1500 + factor * 3500);
+            };
 
-            while (pollCount < maxPolls) {
-                await new Promise(r => setTimeout(r, 2000));
+            while (elapsedMs < MAX_TOTAL_MS) {
+                const wait = pollIntervalMs(pollCount, lastProgress);
+                await new Promise(r => setTimeout(r, wait));
+                elapsedMs += wait;
                 pollCount++;
 
                 try {
@@ -165,6 +176,7 @@ export const fetchBrokerPnl = async (
                     if (statOk && statData.status === 'success') {
                         consecutiveFailures = 0; // 重置失敗計數
                         const job = statData.job;
+                        lastProgress = typeof job.progress === 'number' ? job.progress : lastProgress;
 
                         // 回報進度給 UI
                         if (onProgress && job.progress > 0) {
