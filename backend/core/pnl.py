@@ -22,6 +22,44 @@ def _log(msg):
     print(msg, flush=True)
 
 
+def _rss_mb():
+    """目前 process 的 RSS 記憶體用量 (MB)；用於 Render free tier 512MB OOM 監控。"""
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024
+    except Exception:
+        pass
+    return -1
+
+
+class _Stage:
+    """以 with block 量測一段流程耗時 + 結束後 RSS，輸出到 log。
+
+    使用：
+        with _Stage("login"):
+            ...
+
+    會在進入時印 [STAGE] login start (rss=NMB)、結束時印
+    [STAGE] login done in X.XXs (rss=NMB).
+    """
+    def __init__(self, name: str):
+        self.name = name
+        self.t0 = 0.0
+
+    def __enter__(self):
+        self.t0 = time.perf_counter()
+        _log(f"⏱️  [STAGE] {self.name} start (rss={_rss_mb():.0f}MB)")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        dt = time.perf_counter() - self.t0
+        status = "FAIL" if exc_type else "done"
+        _log(f"⏱️  [STAGE] {self.name} {status} in {dt:.2f}s (rss={_rss_mb():.0f}MB)")
+        return False  # 不吃例外
+
+
 # ─── Futures Contract Multiplier Lookup ───
 _FUTURES_MULTIPLIERS = {
     'MTX': 50, 'MTE': 500, 'TE': 4000, 'TF': 1000,
@@ -257,21 +295,29 @@ def login_and_fetch_pnl(
             return {"status": "error", "message": f"憑證處理失敗 (CA Failed): {str(e)}", "details": []}
 
     try:
+        _log(f"🔍 [REQUEST START] person_id={person_id[-3:] if person_id else '?'}, "
+             f"range={start_date}~{end_date}, sim={simulation}, profile_only={profile_only}, "
+             f"rss_start={_rss_mb():.0f}MB")
+        request_start = time.perf_counter()
+
         # 2. Get API Session (reuses existing if same credentials)
         if progress_callback:
             progress_callback(10, "正在登入永豐金 API...")
-            
+
         manager = get_session_manager()
-        api = manager.get_api(
-            api_key, secret_key, person_id, final_ca_path, ca_password, simulation=simulation
-        )
+        with _Stage("get_api (login or reuse)"):
+            api = manager.get_api(
+                api_key, secret_key, person_id, final_ca_path, ca_password, simulation=simulation
+            )
 
         if progress_callback:
             progress_callback(20, "API 登入成功，檢查憑證狀態...")
 
         # 3. Check CA activation
-        # force=True for PnL mode: always re-activate to avoid stale local flag masking Shioaji internal state loss
-        ca_is_active = manager.ensure_ca_active(final_ca_path, ca_password, person_id, force=not profile_only)
+        # 改用 expiry 機制 (1800s) 取代每次 force=True，省 0.5-2s/請求；
+        # 若 CA 真的失效會在 list_profit_loss 階段拋錯，retry 機制能補救。
+        with _Stage("ensure_ca_active"):
+            ca_is_active = manager.ensure_ca_active(final_ca_path, ca_password, person_id, force=False)
 
         if not ca_is_active:
             _log("⚠️ CA NOT ACTIVATED — aborting PnL fetch to avoid silent empty results.")
@@ -293,20 +339,21 @@ def login_and_fetch_pnl(
         # 4. List Accounts
         if progress_callback:
             progress_callback(30, "正在取得帳號列表...")
-            
-        try:
-            accounts = api.list_accounts()
-        except Exception as acc_err:
-            _log(f"⚠️ [list_accounts] First attempt failed: {acc_err}")
+
+        with _Stage("list_accounts"):
             try:
                 accounts = api.list_accounts()
-            except Exception as acc_err2:
-                _log(f"❌ [list_accounts] Failed: {acc_err2}")
-                return {
-                    "status": "error",
-                    "message": f"無法取得帳號列表，連線可能已中斷：{str(acc_err2)}",
-                    "details": []
-                }
+            except Exception as acc_err:
+                _log(f"⚠️ [list_accounts] First attempt failed: {acc_err}")
+                try:
+                    accounts = api.list_accounts()
+                except Exception as acc_err2:
+                    _log(f"❌ [list_accounts] Failed: {acc_err2}")
+                    return {
+                        "status": "error",
+                        "message": f"無法取得帳號列表，連線可能已中斷：{str(acc_err2)}",
+                        "details": []
+                    }
 
         _log(f"API Returned {len(accounts)} accounts.")
 
@@ -434,7 +481,8 @@ def login_and_fetch_pnl(
                 pct = 40 + int((i / total_accs) * 50)  # 40% to 90%
                 progress_callback(pct, f"正在下載帳號 {acc_display} [{i+1}/{total_accs}]...")
 
-            result = _fetch_single_account(api, acc, start_date, end_date, ca_is_active)
+            with _Stage(f"fetch acc {acc.account_id} [{i+1}/{total_accs}]"):
+                result = _fetch_single_account(api, acc, start_date, end_date, ca_is_active)
             results.append((acc, result))
 
         # ════════════════════════════════════════════════
@@ -580,7 +628,9 @@ def login_and_fetch_pnl(
         if accounts:
             result["username"] = getattr(accounts[0], "username", person_id)
 
-        _log(f"✅ [Done] PnL={total_pnl}, Items={len(details)}, Equity={total_equity}")
+        request_total = time.perf_counter() - request_start
+        _log(f"✅ [Done] PnL={total_pnl}, Items={len(details)}, Equity={total_equity} | "
+             f"total_request={request_total:.2f}s, rss_end={_rss_mb():.0f}MB")
         return result
 
     except Exception as e:

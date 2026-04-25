@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.2] - 2026-04-25
+
+### Diagnostic — PnL 取得各階段計時 + 記憶體紀錄
+
+使用者持續看到「正在下載 X 的交易資料... 50%」卡住很久，但 v3.3.1 已修了 OOM。為了停止猜測、直接看到資料，本次加上後端分段計時：
+
+### Added — `backend/core/pnl.py`
+
+- **`_rss_mb()`**：讀 `/proc/self/status` 取得目前 process 的 RSS 記憶體（MB），用於 Render free tier 512MB OOM 監控。
+- **`_Stage` context manager**：包住一段流程，進入時印 `⏱️  [STAGE] X start (rss=NMB)`，結束時印 `⏱️  [STAGE] X done in T.TTs (rss=NMB)`。失敗時印 `FAIL`。
+- **`login_and_fetch_pnl` 全程 instrument**：
+  - `[REQUEST START]` 印 person_id 末三碼、日期區間、profile_only、起始 RSS
+  - 階段 `get_api (login or reuse)` — 量測 session 重用 vs 全新登入耗時
+  - 階段 `ensure_ca_active` — 量測 CA 啟動耗時（這次改為 `force=False`，預期大幅縮短）
+  - 階段 `list_accounts` — 量測取得帳號清單耗時
+  - 階段 `fetch acc {id} [i/total]` — 每個帳號的 PnL 抓取耗時（含 list_profit_loss + parsing）
+  - `[Done]` 多印 `total_request=T.TTs` 與 `rss_end=NMB`
+- **`backend/core/session.py`**：health check 完印 `health check took T.TTs, ok=true/false`
+
+### Changed
+
+- **`force=True` CA 重啟取消**：`login_and_fetch_pnl` 改為 `manager.ensure_ca_active(..., force=False)`，依靠 session 內建的 `_CA_EXPIRY_SECONDS=1800` 機制。原本每次 PnL 強制重啟 CA 會多花 0.5-2 秒，且若 CA 真的失效，list_profit_loss 階段的 retry 機制能補救。
+
+### How to use
+
+部署後跑一次同步，去 Render dashboard → tradetrack-backend → Logs → 找 `=== PNL REQUEST ===` 之後的內容。期望看到類似：
+
+```
+⏱️  [STAGE] get_api (login or reuse) start (rss=140MB)
+⏱️  [STAGE] get_api (login or reuse) done in 0.18s (rss=145MB)
+⏱️  [STAGE] ensure_ca_active start (rss=145MB)
+⏱️  [STAGE] ensure_ca_active done in 0.05s (rss=145MB)   # 因為 force=False 通常會跳過
+⏱️  [STAGE] list_accounts start (rss=145MB)
+⏱️  [STAGE] list_accounts done in 1.42s (rss=148MB)
+⏱️  [STAGE] fetch acc 0264298 [1/1] start (rss=148MB)
+⏱️  [STAGE] fetch acc 0264298 [1/1] done in 3.78s (rss=152MB)
+✅ [Done] PnL=12345, Items=8, Equity=0 | total_request=5.43s, rss_end=152MB
+```
+
+如果某一段顯示 30s+，那就是真正的瓶頸。
+
+### Versions
+
+- `package.json` 3.3.1 → 3.3.2
+- 後端 `/` endpoint `v1.5.1` → `v1.5.2`
+
 ## [3.3.1] - 2026-04-25
 
 ### Fixed — Render free tier OOM 中斷同步
