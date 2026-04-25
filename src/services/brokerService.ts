@@ -240,6 +240,9 @@ export const fetchBrokerPnl = async (
                 details: (result.details || []).sort((a: any, b: any) => b.date.localeCompare(a.date)),
                 caStatus: result.ca_status,
                 emptyReason: result.empty_reason,
+                accountSummaries: result.account_summaries,
+                emptyDiagnostic: result.empty_diagnostic,
+                dateRangeUsed: result.date_range_used,
             };
             return syncResult;
 

@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.3] - 2026-04-25
+
+### Diagnostic — 損益取得失敗時提供逐帳號診斷
+
+使用者回報：可以登入券商但取得損益有問題，原本錯誤訊息只有籠統的「查無交易紀錄」，無法判斷是 CA 失效、帳號未授權、複委託不支援，還是區間內真的無交易。本次補上完整診斷鍊：
+
+### Added
+
+- **`backend/core/pnl.py`**：聚合階段建立 `account_summaries[]`，記錄每個帳號的 `record_count`、`pnl`、`signed`、`status` (`ok` / `empty` / `error` / `skipped`)、`reason`（明確中文訊息：「CA 憑證未啟動」、「帳號尚未授權簽署」、「複委託暫不支援」、「此區間內無交易紀錄」）。
+- **`backend/core/pnl.py`**：當 `details = []` 但無錯誤時，組裝 `empty_diagnostic` 字串：例如「CA 未啟動 (1234567890)；帳號未授權 (0987654321) — 請至「帳號管理」執行驗證；此區間 2026-04-15~2026-04-25 內 5566778899 確實無交易」。
+- **`backend/core/pnl.py`**：回應新增 `date_range_used`，方便前端確認後端實際查詢的區間（在 end_date 超過今天時會被自動截斷）。
+- **`backend/app.py`**：`/api/jobs/pnl` 完成時把 `account_summaries` / `empty_diagnostic` / `date_range_used` 一併寫進 `final_result`。
+- **`src/types/broker.ts`**：新增 `AccountSummary` 型別與 `BrokerSyncResult.{accountSummaries,emptyDiagnostic,dateRangeUsed}` 欄位。
+- **`src/services/brokerService.ts`**：把後端新增的三個欄位映射到 `BrokerSyncResult`。
+- **`src/components/modals/SyncDateModal.tsx`**：累積 `emptyDiagnostics`，在「成功但 0 筆交易」情境下顯示「同步成功但 0 筆交易：{逐帳號診斷}」，取代以往黑盒子的「查無交易紀錄」。
+
+### Versions
+
+- `package.json` 3.2.2 → 3.2.3
+- 後端 `/` endpoint `v1.4.1` → `v1.4.2`
+
 ## [3.2.2] - 2026-04-25
 
 ### Fixed — UI 顯示版本與實際 build 不一致

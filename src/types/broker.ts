@@ -61,12 +61,27 @@ export interface TransactionDetail {
   exitPrice?: number;
 }
 
+export interface AccountSummary {
+  account_id: string;
+  account_type: string;
+  signed: boolean;
+  record_count: number;
+  pnl: number;
+  status: 'ok' | 'empty' | 'error' | 'skipped';
+  reason: string | null;
+}
+
 export interface BrokerSyncResult {
   totalPnl: number;
   dailyResults: { date: string; pnl: number }[];
   details: TransactionDetail[];
   caStatus?: 'activated' | 'not_activated';
   emptyReason?: 'ca_not_activated' | 'no_trades_in_range' | string | null;
+  // Per-account diagnostic — surfaces "which account got how many records and why" so
+  // the user can self-diagnose blank PnL screens (CA off, unsigned account, empty range, etc.)
+  accountSummaries?: AccountSummary[];
+  emptyDiagnostic?: string | null;
+  dateRangeUsed?: { start: string; end: string };
 }
 
 // BackendStatus is defined in src/context/BackendContext.tsx

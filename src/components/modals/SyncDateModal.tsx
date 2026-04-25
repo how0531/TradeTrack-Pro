@@ -467,6 +467,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       let completedGroups = 0;
       let anyCaNotActivated = false;
       const fetchErrors: string[] = []; // C3: 累積每個 group 的錯誤訊息
+      // 累積後端回傳的逐帳號診斷，0 筆時拿來告訴使用者究竟「為什麼是 0」
+      const emptyDiagnostics: string[] = [];
 
       // Iterate and fetch for each group
       for (const [groupKey, group] of fetchGroups) {
@@ -513,6 +515,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
           if (result.emptyReason === 'ca_not_activated') {
             anyCaNotActivated = true;
+          }
+          if (result.emptyDiagnostic) {
+            emptyDiagnostics.push(result.emptyDiagnostic);
           }
 
           // Assign Portfolio ID immediately map back to correct portfolio based on trade accountId
@@ -835,6 +840,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           setResultMsg(`同步失敗：${fetchErrors.join('；')}`);
         } else if (anyCaNotActivated) {
           setResultMsg("⚠️ 憑證未啟動或已失效，無法取得損益。請至「設定」重新上傳 .pfx 檔案。");
+        } else if (emptyDiagnostics.length > 0) {
+          // 後端逐帳號診斷：可能是未授權 / 複委託 / 範圍內真的無交易
+          setResultMsg(`同步成功但 0 筆交易：${emptyDiagnostics.join('；')}`);
         } else {
           setResultMsg(`此區間（${effectiveStart} ~ ${effectiveEnd}）查無交易紀錄。請確認券商帳號是否有未平倉或已實作損益。`);
         }

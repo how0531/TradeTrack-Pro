@@ -49,7 +49,7 @@ def index():
             {
                 "status": "online",
                 "message": "TradeTrack-Pro Backend is active.",
-                "version": "v1.4.1",
+                "version": "v1.4.2",
                 "shioaji_version": getattr(shioaji, "__version__", "unknown"),
                 "endpoints": ["/health", "/api/broker/profile", "/api/broker/pnl"],
             }
@@ -256,6 +256,9 @@ def _run_pnl_job(job_id, data):
                 "branchCode": result.get("branch_code"),
                 "ca_status": result.get("ca_status"),
                 "empty_reason": result.get("empty_reason"),
+                "account_summaries": result.get("account_summaries", []),
+                "empty_diagnostic": result.get("empty_diagnostic"),
+                "date_range_used": result.get("date_range_used"),
                 "summary": result.get("summary", {})
             }
             job_store.complete_job(job_id, final_result)
