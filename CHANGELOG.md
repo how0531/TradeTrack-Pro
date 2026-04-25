@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.0] - 2026-04-25
+
+### Improved — 「記錄」(Records / Trading History) 視覺與資訊密度
+
+使用者反映同一天看到「同代號同口數同 %」的兩筆交易在 UI 上幾乎一模一樣，無從判斷哪筆是哪筆，且不容易看出當日總盈虧。本次優化補上幾個低風險高價值的改動：
+
+### Added — `src/features/history/LogsView.tsx`
+
+- **每日盈虧小計**：在每個日期 pill（例如 `2026/04/27`）後直接顯示當日所有交易的合計（`+23,100` / `-5,498`），符合既有的綠／紅配色，並在 `hideAmounts` 模式下會自動模糊，不違背隱私設定。
+- **每筆交易時間戳記**（HH:MM, 24h）：若 `Trade.timestamp` 存在，顯示在 info line 最前（`09:34 | 5498 凱崴 | 2張 | -13.58%`）。手動建立的交易不會有 timestamp，會自動跳過。永豐金 Shioaji 同步進來的交易會帶 timestamp，這對區分當日多筆同代號交易特別有用。
+
+### Changed
+
+- **排序按鈕從 3 顆變 2 顆**：原本「日期 / 獲利優先 / 虧損優先」三顆並排佔很大版面。改為「日期 / PnL」兩顆，**PnL 按鈕再按一次切換方向**：
+  - 第一次按：高到低（↓ 代表越往下越小）
+  - 再按一次：低到高（↑ 代表越往下越大）
+  - 圖示用 `lucide-react` 的 `ArrowDown` / `ArrowUp` 取代原本的 `ArrowUpDown`
+  - i18n 標籤沿用既有 `sort_pnl_high` / `sort_pnl_low`，不需新增翻譯
+
+### Versions
+
+- `package.json` 3.3.3 → 3.4.0（minor bump 反映 UX 改動）
+
+### Deferred — 等使用者確認後再做
+
+| 項目 | 為什麼先不做 |
+|------|-------------|
+| 手機按鈕一律顯示（編輯／刪除目前 hover 才出現） | 需確認版面密度 |
+| 點整列展開明細 | 需設計詳細頁 |
+| 大量資料虛擬化（1000+ 筆） | 重構大、目前無實際 perf 問題 |
+| 抽出 `<PnLCapsule>` 元件去重 | 純程式碼整理，無使用者價值 |
+
 ## [3.3.3] - 2026-04-25
 
 ### Fixed — Render logs 終於指出真兇

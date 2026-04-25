@@ -1,6 +1,6 @@
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useMemo, useEffect } from 'react';
-import { Scroll, Trash2, Edit2, Calendar, ArrowUpDown, StickyNote } from 'lucide-react';
+import { Scroll, Trash2, Edit2, Calendar, ArrowDown, ArrowUp, StickyNote } from 'lucide-react';
 import { Trade, LogsViewProps, Lang } from '../../types';
 import { I18N } from '../../constants';
 import { formatCompactNumber, formatDate, formatPointsDisplay } from '../../utils/format';
@@ -9,6 +9,21 @@ import { formatSymbolCode } from '../../utils/symbolNames';
 import { vibrate } from '../../utils/haptics';
 
 type SortType = 'date' | 'pnl_high' | 'pnl_low';
+
+// 格式化交易時間 (HH:MM, 24-hour) — 用於區分同一天同代號的多筆交易，
+// 截圖中常見「同代號同口數同 % 出現兩次」的模糊狀況靠這個解決。
+const formatTradeTime = (ts?: string): string => {
+    if (!ts) return '';
+    try {
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return '';
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `${hh}:${mm}`;
+    } catch {
+        return '';
+    }
+};
 
 const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade: Trade, onEdit: (t: Trade) => void, onDelete: (id: string) => void, hideAmounts: boolean }) => {
     const [deleteStatus, setDeleteStatus] = useState<'idle' | 'confirm'>('idle');
@@ -99,8 +114,10 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                 }
             }
             
+            // 時間放最前面：同代號同口數同 % 也能區分；只在有 timestamp 時顯示
+            const timeDisplay = formatTradeTime(trade.timestamp);
             // Filter out empty parts and join with pipe
-            const info = [displayName, qtyDisplay, ptsDisplay].filter(Boolean).join(' | ');
+            const info = [timeDisplay, displayName, qtyDisplay, ptsDisplay].filter(Boolean).join(' | ');
 
             // Deduplication Logic:
             // If trade.note contains the legacy "Code | Pts | Qty" string, allow TradeModal to clean it permanently,
@@ -277,18 +294,51 @@ export const LogsView = ({ trades, lang, hideAmounts, portfolios, onEdit, onDele
         return g;
     }, [sortedTrades, sortType]);
 
+    // 每日盈虧小計 — useMetrics 已算過但沒傳進來；這裡用同樣的累加直接從 group 算。
+    // 顯示在日期 pill 內讓使用者一眼看出當日總盈虧。
+    const dailyTotals = useMemo<Record<string, number>>(() => {
+        if (!groups) return {};
+        const totals: Record<string, number> = {};
+        for (const [date, ts] of Object.entries(groups)) {
+            totals[date] = ts.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        }
+        return totals;
+    }, [groups]);
+
     if (!trades || trades.length === 0) return <div className="flex flex-col items-center justify-center py-32 text-slate-600 space-y-6"><div className="w-16 h-16 rounded-full bg-gradient-to-b from-white/5 to-transparent flex items-center justify-center border border-white/5"><Scroll size={24} className="opacity-30 text-white"/></div><div className="text-center"><h3 className="text-[10px] font-bold text-slate-400 mb-1">{t.emptyStateTitle}</h3><p className="text-[8px] max-w-[160px] mx-auto leading-relaxed text-zinc-600 font-medium uppercase tracking-wide">{t.emptyStateDesc}</p></div></div>;
 
     return (
         <div className="pb-32 min-h-screen relative overflow-hidden">
              <div className="sticky top-0 z-30 flex justify-center py-4 pointer-events-none gap-2">
                 <div className="bg-[#050505]/80 backdrop-blur-xl p-0.5 rounded-full border border-white/5 shadow-xl pointer-events-auto ring-1 ring-white/5 inline-flex gap-0.5">
-                    {['date', 'pnl_high', 'pnl_low'].map((type) => (
-                        <button key={type} onClick={() => setSortType(type as SortType)} className={`flex items-center justify-center gap-1 rounded-full px-3 py-1 transition-all duration-300 relative overflow-hidden whitespace-nowrap ${sortType === type ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-600 hover:text-zinc-400 hover:bg-white/5'}`}>
-                            {type === 'date' ? <Calendar size={9} className="shrink-0" /> : <ArrowUpDown size={9} className="shrink-0" />}
-                            <span className="text-[9px] font-bold uppercase tracking-wider">{type === 'date' ? t.sort_date : (type === 'pnl_high' ? t.sort_pnl_high : t.sort_pnl_low)}</span>
-                        </button>
-                    ))}
+                    {/* 日期 */}
+                    <button
+                        onClick={() => setSortType('date')}
+                        className={`flex items-center justify-center gap-1 rounded-full px-3 py-1 transition-all duration-300 relative overflow-hidden whitespace-nowrap ${sortType === 'date' ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-600 hover:text-zinc-400 hover:bg-white/5'}`}
+                    >
+                        <Calendar size={9} className="shrink-0" />
+                        <span className="text-[9px] font-bold uppercase tracking-wider">{t.sort_date}</span>
+                    </button>
+                    {/* PnL — 一個按鈕，再按一次切換方向 */}
+                    {(() => {
+                        const pnlActive = sortType === 'pnl_high' || sortType === 'pnl_low';
+                        const isHighFirst = sortType === 'pnl_high';
+                        const togglePnl = () => setSortType(pnlActive && isHighFirst ? 'pnl_low' : 'pnl_high');
+                        // 預設「高到低」：箭頭朝下代表越往下越小
+                        const Icon = isHighFirst ? ArrowDown : ArrowUp;
+                        const label = pnlActive
+                            ? (isHighFirst ? t.sort_pnl_high : t.sort_pnl_low)
+                            : t.sort_pnl_high;
+                        return (
+                            <button
+                                onClick={togglePnl}
+                                className={`flex items-center justify-center gap-1 rounded-full px-3 py-1 transition-all duration-300 relative overflow-hidden whitespace-nowrap ${pnlActive ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-600 hover:text-zinc-400 hover:bg-white/5'}`}
+                            >
+                                <Icon size={9} className="shrink-0" />
+                                <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
+                            </button>
+                        );
+                    })()}
                 </div>
                 <div className="bg-[#050505]/80 backdrop-blur-xl p-0.5 rounded-full border border-white/5 shadow-xl pointer-events-auto ring-1 ring-white/5 flex">
                     <button onClick={() => setShowNotesOnly(!showNotesOnly)} className={`flex items-center justify-center gap-1.5 rounded-full px-3 py-1 transition-all duration-300 relative overflow-hidden whitespace-nowrap ${showNotesOnly ? 'bg-[#C8B085] text-black shadow-[0_0_10px_rgba(200,176,133,0.3)] border border-[#C8B085]' : 'text-zinc-600 hover:text-zinc-400 hover:bg-white/5'}`}>
@@ -299,17 +349,24 @@ export const LogsView = ({ trades, lang, hideAmounts, portfolios, onEdit, onDele
 
             <div className="relative px-2 mt-2">
                 <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-gradient-to-b from-transparent via-[#C8B085]/10 to-transparent -translate-x-1/2 z-0" />
-                {sortType === 'date' && groups ? Object.entries(groups).map(([date, groupTrades]) => (
-                    <div key={date} className="relative mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex justify-center mb-5 relative z-10">
-                            <div className="bg-[#050505] border border-white/5 rounded-full pl-2.5 pr-3 py-1 flex items-center gap-2 shadow-lg ring-1 ring-white/5">
-                                <div className="w-1 h-1 rounded-full bg-[#C8B085] shadow-[0_0_4px_#C8B085]"></div>
-                                <span className="text-[10px] font-bold text-zinc-500 font-barlow-numeric tracking-widest">{formatDate(date, lang)}</span>
+                {sortType === 'date' && groups ? Object.entries(groups).map(([date, groupTrades]) => {
+                    const total = dailyTotals[date] || 0;
+                    const totalIsProfit = total >= 0;
+                    return (
+                        <div key={date} className="relative mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="flex justify-center mb-5 relative z-10">
+                                <div className="bg-[#050505] border border-white/5 rounded-full pl-2.5 pr-3 py-1 flex items-center gap-2 shadow-lg ring-1 ring-white/5">
+                                    <div className="w-1 h-1 rounded-full bg-[#C8B085] shadow-[0_0_4px_#C8B085]"></div>
+                                    <span className="text-[10px] font-bold text-zinc-500 font-barlow-numeric tracking-widest">{formatDate(date, lang)}</span>
+                                    <span className={`text-[10px] font-bold font-barlow-numeric tracking-tight ml-1 ${totalIsProfit ? 'text-[#5B9A8B]' : 'text-[#e89595]'} ${hideAmounts ? 'blur-[5px] select-none opacity-60' : ''}`}>
+                                        {total >= 0 ? '+' : '-'}{Math.abs(total).toLocaleString('en-US')}
+                                    </span>
+                                </div>
                             </div>
+                            <div className="flex flex-col w-full gap-0.5">{groupTrades.map(trade => <SpineCard key={trade.id} trade={trade} onEdit={onEdit} onDelete={onDelete} hideAmounts={hideAmounts} />)}</div>
                         </div>
-                        <div className="flex flex-col w-full gap-0.5">{groupTrades.map(trade => <SpineCard key={trade.id} trade={trade} onEdit={onEdit} onDelete={onDelete} hideAmounts={hideAmounts} />)}</div>
-                    </div>
-                )) : (
+                    );
+                }) : (
                     <div className="flex flex-col w-full mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500 gap-0.5">{sortedTrades.map(trade => <SpineCard key={trade.id} trade={trade} onEdit={onEdit} onDelete={onDelete} hideAmounts={hideAmounts} />)}</div>
                 )}
             </div>
