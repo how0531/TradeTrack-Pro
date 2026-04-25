@@ -432,7 +432,7 @@ def login_and_fetch_pnl(
             if progress_callback:
                 pct = 40 + int((i / total_accs) * 50)  # 40% to 90%
                 progress_callback(pct, f"正在下載帳號 {acc_display} [{i+1}/{total_accs}]...")
-                
+
             result = _fetch_single_account(api, acc, start_date, end_date, ca_is_active)
             results.append((acc, result))
 
@@ -445,27 +445,60 @@ def login_and_fetch_pnl(
         total_open_pnl = 0
         final_empty_reason = None
         account_errors = []
+        # 每帳號診斷摘要 — 讓前端能精確顯示「哪個帳號 / 為什麼 / 多少筆」，
+        # 取代以往只看 details_count = 0 卻不知所以然的情況。
+        account_summaries = []
 
         for acc, result in results:
             pnl, acc_dets, equity, open_pnl, empty_reason = result
+            acc_id_str = str(acc.account_id)
+            atype_str = str(getattr(acc, "account_type", "")).replace("AccountType.", "") or "Unknown"
+            is_signed = bool(getattr(acc, "signed", False))
+            summary = {
+                "account_id": acc_id_str,
+                "account_type": atype_str,
+                "signed": is_signed,
+                "record_count": len(acc_dets),
+                "pnl": round(pnl, 2),
+                "status": "ok",
+                "reason": None,
+            }
 
             if empty_reason and str(empty_reason).startswith("error:"):
                 error_msg = str(empty_reason)[6:]
-                account_errors.append(f"帳號 {acc.account_id}: {error_msg}")
-                _log(f"❌ [Error] {acc.account_id}: {error_msg}")
+                account_errors.append(f"帳號 {acc_id_str}: {error_msg}")
+                _log(f"❌ [Error] {acc_id_str}: {error_msg}")
+                summary["status"] = "error"
+                summary["reason"] = error_msg
             else:
                 if pnl != 0 or acc_dets:
                     total_pnl += pnl
                     details.extend(acc_dets)
+                    summary["status"] = "ok"
                 elif empty_reason:
                     if empty_reason == "ca_not_activated":
                         final_empty_reason = "ca_not_activated"
-                    elif not final_empty_reason:
-                        final_empty_reason = empty_reason
+                        summary["status"] = "empty"
+                        summary["reason"] = "CA 憑證未啟動，無法取得資料"
+                    elif empty_reason == "not_supported":
+                        summary["status"] = "skipped"
+                        summary["reason"] = "複委託帳號目前不支援"
+                    else:
+                        if not final_empty_reason:
+                            final_empty_reason = empty_reason
+                        summary["status"] = "empty"
+                        if not is_signed:
+                            summary["reason"] = "帳號尚未授權簽署 (請至帳號管理執行驗證)"
+                        else:
+                            summary["reason"] = "此區間內無交易紀錄"
+                else:
+                    summary["status"] = "empty"
+                    summary["reason"] = "此區間內無交易紀錄"
 
+            account_summaries.append(summary)
             total_equity += equity
             total_open_pnl += open_pnl
-            _log(f"✅ [Done] {acc.account_id}: {len(acc_dets)} records, PnL={pnl}")
+            _log(f"✅ [Done] {acc_id_str}: {len(acc_dets)} records, PnL={pnl}")
 
         # If all accounts failed and no details were fetched
         if account_errors and not details:
@@ -497,6 +530,30 @@ def login_and_fetch_pnl(
             if bid:
                 branch_codes.add(bid)
 
+        # 0 筆但無錯誤的情況：根據各帳號摘要組一段可診斷的訊息，
+        # 取代以往的「查無交易紀錄」黑盒子。
+        empty_diagnostic_msg = None
+        if not details and not account_errors:
+            unsigned = [s for s in account_summaries if not s["signed"] and s["status"] != "skipped"]
+            ca_blocked = [s for s in account_summaries if s["status"] == "empty" and s["reason"] and "CA" in s["reason"]]
+            empty_only = [s for s in account_summaries if s["status"] == "empty" and not (s["reason"] and "CA" in s["reason"])]
+            skipped = [s for s in account_summaries if s["status"] == "skipped"]
+            parts = []
+            if ca_blocked:
+                ids = ", ".join(s["account_id"] for s in ca_blocked)
+                parts.append(f"CA 未啟動 ({ids})")
+            if unsigned:
+                ids = ", ".join(s["account_id"] for s in unsigned)
+                parts.append(f"帳號未授權 ({ids}) — 請至「帳號管理」執行驗證")
+            if skipped:
+                ids = ", ".join(s["account_id"] for s in skipped)
+                parts.append(f"已跳過 ({ids}, 複委託暫不支援)")
+            if not parts and empty_only:
+                ids = ", ".join(s["account_id"] for s in empty_only)
+                parts.append(f"此區間 {start_date}~{end_date} 內 {ids} 確實無交易")
+            if parts:
+                empty_diagnostic_msg = "；".join(parts)
+
         result = {
             "status": "success",
             "total_pnl": round(total_pnl, 2),
@@ -508,6 +565,10 @@ def login_and_fetch_pnl(
             "signed_accounts": signed_ids,
             "ca_status": "activated" if ca_is_active else "not_activated",
             "empty_reason": final_empty_reason if not details else None,
+            # 每帳號診斷摘要 — 前端可直接顯示，user / dev 一眼判斷哪個帳號哪裡卡
+            "account_summaries": account_summaries,
+            "empty_diagnostic": empty_diagnostic_msg,
+            "date_range_used": {"start": start_date, "end": end_date},
             "summary": {
                 "equity": total_equity,
                 "open_pnl": round(total_open_pnl, 2),
