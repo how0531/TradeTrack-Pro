@@ -23,22 +23,38 @@ class ShioajiSessionManager:
         self._lock = Lock()
 
     def get_api(
-        self, api_key, secret_key, person_id, ca_path, ca_password, simulation=True
+        self, api_key, secret_key, person_id, ca_path, ca_password, simulation=True,
+        fetch_contract=False,
     ):
         """
         Get an active API instance. Reused if possible, otherwise create new.
         Always ensures CA is activated when a valid path is provided.
+
+        fetch_contract:
+          False (default) — for PnL / profile / list_accounts paths.
+            list_profit_loss / margin / list_positions don't need contract data;
+            skipping the contract download saves ~200MB on Render free tier
+            (was the trigger for OOM crashes pre-v3.3.1).
+          True — only when api.Contracts.Stocks is needed (e.g. simulated
+            order placement in verify_simulation_account).
+
+        If a cached session exists with fetch_contract=False but a True is
+        requested, we drop and re-login to ensure contracts are loaded.
         """
         # Comparison key (suffix)
         key_suffix = api_key[-6:] if api_key and len(api_key) > 6 else api_key
 
         with self._lock:
-            # 1. Double check under lock if we can reuse the existing session
+            # 1. Double check under lock if we can reuse the existing session.
+            #    If contracts are now needed but the cached session was created
+            #    without them, force a fresh login.
+            cached_has_contracts = getattr(self, "_cached_with_contracts", False)
             if (
                 self.api
                 and self.current_person_id == person_id
                 and self.current_api_key_suffix == key_suffix
                 and self.is_simulation == simulation
+                and (not fetch_contract or cached_has_contracts)
             ):
                 # 快速存活檢查：如果最近 60 秒內有使用過，跳過健康檢查
                 if self.last_used_time:
@@ -107,7 +123,7 @@ class ShioajiSessionManager:
                     login_result[0] = new_api.login(
                         api_key=api_key,
                         secret_key=secret_key,
-                        fetch_contract=True,
+                        fetch_contract=fetch_contract,  # default False — saves ~200MB on free tier
                     )
                 except Exception as e:
                     login_error[0] = e
@@ -139,6 +155,7 @@ class ShioajiSessionManager:
             self.current_api_key_suffix = key_suffix
             self.is_simulation = simulation
             self.last_used_time = datetime.now()
+            self._cached_with_contracts = fetch_contract
 
             return self.api
 

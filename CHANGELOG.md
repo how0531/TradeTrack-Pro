@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.1] - 2026-04-25
+
+### Fixed — Render free tier OOM 中斷同步
+
+**症狀**：使用者在 v3.3.0 上點同步，畫面卡在 32% 進度，Render 同時通知：
+
+> An instance of your Web Service TradeTrack-Pro exceeded its memory limit, which triggered an automatic restart.
+
+**根因**：Render free tier 只有 **512MB RAM**。`session.py:110` 在 `api.login()` 時把 `fetch_contract=True` 寫死，這會讓 Shioaji 把整個台股+期貨的契約資料下載到記憶體（**~200MB**），加上 Flask + gunicorn + Python runtime 基礎佔用（~150MB）+ PnL 暫存資料就把 512MB 撐爆。容器被 Render 殺掉時 sync HTTP 請求斷線，前端就停在等回應的 32%。
+
+**修復**：
+
+- **`backend/core/session.py`**：`get_api()` 新增 `fetch_contract: bool = False` 參數。預設 **不** 抓契約資料 — `list_profit_loss` / `margin` / `list_positions` / `list_accounts` 完全不需要 `api.Contracts`，多年都白吃這 200MB。會檢查 cached session 是否帶契約，若需求變動會自動重新登入。
+- **`backend/core/pnl.py`**：`verify_simulation_account` 顯式傳 `fetch_contract=True`（因為要呼叫 `api.Contracts.Stocks` 取得測試商品下單）；其餘 PnL / profile 路徑沿用預設 `False`。
+- **`backend/core/pnl.py`**：`login_and_fetch_pnl` 的 `finally` 區塊新增 `gc.collect()`，在 PnL 抓取結束時主動釋放 `pnl_data` items / parsed dicts 等暫存物件，避免下個請求進來時繼續累積到 OOM 邊緣。
+
+### Impact
+
+- 基礎記憶體佔用從 ~350MB → **~150MB**
+- 預期 Render free tier 上 1 帳號 30-90 天的 PnL 同步不再會 OOM
+- 大量帳號 / 長區間查詢仍可能受 512MB 限制；徹底解法是付費方案或 Persistent Disk
+
+### Versions
+
+- `package.json` 3.3.0 → 3.3.1
+- 後端 `/` endpoint `v1.5.0` → `v1.5.1`
+
 ## [3.3.0] - 2026-04-25
 
 ### Architectural — PnL 改回同步請求，繞開 ephemeral disk
