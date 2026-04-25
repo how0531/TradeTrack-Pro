@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.0] - 2026-04-25
+
+### Architectural — PnL 改回同步請求，繞開 ephemeral disk
+
+**問題根因（v3.2.x 都修不掉）**：
+v3.0.4 引進的 async + polling job 系統依賴後端**跨多次 HTTP request 記住 job 狀態**。Render free tier 的容器磁碟是 ephemeral — 容器一被殺（休眠/被重啟/redeploy），SQLite 整個檔消失。即使 v3.2.0 加了持久化、v3.2.1 改單一連線、v3.2.3 補診斷訊息，**只要 Render 在 polling 中途重啟一次容器，job_id 就再也找不到**，前端就回報「同步任務遺失」。使用者實測證實確實如此。
+
+**根本解法**：
+登入 (`/api/broker/profile`) 從來都用同步單一 HTTP request 而且**完全沒這問題** — 因為連線開著時 Render 不會殺 worker。本次把 PnL 改回同樣模式：
+
+### Changed
+
+- **`src/services/brokerService.ts`**：`fetchBrokerPnl` 重新組織為 **sync-first**：
+  1. **首先**呼叫 `/api/broker/pnl`（同步），110s client timeout（在 gunicorn 120s 之內）。一次來回拿到結果，**根本繞開 job state 跨請求記憶這個問題層**。
+  2. **失敗才** fallback 到 async `/api/jobs/pnl`（保留作為大量資料的保險，但對 99% 的日常同步都用不到）。
+  3. 4xx 錯誤（API key 無效、CA 失效）直接拋，不會無謂地走 async 重試。
+
+- **`backend/app.py`**：`/api/broker/pnl` 同步 endpoint 也回傳 `account_summaries` / `empty_diagnostic` / `date_range_used`（v3.2.3 只更新了 async 那條路，這次補齊）。
+
+### Why this is the right fix
+
+| 層 | Async path | Sync path (this PR) |
+|---|----|----|
+| Render 重啟 mid-fetch | Job 遺失，無法復原 | 連線開著 = Render 不殺 |
+| Ephemeral disk | 致命，SQLite 消失 | 不需要 |
+| Cold start | 第一次 polling 可能 404 | 第一次請求自然等候啟動 |
+| Debug 難度 | 需追蹤 job_id 跨多請求 | 單一 request/response |
+| 單一帳號 30 天查詢 | 過度工程 | 剛好 |
+
+Async 路徑保留作為超大查詢（多帳號 + 多月）的 fallback，但日常使用的成功率與訊息清晰度都會大幅改善。
+
+### Versions
+
+- `package.json` 3.2.3 → 3.3.0（minor bump 反映架構改動）
+- 後端 `/` endpoint `v1.4.2` → `v1.5.0`
+
 ## [3.2.3] - 2026-04-25
 
 ### Diagnostic — 損益取得失敗時提供逐帳號診斷
