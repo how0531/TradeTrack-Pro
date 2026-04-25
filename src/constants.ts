@@ -1,6 +1,6 @@
 
-// [Manage] Last Updated: 2026-03-17
-export const APP_VERSION = 'V3.0.3';
+// 由 vite.config.ts 在 build time 從 package.json 注入，避免手動同步漏改。
+export const APP_VERSION = `v${__APP_VERSION__}`;
 export const THEME = {
     GOLD: '#C8B085',
     GOLD_BG: '#2A2824',
