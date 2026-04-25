@@ -105,6 +105,8 @@ export const fetchBrokerPnl = async (
         //
         // 若同步請求超時或網路錯誤再退回 async 路徑當保險。
         // ════════════════════════════════════════════════════════════
+        // sentinel：sync 路徑的後端 4xx 錯誤；用 sentinel 避免被 try/catch 誤吞
+        let syncBackendError: Error | null = null;
         try {
             if (onProgress) onProgress(5, 100, "正在連線券商...", "");
 
@@ -131,7 +133,8 @@ export const fetchBrokerPnl = async (
                 };
             }
 
-            // 同步路徑回 4xx：通常是憑證 / 帳號錯誤，不該進 async 重試
+            // 4xx 後端邏輯錯誤（憑證、帳號、日期型別等）— 用 sentinel 帶出 try
+            // 而不是直接 throw，避免被自己的 catch 接住誤判為網路錯誤
             if (status >= 400 && status < 500 && syncResult?.status === 'error') {
                 let errMsg = syncResult.message || syncResult.error || `後端錯誤 (${status})`;
                 if (typeof errMsg === 'string') {
@@ -141,19 +144,31 @@ export const fetchBrokerPnl = async (
                         errMsg = '⚠️ CA 憑證未啟動：請至「設定」→ 帳號設定 → 重新上傳 .pfx 憑證檔案。雲端部署不支援本地路徑。';
                     }
                 }
-                throw new Error(errMsg);
+                syncBackendError = new Error(errMsg);
+            } else {
+                // 5xx 或網路問題 → 落到 async 路徑試一次
+                console.warn(`[PNL Sync] failed status=${status}, falling back to async job path`);
             }
-
-            // 5xx 或網路問題 → 落到 async 路徑試一次
-            console.warn(`[PNL Sync] failed status=${status}, falling back to async job path`);
         } catch (syncErr: any) {
             const msg = String(syncErr?.message || '');
-            // 已分類的 4xx 錯誤直接往上拋，不要進 async fallback
-            if (msg.includes('API Key') || msg.includes('CA') || msg.includes('憑證')) {
-                throw syncErr;
+            // 只有純網路 / timeout 才退回 async；其他錯誤直接拋
+            const isNetworkOrTimeout =
+                msg.includes('fetch') ||
+                msg.includes('NetworkError') ||
+                msg.includes('timeout') ||
+                msg.includes('Timeout') ||
+                msg.includes('aborted') ||
+                msg.includes('Failed to fetch');
+            if (!isNetworkOrTimeout) {
+                syncBackendError = syncErr;
+            } else {
+                console.warn('[PNL Sync] network/timeout, falling back to async:', msg);
             }
-            // timeout / network 才退回 async
-            console.warn('[PNL Sync] threw:', msg, '— falling back to async job path');
+        }
+
+        // 後端明確 4xx → 直接拋，不浪費時間走 async fallback（同樣 bug 會重現）
+        if (syncBackendError) {
+            throw syncBackendError;
         }
 
         try {
@@ -193,6 +208,10 @@ export const fetchBrokerPnl = async (
             // 前 5 次 1.5s 頻繁抓早期進度；之後依進度拉長到最多 5s，
             // 在 5 分鐘總預算內明顯減少後端 polling request 數（免費雲端省 CPU / egress）。
             let jobResult: any = null;
+            // 後端回報的 job error — 用 sentinel 而不是 throw，避免被 inner try/catch 誤吞
+            // (v3.3.0 regression: throw 在 try 內被自己的 catch 接住，consecutiveFailures
+            //  又被下一輪重置，造成 polling 永不停止直到 5 分鐘 timeout)
+            let jobErrorMsg: string | null = null;
             let pollCount = 0;
             let elapsedMs = 0;
             const MAX_TOTAL_MS = 5 * 60 * 1000;
@@ -263,18 +282,17 @@ export const fetchBrokerPnl = async (
                                 break;
                             }
                         } else if (job.status === 'error') {
-                            // 後端明確告知錯誤（包含啟動時被標記為 orphan 的情況）
-                            throw new Error(job.error || '背景任務執行失敗');
+                            // 用 sentinel 帶出迴圈，避免在 try 內 throw 被同層 catch 誤吞
+                            jobErrorMsg = job.error || '背景任務執行失敗';
+                            break;
                         }
                     } else {
                         consecutiveFailures++;
                     }
                 } catch (pollErr: any) {
-                    // 已分類的錯誤（雲端休眠、job error）直接往上拋
+                    // 雲端休眠的明確錯誤直接往上拋
                     if (
                         pollErr.message?.includes('雲端後台') ||
-                        pollErr.message?.includes('重新啟動') ||
-                        pollErr.message?.includes('執行失敗') ||
                         pollErr.message?.includes('伺服器在同步過程中重啟')
                     ) {
                         throw pollErr;
@@ -286,6 +304,11 @@ export const fetchBrokerPnl = async (
                 if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
                     throw new Error(`連線中斷：連續 ${MAX_CONSECUTIVE_FAILURES} 次無法取得同步狀態，請確認後端是否正常運作後重試。`);
                 }
+            }
+
+            // Job 明確失敗（後端已寫入 error）—— 直接拋出，不再走 timeout 路徑
+            if (jobErrorMsg) {
+                throw new Error(jobErrorMsg);
             }
 
             if (!jobResult) {

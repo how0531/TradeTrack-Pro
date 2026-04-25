@@ -153,32 +153,55 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
             except Exception as me:
                 _log(f"⚠️ [Futures Extra] {acc_id}: {me}")
 
-        # Ensure dates are datetime.date objects — Shioaji requires datetime.date, not strings
+        # Shioaji 1.3.3 quirk: list_profit_loss has different type signatures
+        # depending on account type:
+        #   - Stock accounts: requires datetime.date (passing str silently
+        #     returns empty list — fixed in v3.1.1)
+        #   - Futures accounts: requires str (passing datetime.date raises
+        #     "Argument 'begin_date' has incorrect type" — discovered v3.3.3)
+        # Build both forms, pass the right one per account type, and on
+        # type errors swap and retry once for forward compat.
         from datetime import date as _date
         try:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d").date() if isinstance(start_date, str) else start_date
             end_dt = datetime.strptime(end_date, "%Y-%m-%d").date() if isinstance(end_date, str) else end_date
+            start_str = start_dt.strftime("%Y-%m-%d")
+            end_str = end_dt.strftime("%Y-%m-%d")
         except ValueError as ve:
             _log(f"❌ [Date Error] Invalid date format: {ve}")
             return 0, [], 0, 0, f"error:日期格式錯誤，請確認日期是否為 YYYY-MM-DD 格式 ({ve})"
 
-        # Core: list_profit_loss — single attempt, no redundant retry sleep
+        def _call_pnl(use_str: bool):
+            if use_str:
+                return api.list_profit_loss(target_account, start_str, end_str)
+            return api.list_profit_loss(target_account, start_dt, end_dt)
+
+        primary_use_str = is_futures  # 期貨用 str，其餘用 date
         pnl_data = None
         try:
-            pnl_data = api.list_profit_loss(target_account, start_dt, end_dt)
+            pnl_data = _call_pnl(use_str=primary_use_str)
         except Exception as api_e:
             err_str = str(api_e)
             if "406" in err_str or "Account Not Acceptable" in err_str:
                 _log(f"ℹ️ [Skip 406] {acc_id} not supported by list_profit_loss")
                 pnl_data = []
+            elif "incorrect type" in err_str.lower() or "expected" in err_str.lower():
+                # Shioaji 改了型別簽名，交換型別再試一次
+                _log(f"⚠️ [Type Swap] {acc_id} primary({'str' if primary_use_str else 'date'}) failed: {api_e}; retrying with swapped type")
+                try:
+                    pnl_data = _call_pnl(use_str=not primary_use_str)
+                    _log(f"✅ [Type Swap] {acc_id} succeeded with {'date' if primary_use_str else 'str'}")
+                except Exception as swap_e:
+                    _log(f"❌ [Type Swap] {acc_id} both types failed: primary={api_e}, swapped={swap_e}")
+                    return 0, [], 0, 0, f"error:Shioaji API 型別錯誤 ({api_e})"
             elif "date" in err_str.lower() or "invalid" in err_str.lower():
                 _log(f"❌ [Date Error] {acc_id}: {api_e}")
                 return 0, [], 0, 0, f"error:日期範圍無效，請確認起訖日期是否正確 ({api_e})"
             else:
-                # Single retry on non-406 errors
+                # Single retry on transient errors
                 _log(f"⚠️ [Retry] {acc_id} first attempt failed: {api_e}")
                 try:
-                    pnl_data = api.list_profit_loss(target_account, start_dt, end_dt)
+                    pnl_data = _call_pnl(use_str=primary_use_str)
                 except Exception as retry_e:
                     _log(f"❌ [Failed] {acc_id} retry also failed: {retry_e}")
                     return 0, [], 0, 0, f"error:{retry_e}"
