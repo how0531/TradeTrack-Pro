@@ -10,20 +10,10 @@ import { vibrate } from '../../utils/haptics';
 
 type SortType = 'date' | 'pnl_high' | 'pnl_low';
 
-// 格式化交易時間 (HH:MM, 24-hour) — 用於區分同一天同代號的多筆交易，
-// 截圖中常見「同代號同口數同 % 出現兩次」的模糊狀況靠這個解決。
-const formatTradeTime = (ts?: string): string => {
-    if (!ts) return '';
-    try {
-        const d = new Date(ts);
-        if (isNaN(d.getTime())) return '';
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mm = String(d.getMinutes()).padStart(2, '0');
-        return `${hh}:${mm}`;
-    } catch {
-        return '';
-    }
-};
+// v3.4.0 試過顯示交易時間，但 trade.timestamp 實際上是 useIndexedDBData 寫入時的 now()，
+// 也就是「同步時間」/「建立時間」，不是真正的下單時間。Shioaji list_profit_loss 也只回傳
+// 日期沒有時:分。為避免誤導使用者，v3.4.1 拔掉時間 badge — 若未來資料源能取得真正的
+// 成交時間（例如改抓 list_trades），再考慮加回。
 
 const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade: Trade, onEdit: (t: Trade) => void, onDelete: (id: string) => void, hideAmounts: boolean }) => {
     const [deleteStatus, setDeleteStatus] = useState<'idle' | 'confirm'>('idle');
@@ -114,10 +104,11 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                 }
             }
             
-            // 時間放最前面：同代號同口數同 % 也能區分；只在有 timestamp 時顯示
-            const timeDisplay = formatTradeTime(trade.timestamp);
+            // 時間在 v3.4.1 移除 — Trade.timestamp 是寫入時間 (useIndexedDBData
+            // saveTrades 時 fallback 到 now)，broker 同步進來的 TransactionDetail 也沒有
+            // 時:分欄位，顯示出來只會誤導。要顯示真正的成交時間需改抓 list_trades。
             // Filter out empty parts and join with pipe
-            const info = [timeDisplay, displayName, qtyDisplay, ptsDisplay].filter(Boolean).join(' | ');
+            const info = [displayName, qtyDisplay, ptsDisplay].filter(Boolean).join(' | ');
 
             // Deduplication Logic:
             // If trade.note contains the legacy "Code | Pts | Qty" string, allow TradeModal to clean it permanently,

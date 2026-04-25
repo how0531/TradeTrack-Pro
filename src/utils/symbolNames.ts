@@ -152,7 +152,15 @@ export const formatSymbolCode = (code: string | null | undefined): string => {
         
         // Try mapping stock code in first token (e.g. "2330 someNote")
         if (STOCK_NAME_MAP[firstToken]) {
-            return `${firstToken} ${STOCK_NAME_MAP[firstToken]} ${rest}`;
+            const lookedName = STOCK_NAME_MAP[firstToken];
+            // 避免 "6147 頎邦 頎邦" 這種雙寫：
+            // 若 broker 已經把名字塞進 code 字串裡（"6147 頎邦"），rest 已等同查表結果，
+            // 不要再追加一次。比對前 trim，避免空白差異造成誤判。
+            const restTrim = rest.trim();
+            if (restTrim === lookedName || restTrim.startsWith(lookedName + ' ') || restTrim.endsWith(' ' + lookedName) || restTrim === '') {
+                return `${firstToken} ${lookedName}`;
+            }
+            return `${firstToken} ${lookedName} ${rest}`;
         }
         
         return trimmedCode;
