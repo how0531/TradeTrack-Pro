@@ -69,6 +69,7 @@ class ShioajiSessionManager:
 
                 # B4: 健康檢查加 timeout，防止 Shioaji 卡住導致 Lock deadlock
                 health_ok = [False]
+                _hc_t0 = datetime.now()
                 def _health_check():
                     try:
                         self.api.list_accounts()
@@ -78,6 +79,8 @@ class ShioajiSessionManager:
                 ht = threading.Thread(target=_health_check, daemon=True)
                 ht.start()
                 ht.join(timeout=5)
+                _hc_dt = (datetime.now() - _hc_t0).total_seconds()
+                print(f"DEBUG: [SessionReuse] health check took {_hc_dt:.2f}s, ok={health_ok[0]}", flush=True)
 
                 if health_ok[0]:
                     print(
