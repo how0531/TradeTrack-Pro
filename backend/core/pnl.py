@@ -1,4 +1,5 @@
 import os
+import gc
 import time
 import base64
 import tempfile
@@ -617,6 +618,10 @@ def login_and_fetch_pnl(
                 os.unlink(temp_ca_path)
             except OSError as _cleanup_err:
                 _log(f"[CA Cleanup] Failed to remove {temp_ca_path}: {_cleanup_err}")
+        # Render free tier 只有 512MB RAM；fetch_contract=False 已大幅降基礎佔用，
+        # 額外做一輪 GC 釋放這次 PnL 抓取累積的暫存物件 (pnl_data items, parsed dicts 等)
+        # 避免下一個請求進來時又踩到 OOM 上限。
+        gc.collect()
 
 
 def verify_simulation_account(
@@ -646,8 +651,10 @@ def verify_simulation_account(
 
     try:
         manager = get_session_manager()
+        # 模擬下單需要 api.Contracts.Stocks 取契約物件，此處必須帶 contracts
         api = manager.get_api(
-            api_key, secret_key, person_id, final_ca_path, ca_password, simulation=True
+            api_key, secret_key, person_id, final_ca_path, ca_password, simulation=True,
+            fetch_contract=True,
         )
 
         if not final_ca_path or not os.path.exists(final_ca_path):
