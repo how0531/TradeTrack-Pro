@@ -49,7 +49,7 @@ def index():
             {
                 "status": "online",
                 "message": "TradeTrack-Pro Backend is active.",
-                "version": "v1.4.2",
+                "version": "v1.5.0",
                 "shioaji_version": getattr(shioaji, "__version__", "unknown"),
                 "endpoints": ["/health", "/api/broker/profile", "/api/broker/pnl"],
             }
@@ -192,6 +192,9 @@ def get_broker_pnl():
             "branchCode": result.get("branch_code"),
             "ca_status": result.get("ca_status"),           # 透傳 CA 狀態
             "empty_reason": result.get("empty_reason"),     # 透傳空結果原因
+            "account_summaries": result.get("account_summaries", []),
+            "empty_diagnostic": result.get("empty_diagnostic"),
+            "date_range_used": result.get("date_range_used"),
             "summary": result.get("summary", {})  # Pass through the new summary
         }
         return jsonify(response)

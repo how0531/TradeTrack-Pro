@@ -76,22 +76,90 @@ export const fetchBrokerPnl = async (
             throw new Error('P&L 擷取失敗：缺少必要憑證資訊 (Missing credentials)');
         }
 
-        try {
-            // ✅ 單次請求：先建立背景 Job，再輪詢拿結果 (V3.0.4 引入)
-            if (onProgress) onProgress(1, 100, "準備啟動同步任務...", "");
+        const payload = {
+            apiKey: config.apiKey,
+            apiSecret: config.apiSecret,
+            personId: config.personId,
+            caPath: config.caPath,
+            caPassword: config.caPassword,
+            caContent: config.caContent,
+            branchCode: config.branchCode,
+            environment: config.environment || 'production',
+            startDate: startStr,
+            endDate: endStr
+        };
 
-            const payload = {
-                apiKey: config.apiKey,
-                apiSecret: config.apiSecret,
-                personId: config.personId,
-                caPath: config.caPath,
-                caPassword: config.caPassword,
-                caContent: config.caContent,
-                branchCode: config.branchCode,
-                environment: config.environment || 'production',
-                startDate: startStr,
-                endDate: endStr
-            };
+        // ════════════════════════════════════════════════════════════
+        // 🚀 SYNC FIRST：直接打同步 endpoint /api/broker/pnl
+        //
+        // 為什麼放棄 v3.0.4 引入的 async + polling？
+        //   Render free tier 的 container 磁碟是 ephemeral，每次容器
+        //   重啟（休眠/被殺/redeploy）都會把 SQLite 整個吃掉。async 模式
+        //   依賴後端跨多次 polling 記住 job 狀態，這在 ephemeral 環境
+        //   是不可靠的；這就是 v3.2.0/3.2.1/3.2.3 都修不掉、用戶持續看到
+        //   404 + 「同步任務遺失」的根因。
+        //
+        //   單次同步 HTTP 請求只要連線開著，Render 就不會把 worker 殺掉
+        //   (gunicorn timeout=120s 仍受保護)，根本繞開了「跨請求記憶」
+        //   這個問題層。登入 (/api/broker/profile) 就是這樣可靠運作的。
+        //
+        // 若同步請求超時或網路錯誤再退回 async 路徑當保險。
+        // ════════════════════════════════════════════════════════════
+        try {
+            if (onProgress) onProgress(5, 100, "正在連線券商...", "");
+
+            const { ok, status, data: syncResult } = await backendFetch('/api/broker/pnl', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                timeout: 110000, // 110s：留 10s buffer 在 gunicorn 120s 之內
+            });
+
+            if (ok && syncResult?.status === 'success') {
+                if (onProgress) onProgress(95, 100, "整理交易資料...", "");
+                const totalTime = performance.now() - startTime;
+                console.log(`✅ [PNL Sync] 取得 ${syncResult.details?.length || 0} 筆，耗時: ${totalTime.toFixed(0)}ms`);
+                return {
+                    totalPnl: syncResult.total_pnl || 0,
+                    dailyResults: syncResult.daily_results || [],
+                    details: (syncResult.details || []).sort((a: any, b: any) => b.date.localeCompare(a.date)),
+                    caStatus: syncResult.ca_status,
+                    emptyReason: syncResult.empty_reason,
+                    accountSummaries: syncResult.account_summaries,
+                    emptyDiagnostic: syncResult.empty_diagnostic,
+                    dateRangeUsed: syncResult.date_range_used,
+                };
+            }
+
+            // 同步路徑回 4xx：通常是憑證 / 帳號錯誤，不該進 async 重試
+            if (status >= 400 && status < 500 && syncResult?.status === 'error') {
+                let errMsg = syncResult.message || syncResult.error || `後端錯誤 (${status})`;
+                if (typeof errMsg === 'string') {
+                    if (errMsg.includes('key:') && errMsg.includes('not exist')) {
+                        errMsg = 'API Key 無效或不存在，請檢查憑證設定。 (Invalid API Key)';
+                    } else if (syncResult?.ca_error || errMsg.includes('CA') || errMsg.includes('憑證未啟動')) {
+                        errMsg = '⚠️ CA 憑證未啟動：請至「設定」→ 帳號設定 → 重新上傳 .pfx 憑證檔案。雲端部署不支援本地路徑。';
+                    }
+                }
+                throw new Error(errMsg);
+            }
+
+            // 5xx 或網路問題 → 落到 async 路徑試一次
+            console.warn(`[PNL Sync] failed status=${status}, falling back to async job path`);
+        } catch (syncErr: any) {
+            const msg = String(syncErr?.message || '');
+            // 已分類的 4xx 錯誤直接往上拋，不要進 async fallback
+            if (msg.includes('API Key') || msg.includes('CA') || msg.includes('憑證')) {
+                throw syncErr;
+            }
+            // timeout / network 才退回 async
+            console.warn('[PNL Sync] threw:', msg, '— falling back to async job path');
+        }
+
+        try {
+            // ── ASYNC FALLBACK ──
+            // 只在同步路徑無法完成時走（罕見情境：超大區間、極多帳號、或 5xx）。
+            if (onProgress) onProgress(1, 100, "切換為背景同步任務 (大量資料)...", "");
 
             // 1. 建立背景任務
             const { ok, status, data: createResult } = await backendFetch('/api/jobs/pnl', {
