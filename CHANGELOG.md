@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.2] - 2026-04-25
+
+### Fixed — UI 顯示版本與實際 build 不一致
+
+- **`src/constants.ts`**：`APP_VERSION` 原本是手動硬編碼為 `V3.0.3`，從 v3.0.3 release 後就再也沒人更新過。即使 package.json 一路推到 3.2.1、Zeabur / Netlify 也照新 commit build，畫面右下角仍顯示 `V3.0.3`，導致使用者無從區分手中的 PWA bundle 是新是舊。
+- **改為 build-time 注入**：`vite.config.ts` 讀取 `package.json` 的 `version`，透過 `define: { __APP_VERSION__: ... }` 注入到 bundle；`constants.ts` 改成讀取該全域常數。未來只要 bump `package.json`，UI 跟 npm 版本就會永遠一致，不需手動同步。
+- **`src/vite-env.d.ts`**：新增 `declare const __APP_VERSION__: string;` 讓 TypeScript 認得這個 build-time 注入的常數。
+
+### Why this matters
+
+合併 v3.2.0 / v3.2.1 後，使用者重新部署 Zeabur 前端、發現畫面仍顯示 `V3.0.3`，誤以為部署沒成功 — 實際上 `APP_VERSION` 從未跟著 `package.json` 走。本次改動之後，**畫面右下角的版本字串就是線上實際運行的 bundle 版本**，可作為「Zeabur / Netlify 是否真的拉到新 commit」的視覺檢核工具。
+
 ## [3.2.1] - 2026-04-24
 
 ### Optimized — 同步熱路徑效能與安全
