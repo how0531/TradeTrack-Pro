@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.1] - 2026-04-25
+
+### Fixed — v3.4.0 兩個視覺 bug
+
+使用者在 v3.4.0 上線後立刻回報「記錄」頁兩個問題：
+
+#### 1. 中文股名重複（`6147 頎邦 頎邦`）
+**`src/utils/symbolNames.ts`** line 154-156：當 broker 同步進來的 `code` 已經把名字塞在字串裡（例如 `"6147 頎邦"`），`formatSymbolCode` 會拆出 `firstToken="6147"` 與 `rest="頎邦"`，再從 `STOCK_NAME_MAP` 查到 `"6147" → "頎邦"`，最後回傳 `"6147 頎邦 頎邦"` — **把查表結果跟既有的 rest 雙寫**。
+
+修法：先比對 rest 是否已經等於 / 包含查表結果，已經有就不再追加。`"6147"` 單代號路徑（line 161-165）不變，仍正常回 `"6147 頎邦"`。
+
+#### 2. 交易時間顯示錯誤（所有交易都是 17:07）
+**v3.4.0 加的 time badge 是判斷錯誤**。`Trade.timestamp` 在 `src/hooks/useIndexedDBData.ts:103` 是 `t.timestamp || now` — broker 同步進來的 `TransactionDetail` 本來就沒 timestamp 欄位，全部會 fallback 到 `now`，也就是「同步那一刻」，**不是真正的成交時間**。Shioaji 的 `list_profit_loss` 也只回傳日期不含時:分。
+
+修法：`src/features/history/LogsView.tsx` 移除 `formatTradeTime` 函式與 info line 中的時間元素，info line 回到 `{name} | {qty} | {pts/yield}` 樣貌。註解說明為什麼不能用 timestamp，避免之後又有人不查資料源把它加回來。
+
+### Out of scope（未來想做時的線索）
+
+要顯示真正的成交時間需改抓 Shioaji `list_trades` endpoint（與 `list_profit_loss` 不同），會帶 `ts` 欄位（成交時間 epoch）。本輪不做。
+
+### Versions
+
+- `package.json` 3.4.0 → 3.4.1
+
 ## [3.4.0] - 2026-04-25
 
 ### Improved — 「記錄」(Records / Trading History) 視覺與資訊密度
