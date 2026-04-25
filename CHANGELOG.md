@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.3] - 2026-04-25
+
+### Fixed — Render logs 終於指出真兇
+
+v3.3.2 加的 `[STAGE]` instrumentation 立刻揭露了被遮蔽多輪的真正 bug。RSS 全程穩定 71MB（v3.3.1 OOM 修復成功），所有 Shioaji 呼叫都 < 0.3 秒，根本沒有任何「卡住」— 但**期貨帳號的 PnL 抓取一直拋型別錯誤**，加上前端輪詢迴圈又有 v3.3.0 引入的 regression，造成「卡 4 分鐘超時」的假象。
+
+### Backend — `backend/core/pnl.py`
+
+- **`list_profit_loss` 期貨帳號型別錯誤**：Shioaji 1.3.3 對 `list_profit_loss` 的 `begin_date` / `end_date` 參數型別**因帳號類型而異**：
+  - **股票帳號**：要 `datetime.date`（v3.1.1 修過此問題）
+  - **期貨帳號**：要 `str`（傳 `datetime.date` 會拋 `Argument 'begin_date' has incorrect type` — 這就是 user 期貨同步永遠拿 0 筆的原因）
+  
+  改為依 `is_futures` 旗標傳對應型別；並補上 type-swap 重試機制（若 Shioaji 未來再改型別簽名，自動嘗試另一種型別後再放棄）。
+
+### Frontend — `src/services/brokerService.ts`
+
+- **Polling 永不結束的 regression（v3.3.0 引入）**：當後端 job 狀態為 `error`，原本是在 try block 裡 `throw new Error(job.error)`，但同層的 catch block 會接住並把它當作網路錯誤累計到 `consecutiveFailures`。下一輪 poll 又因為 HTTP 200 把 `consecutiveFailures` 重置為 0，永遠到不了 `MAX_CONSECUTIVE_FAILURES`，polling 持續整個 5 分鐘預算。修法：改用 `jobErrorMsg` sentinel 帶出迴圈，跳過 catch。
+- **同步 4xx 不該 fallback 到 async**：原本同步路徑遇到後端邏輯錯誤（4xx，例如本次的期貨 date 錯誤）會被 catch 接住、當作網路問題又跑一次 async — 浪費時間，且兩條路都會撞同個 bug。改用 `syncBackendError` sentinel，4xx 直接拋出，只有純網路 / timeout 才走 async fallback。
+
+### Versions
+
+- `package.json` 3.3.2 → 3.3.3
+- 後端 `/` endpoint `v1.5.2` → `v1.5.3`
+
 ## [3.3.2] - 2026-04-25
 
 ### Diagnostic — PnL 取得各階段計時 + 記憶體紀錄
