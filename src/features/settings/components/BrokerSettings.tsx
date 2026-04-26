@@ -118,6 +118,23 @@ export const BrokerSettings = ({ configs, onAdd, onUpdate, onDelete, lang }: Bro
     const [showSecrets, setShowSecrets] = useState(false);
     const [showApiHelper, setShowApiHelper] = useState(false);
 
+    // Set3 (v3.6.0): 元件 unmount 時把 apiSecret / caPassword / caContent
+    // 從 React state 抹掉。雖然 React 不會 expose state 給其他人，但 React DevTools
+    // 與記憶體 dump 都看得到，能短一點 lifetime 就短一點。
+    useEffect(() => {
+        return () => {
+            setLocalConfig(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    apiSecret: '',
+                    caPassword: '',
+                    caContent: '',
+                };
+            });
+        };
+    }, []);
+
     // S3: useReducer 管理登入流程相關 state
     const [loginFlow, dispatch] = React.useReducer(loginFlowReducer, initialLoginFlow);
     const { isTesting, errorMsg, progressMsg, loginProgress, fieldErrors: errors, loginStep,

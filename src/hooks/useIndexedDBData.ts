@@ -122,9 +122,11 @@ export const useIndexedDBData = () => {
     updateSettings: async (key: string, value: any) => {
       if (key === 'portfolios') {
         const newPortfolios = value as Portfolio[];
-        // 先清空再批量新增
-        await db.portfolios.clear();
-        await db.portfolios.bulkAdd(newPortfolios);
+        // C6: clear+bulkAdd 必須同一個 transaction（避免中斷後表變空）
+        await db.transaction('rw', db.portfolios, async () => {
+          await db.portfolios.clear();
+          await db.portfolios.bulkAdd(newPortfolios);
+        });
       }
     },
 
@@ -203,24 +205,34 @@ export const useIndexedDBData = () => {
     },
 
     // 暴露 setters 供 Sync/Import 邏輯使用
+    // C6: clear+bulkAdd 必須在同一個 transaction 內，否則 clear 後若 bulkAdd
+    // 失敗（quota / parsing / 連線中斷）會留下空表，使用者全部資料消失。
     setTrades: async (trades: Trade[]) => {
-      await db.trades.clear();
-      await db.trades.bulkAdd(trades);
+      await db.transaction('rw', db.trades, async () => {
+        await db.trades.clear();
+        await db.trades.bulkAdd(trades);
+      });
     },
 
     setStrategies: async (strategies: string[]) => {
-      await db.strategies.clear();
-      await db.strategies.bulkAdd(strategies.map(name => ({ name })));
+      await db.transaction('rw', db.strategies, async () => {
+        await db.strategies.clear();
+        await db.strategies.bulkAdd(strategies.map(name => ({ name })));
+      });
     },
 
     setEmotions: async (emotions: string[]) => {
-      await db.emotions.clear();
-      await db.emotions.bulkAdd(emotions.map(name => ({ name })));
+      await db.transaction('rw', db.emotions, async () => {
+        await db.emotions.clear();
+        await db.emotions.bulkAdd(emotions.map(name => ({ name })));
+      });
     },
 
     setPortfolios: async (portfolios: Portfolio[]) => {
-      await db.portfolios.clear();
-      await db.portfolios.bulkAdd(portfolios);
+      await db.transaction('rw', db.portfolios, async () => {
+        await db.portfolios.clear();
+        await db.portfolios.bulkAdd(portfolios);
+      });
     },
   }), []);
 

@@ -1,6 +1,6 @@
 
 // [Manage] Last Updated: 2024-05-22
-import { Trade, Portfolio, Frequency, Metrics, StrategyStat, Lang, Streaks } from '../types';
+import { Trade, Portfolio, Frequency, Metrics, StrategyStat, Lang, Streaks, EquityPoint, DrawdownPoint } from '../types';
 import { formatDate } from './format';
 
 // Helper to get start of period
@@ -208,8 +208,8 @@ export const calculateMetrics = (
         periodGroups[d].portfolios[pid] = (periodGroups[d].portfolios[pid] || 0) + val;
     });
 
-    const curve: any[] = [];
-    const drawdown: any[] = [];
+    const curve: EquityPoint[] = [];
+    const drawdown: DrawdownPoint[] = [];
 
     let equity = safeCapital;
     let peak = safeCapital;
@@ -273,7 +273,7 @@ export const calculateMetrics = (
 
         const ts = cursor.getTime();
 
-        const point: any = {
+        const point: EquityPoint = {
             date: formatDate(dateKey, lang),
             fullDate: dateKey,
             timestamp: ts,
