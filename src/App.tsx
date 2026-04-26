@@ -148,9 +148,12 @@ function MainApp() {
         });
         
         const pnl = monthlyTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
-        const wins = monthlyTrades.filter(t => (Number(t.pnl) || 0) > 0).length;
-        const winRate = monthlyTrades.length > 0 ? (wins / monthlyTrades.length) * 100 : 0;
-        
+        // 勝率分母只算「有盈或虧」的交易；PnL=0（平手）不計入，
+        // 否則 10 筆全平手 + 5 筆獲利 會被算成 33% 勝率而非 100%。
+        const decisive = monthlyTrades.filter(t => (Number(t.pnl) || 0) !== 0);
+        const wins = decisive.filter(t => Number(t.pnl) > 0).length;
+        const winRate = decisive.length > 0 ? (wins / decisive.length) * 100 : 0;
+
         return { pnl, winRate, count: monthlyTrades.length };
     }, [trades, currentMonth]);
 

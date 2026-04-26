@@ -34,7 +34,9 @@ export default defineConfig({
               cacheName: 'google-fonts-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // <== 365 days
+                // 30 天而非 365 天 — 縮短 cache 壽命，bug fix 與字型更新能更快被使用者拉到。
+                // PWA 的 JS bundle 已由 cleanupOutdatedCaches 自動處理；這裡只影響 Google Fonts。
+                maxAgeSeconds: 60 * 60 * 24 * 30
               },
               cacheableResponse: {
                 statuses: [0, 200]

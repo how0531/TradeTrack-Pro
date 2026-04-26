@@ -139,17 +139,28 @@ export const useIndexedDBData = () => {
     addStrategy: async (s: string) => {
       try {
         await db.strategies.add({ name: s });
-      } catch (error) {
-        // 忽略重複錯誤（unique constraint)
-        console.debug('Strategy already exists:', s);
+      } catch (error: any) {
+        // 只吞掉 unique constraint 違反；其他錯誤（quota、版本不符…）要冒上來，
+        // 否則 silent loss 之後找不到原因。
+        if (error?.name === 'ConstraintError') {
+          console.debug('Strategy already exists:', s);
+        } else {
+          console.error('addStrategy unexpected error:', error);
+          throw error;
+        }
       }
     },
 
     addEmotion: async (e: string) => {
       try {
         await db.emotions.add({ name: e });
-      } catch (error) {
-        console.debug('Emotion already exists:', e);
+      } catch (error: any) {
+        if (error?.name === 'ConstraintError') {
+          console.debug('Emotion already exists:', e);
+        } else {
+          console.error('addEmotion unexpected error:', error);
+          throw error;
+        }
       }
     },
 

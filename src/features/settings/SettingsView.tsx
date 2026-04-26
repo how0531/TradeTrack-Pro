@@ -526,6 +526,13 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const [showMindsetTip, setShowMindsetTip] = useState(false);
     const [isForceBackingUp, setIsForceBackingUp] = useState(false); // State for button loading
     const [isForcePulling, setIsForcePulling] = useState(false); // State for pull loading
+    // Set1 (v3.5.0): cloud-restore 改為 inline two-step confirm，避免誤觸蓋掉本地全部資料
+    const [pullConfirmStage, setPullConfirmStage] = useState<'idle' | 'confirm'>('idle');
+    React.useEffect(() => {
+        if (pullConfirmStage !== 'confirm') return;
+        const timer = setTimeout(() => setPullConfirmStage('idle'), 3000);
+        return () => clearTimeout(timer);
+    }, [pullConfirmStage]);
     const [showResetConfirm, setShowResetConfirm] = useState(false); // New state for two-step reset
     const jsonInputRef = useRef<HTMLInputElement>(null);
 
@@ -556,8 +563,12 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
 
     const handleForcePull = async () => {
         if (!currentUser) return onLogin();
-        if (!window.confirm(lang === 'zh' ? '確定要從雲端還原嗎？這將會覆蓋您目前裝置上的所有本地資料。' : 'Restore from Cloud? This will overwrite ALL local data on this device.')) return;
-
+        // Two-step inline confirm，取代 window.confirm（瀏覽器擋掉就直接覆蓋本地資料）
+        if (pullConfirmStage === 'idle') {
+            setPullConfirmStage('confirm');
+            return;
+        }
+        setPullConfirmStage('idle');
         setIsForcePulling(true);
         const result = await manualPull();
         setIsForcePulling(false);
@@ -875,12 +886,26 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                     <button
                         onClick={handleForcePull}
                         disabled={isForcePulling}
-                        className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-[#C8B085]/20 hover:border-[#C8B085]/40 transition-all gap-2 bg-[#C8B085]/5 active:scale-[0.98]"
+                        className={`group flex flex-col items-center justify-center p-5 rounded-2xl border transition-all gap-2 active:scale-[0.98] ${
+                            pullConfirmStage === 'confirm'
+                                ? 'border-red-500/60 bg-red-500/10'
+                                : 'border-[#C8B085]/20 hover:border-[#C8B085]/40 bg-[#C8B085]/5'
+                        }`}
                     >
-                        <div className="p-3 rounded-full bg-[#C8B085]/10 text-[#C8B085] group-hover:scale-110 transition-transform">
+                        <div className={`p-3 rounded-full transition-transform group-hover:scale-110 ${
+                            pullConfirmStage === 'confirm'
+                                ? 'bg-red-500/20 text-red-400'
+                                : 'bg-[#C8B085]/10 text-[#C8B085]'
+                        }`}>
                             {isForcePulling ? <Loader2 size={20} className="animate-spin" /> : <CloudLightning size={20} />}
                         </div>
-                        <span className="text-[10px] font-bold text-[#C8B085] tracking-wider text-center uppercase">雲端還原</span>
+                        <span className={`text-[10px] font-bold tracking-wider text-center uppercase ${
+                            pullConfirmStage === 'confirm' ? 'text-red-400' : 'text-[#C8B085]'
+                        }`}>
+                            {pullConfirmStage === 'confirm'
+                                ? (lang === 'zh' ? '再按一次確認覆蓋' : 'Tap again to overwrite')
+                                : (lang === 'zh' ? '雲端還原' : 'Cloud Restore')}
+                        </span>
                     </button>
 
                     <button

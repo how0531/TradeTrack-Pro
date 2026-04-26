@@ -567,7 +567,9 @@ export const StatsChart = ({
                             </ComposedChart>
                         </ResponsiveContainer>
 
-                        {!selection && !isLongPressing && (<div className="absolute top-2 right-2 text-[8px] text-slate-600 uppercase tracking-wider opacity-0 hover:opacity-100 transition-opacity pointer-events-none">Long press to select range</div>)}
+                        {/* hover 才出現的提示在手機上不會觸發；改成 sm:opacity-0 sm:hover:opacity-100，
+                            mobile 預設半透明常駐，desktop 維持原本的 hover 才顯示 */}
+                        {!selection && !isLongPressing && (<div className="absolute top-2 right-2 text-[8px] text-slate-600 uppercase tracking-wider opacity-40 sm:opacity-0 sm:hover:opacity-100 transition-opacity pointer-events-none">Long press to select range</div>)}
                     </div>
 
                     <div className="h-[25%] min-h-[40px] w-full relative opacity-60 mt-0">
