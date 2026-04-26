@@ -318,7 +318,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                                 {t.riskReward || '賺賠比'}
                              </span>
                              <span className="text-white font-bold font-barlow-numeric text-lg tracking-wide">
-                                 {metrics.riskReward === Infinity ? '∞' : formatDecimal(metrics.riskReward)}
+                                 {formatDecimal(metrics.riskReward)}
                              </span>
                         </div>
                     </div>

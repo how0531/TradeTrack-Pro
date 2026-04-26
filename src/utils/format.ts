@@ -4,7 +4,9 @@ import { THEME } from '../constants';
 
 export const formatDecimal = (val: number | undefined | null) => {
     if (val === undefined || val === null || isNaN(val)) return '0.00';
-    if (!isFinite(val)) return '∞';
+    // R:R 與 Profit Factor 在「無虧損 / 無獲利交易」時會出現 Infinity；
+    // 「∞」對使用者沒有意義（且新帳號最常見），改顯示「—」表示「資料不足以計算」。
+    if (!isFinite(val)) return '—';
     return Number(val).toFixed(2);
 };
 

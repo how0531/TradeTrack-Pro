@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.0] - 2026-04-25
+
+### Phase 1 — 11 項低風險修復批次
+
+由 cross-page audit 找出來的快速勝利。每項都 LOW risk + 5–30 分鐘工時。
+
+#### Bug — 計算正確性
+- **`src/utils/format.ts`** — `formatDecimal(Infinity)` 改回傳 `—` 而非 `∞`。R:R 與 Profit Factor 在「無虧損／無獲利」時的 `Infinity` 對使用者沒有意義（新帳號最常見），改用 em-dash 表示「資料不足以計算」。同步移除 `ShareCardModal.tsx:321` 寫死的 `=== Infinity ? '∞'` 判斷，統一走 formatDecimal。
+- **`src/App.tsx`** — `monthlyStats` 勝率分母排除 PnL=0 的交易。原本「10 筆全平手 + 5 筆獲利」會被算成 33% 勝率，現在只算「有盈或虧的決定性交易」。
+
+#### UX
+- **`src/features/calendar/CalendarView.tsx`** — 月曆年/月選擇器加上「不能超過今天的隔月」的上限，防止使用者滑到 2099 年看一堆空白。超出的月份顯示 disabled。
+- **`src/features/calendar/CalendarView.tsx`** — 月曆 cell 加 `min-h-[44px]` 確保 iPhone SE 等小螢幕的觸控區符合 WCAG AAA。
+- **`src/features/settings/SettingsView.tsx`** — Cloud Restore 從 `window.confirm()` 改為 inline two-step confirm（按一次轉紅色「再按一次確認覆蓋」、3 秒不操作自動取消）。瀏覽器擋掉 `confirm()` dialog 就會直接覆蓋本地全部資料，這修補的是真正的資料安全洞。
+- **`src/features/dashboard/components/StatsTab.tsx`** — 「Long press to select range」提示改為 mobile 預設半透明常駐、desktop 維持 hover 才顯示（`opacity-40 sm:opacity-0 sm:hover:opacity-100`）。原本 `opacity-0 hover:opacity-100` 在手機完全看不到。
+
+#### 型別 / 維護性
+- **`src/context/TradeContext.tsx`** — `updatePortfolio` 簽名 `(k: any, v: any)` 收緊為 `(k: keyof Portfolio, v: Portfolio[keyof Portfolio])`。底層 `useIndexedDBData` / `useLocalData` 早就是 `keyof Portfolio`，只是 context wrapper 鬆掉。
+- **`vite.config.ts`** — Google Fonts cache 從 365 天縮為 30 天，bug fix 與字型更新能更快被使用者拉到。
+- **`src/hooks/useIndexedDBData.ts`** — `addStrategy` / `addEmotion` 的 try/catch 區分 `ConstraintError`（duplicate，靜默吞掉）與其他錯誤（quota exceeded、版本不符等，要 console.error 並 throw 出來）。原本一律當「already exists」吞掉會造成 silent data loss。
+
+#### 已調查但 audit 誤報、無需修
+- **Set2** TradeModal share image — `finally { setIsSharing(false) }` 早就有了
+- **S3** Stat card cursor — `cursor-pointer active:scale-95` 早就存在於 `hideAmounts` 條件下
+
+### Versions
+
+- `package.json` 3.4.1 → 3.5.0（minor bump 反映多項修復）
+
 ## [3.4.1] - 2026-04-25
 
 ### Fixed — v3.4.0 兩個視覺 bug

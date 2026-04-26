@@ -218,35 +218,60 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
                                 <ChevronDown size={14} className={`text-zinc-600 transition-transform duration-300 ${isPickerOpen ? 'rotate-180' : ''}`} />
                             </button>
 
-                            {isPickerOpen && (
-                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#0A0A0A] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
-                                    {/* Year Navigator */}
-                                    <div className="flex justify-between items-center p-3 border-b border-white/5 bg-white/5">
-                                        <button onClick={() => setPickerYear(p => p - 1)} className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"><ChevronLeft size={16}/></button>
-                                        <span className="font-barlow-numeric font-bold text-white text-lg">{pickerYear}</span>
-                                        <button onClick={() => setPickerYear(p => p + 1)} className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"><ChevronRight size={16}/></button>
-                                    </div>
-                                    {/* Month Grid */}
-                                    <div className="grid grid-cols-4 gap-1 p-2">
-                                        {Array.from({length: 12}).map((_, i) => (
-                                            <button 
-                                                key={i} 
-                                                onClick={() => {
-                                                    setCurrentMonth(new Date(pickerYear, i, 1));
-                                                    setIsPickerOpen(false);
-                                                }}
-                                                className={`py-3 rounded-lg text-xs font-bold font-barlow-numeric transition-all ${
-                                                    year === pickerYear && month === i 
-                                                    ? 'bg-[#C8B085] text-black shadow-lg shadow-[#C8B085]/20' 
-                                                    : 'text-zinc-500 hover:text-white hover:bg-white/5'
-                                                }`}
+                            {isPickerOpen && (() => {
+                                // 限制年/月不能超過「今天的隔月」(留一個月給未來規劃)；
+                                // 以前可以滑到 2099 年看一堆空白。
+                                const today = new Date();
+                                const maxYear = today.getFullYear() + 1;
+                                const maxMonthInYear = (y: number) =>
+                                    y < today.getFullYear() ? 11 :
+                                    y === today.getFullYear() ? today.getMonth() + 1 :  // 含下個月
+                                    -1; // 超過 maxYear: 完全不開放
+                                const canIncYear = pickerYear < maxYear;
+                                const isMonthDisabled = (m: number) => m > maxMonthInYear(pickerYear);
+                                return (
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#0A0A0A] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
+                                        {/* Year Navigator */}
+                                        <div className="flex justify-between items-center p-3 border-b border-white/5 bg-white/5">
+                                            <button onClick={() => setPickerYear(p => p - 1)} className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white"><ChevronLeft size={16}/></button>
+                                            <span className="font-barlow-numeric font-bold text-white text-lg">{pickerYear}</span>
+                                            <button
+                                                onClick={() => canIncYear && setPickerYear(p => p + 1)}
+                                                disabled={!canIncYear}
+                                                className={`p-1 rounded ${canIncYear ? 'hover:bg-white/10 text-zinc-400 hover:text-white' : 'text-zinc-700 cursor-not-allowed'}`}
                                             >
-                                                {i + 1}
+                                                <ChevronRight size={16}/>
                                             </button>
-                                        ))}
+                                        </div>
+                                        {/* Month Grid */}
+                                        <div className="grid grid-cols-4 gap-1 p-2">
+                                            {Array.from({length: 12}).map((_, i) => {
+                                                const disabled = isMonthDisabled(i);
+                                                return (
+                                                    <button
+                                                        key={i}
+                                                        disabled={disabled}
+                                                        onClick={() => {
+                                                            if (disabled) return;
+                                                            setCurrentMonth(new Date(pickerYear, i, 1));
+                                                            setIsPickerOpen(false);
+                                                        }}
+                                                        className={`py-3 rounded-lg text-xs font-bold font-barlow-numeric transition-all ${
+                                                            disabled
+                                                                ? 'text-zinc-800 cursor-not-allowed'
+                                                                : year === pickerYear && month === i
+                                                                    ? 'bg-[#C8B085] text-black shadow-lg shadow-[#C8B085]/20'
+                                                                    : 'text-zinc-500 hover:text-white hover:bg-white/5'
+                                                        }`}
+                                                    >
+                                                        {i + 1}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })()}
                         </div>
 
                         {/* SYNC BUTTON: Capsule Style with Text */}
@@ -289,9 +314,11 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
                         {calendarDays.map((item) => {
                             const style = getBubbleStyle(item.pnl, item.day);
                             return (
-                                <div 
-                                    key={item.key} 
-                                    className="aspect-square flex items-center justify-center relative"
+                                <div
+                                    key={item.key}
+                                    // min-h-[44px] 確保小螢幕（iPhone SE 等）觸控區符合 WCAG AAA；
+                                    // aspect-square 仍維持視覺正方形比例，並在 sm 以上由實際寬度決定
+                                    className="aspect-square min-h-[44px] flex items-center justify-center relative"
                                     onClick={() => { if (item.day && onDateClick) onDateClick(item.key); }}
                                 >
                                     {item.day && (

@@ -497,7 +497,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveTrade: (t: Trade, id: string | null) => { localActions.saveTrade(t, id); setTimeout(triggerCloudBackup, 0); },
         saveTrades: (ts: (Omit<Trade, 'id' | 'timestamp'> & { id?: string; timestamp?: string })[]) => { localActions.saveTrades(ts); setTimeout(triggerCloudBackup, 0); },
         deleteTrade: (id: string) => { localActions.deleteTrade(id); setTimeout(triggerCloudBackup, 0); },
-        updatePortfolio: (id: string, k: any, v: any) => { localActions.updatePortfolio(id, k, v); setTimeout(triggerCloudBackup, 0); },
+        updatePortfolio: (id: string, k: keyof Portfolio, v: Portfolio[keyof Portfolio]) => { localActions.updatePortfolio(id, k, v); setTimeout(triggerCloudBackup, 0); },
         addPortfolio: (p: Portfolio) => {
             localActions.addPortfolio(p);
             // Optional: Auto-activate new portfolio
