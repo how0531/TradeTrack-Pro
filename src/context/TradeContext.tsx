@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useIndexedDBData } from '../hooks/useIndexedDBData';
 import { useSync } from '../hooks/useSync';
@@ -242,6 +242,29 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     });
 
+    // C7: Debounced cloud backup scheduler
+    // 取代散在各 action 裡的 setTimeout(triggerCloudBackup, 0)：
+    //  1. 給 React + Dexie useLiveQuery 充分時間 flush 新狀態到 dataRef
+    //     (原本 0ms 會在 dataRef 更新前就跑 push，造成 stale closure 漏寫)
+    //  2. 連續 mutation 合併為一次 cloud push，省雲端寫入額度
+    const backupTimerRef = useRef<number | null>(null);
+    const scheduleCloudBackup = useCallback(() => {
+        if (backupTimerRef.current !== null) {
+            clearTimeout(backupTimerRef.current);
+        }
+        backupTimerRef.current = window.setTimeout(() => {
+            backupTimerRef.current = null;
+            triggerCloudBackup();
+        }, 350);
+    }, [triggerCloudBackup]);
+
+    // 元件卸載時清掉未觸發的 timer，避免 memory leak / late update warning
+    useEffect(() => {
+        return () => {
+            if (backupTimerRef.current !== null) clearTimeout(backupTimerRef.current);
+        };
+    }, []);
+
     // 6. Metrics Calculation
     const { filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap } = useMetrics(
         trades, portfolios, activePortfolioIds, frequency, lang, customRange, filterStrategy, filterEmotion, timeRange
@@ -375,7 +398,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (data.settings && data.settings.lossColor) setLossColor(data.settings.lossColor);
         }
         setPendingImport(null);
-        setTimeout(triggerCloudBackup, 0);
+        scheduleCloudBackup();
     };
 
     const resetAllData = async (t: Translation) => {
@@ -494,25 +517,25 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         resolveImportConflict,
         isImportModalOpen: !!pendingImport,
         // Wrap actions that should trigger sync
-        saveTrade: (t: Trade, id: string | null) => { localActions.saveTrade(t, id); setTimeout(triggerCloudBackup, 0); },
-        saveTrades: (ts: (Omit<Trade, 'id' | 'timestamp'> & { id?: string; timestamp?: string })[]) => { localActions.saveTrades(ts); setTimeout(triggerCloudBackup, 0); },
-        deleteTrade: (id: string) => { localActions.deleteTrade(id); setTimeout(triggerCloudBackup, 0); },
-        updatePortfolio: (id: string, k: keyof Portfolio, v: Portfolio[keyof Portfolio]) => { localActions.updatePortfolio(id, k, v); setTimeout(triggerCloudBackup, 0); },
+        saveTrade: (t: Trade, id: string | null) => { localActions.saveTrade(t, id); scheduleCloudBackup(); },
+        saveTrades: (ts: (Omit<Trade, 'id' | 'timestamp'> & { id?: string; timestamp?: string })[]) => { localActions.saveTrades(ts); scheduleCloudBackup(); },
+        deleteTrade: (id: string) => { localActions.deleteTrade(id); scheduleCloudBackup(); },
+        updatePortfolio: (id: string, k: keyof Portfolio, v: Portfolio[keyof Portfolio]) => { localActions.updatePortfolio(id, k, v); scheduleCloudBackup(); },
         addPortfolio: (p: Portfolio) => {
             localActions.addPortfolio(p);
             // Optional: Auto-activate new portfolio
             setActivePortfolioIds(prev => [...prev, p.id]);
-            setTimeout(triggerCloudBackup, 0);
+            scheduleCloudBackup();
         },
         deletePortfolio: (id: string) => {
             localActions.deletePortfolio(id);
             setActivePortfolioIds(prev => prev.filter(pid => pid !== id));
-            setTimeout(triggerCloudBackup, 0);
+            scheduleCloudBackup();
         },
-        addStrategy: (s: string) => { localActions.addStrategy(s); setTimeout(triggerCloudBackup, 0); },
-        addEmotion: (e: string) => { localActions.addEmotion(e); setTimeout(triggerCloudBackup, 0); },
-        deleteStrategy: (s: string) => { localActions.deleteStrategy(s); setTimeout(triggerCloudBackup, 0); },
-        deleteEmotion: (e: string) => { localActions.deleteEmotion(e); setTimeout(triggerCloudBackup, 0); },
+        addStrategy: (s: string) => { localActions.addStrategy(s); scheduleCloudBackup(); },
+        addEmotion: (e: string) => { localActions.addEmotion(e); scheduleCloudBackup(); },
+        deleteStrategy: (s: string) => { localActions.deleteStrategy(s); scheduleCloudBackup(); },
+        deleteEmotion: (e: string) => { localActions.deleteEmotion(e); scheduleCloudBackup(); },
         // 重複交易檢測與合併
         detectDuplicates: (options?: DetectionOptions) => detectDuplicates(trades, options),
         removeDuplicates: () => {
@@ -520,7 +543,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (duplicateGroups.length === 0) return;
             const cleaned = mergeDuplicates(trades, duplicateGroups);
             setTrades(cleaned);
-            setTimeout(triggerCloudBackup, 0);
+            scheduleCloudBackup();
         },
     };
 

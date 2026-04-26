@@ -1024,12 +1024,16 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                 </div>
             )}
 
-            {/* Import Conflict Modal */}
-            <ImportConflictModal
-                isOpen={isImportModalOpen}
-                onResolve={actions.resolveImportConflict}
-                lang={lang}
-            />
+            {/* Import Conflict Modal — conditional render so internal state
+                resets between sessions. 永遠 mount 會讓 modal 自己的 useState
+                跨 session 殘留前次未完成的選擇。 */}
+            {isImportModalOpen && (
+                <ImportConflictModal
+                    isOpen={isImportModalOpen}
+                    onResolve={actions.resolveImportConflict}
+                    lang={lang}
+                />
+            )}
         </div>
     );
 };

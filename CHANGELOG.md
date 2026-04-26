@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.0] - 2026-04-25
+
+### Phase 2 — 7 項中等改動：型別、資料層、同步、安全
+
+#### Type safety
+- **`src/types/trade.ts`** — 新增 `EquityPoint` / `DrawdownPoint` 型別。`Metrics.curve` / `drawdown` 從 `any[]` 收緊為強型別。`src/utils/calculations.ts` 同步用上新型別，圖表資料的 schema 不再是 free-for-all。
+
+#### Data layer
+- **`src/utils/migration.ts`** — localStorage → IndexedDB migration 加上 schema 驗證：`isValidTrade()` / `isValidPortfolio()` 把缺欄位 / 型別錯的舊資料**跳過並 log**，而非整批 bulkAdd 失敗造成 IndexedDB 進入空狀態。droppedItems 與 parseErrors 都會出現在 console 供追查。
+- **`src/db/index.ts`** — 加上 schema versioning skeleton 註解 + 範例。將來新增 Trade 欄位時，照範例 `.version(2).stores(...).upgrade(...)`，避免直接修改 v1 stores 造成升級時資料破壞。
+- **`src/hooks/useIndexedDBData.ts`** — `setTrades` / `setStrategies` / `setEmotions` / `setPortfolios` / `updateSettings(portfolios)` 全部包進 `db.transaction('rw', ...)`。原本 `clear() + bulkAdd()` 中間若 crash（quota / parsing / 連線中斷），表會留在空狀態 → **使用者全部資料消失**。
+
+#### Sync correctness
+- **`src/context/TradeContext.tsx`** — 新增 `scheduleCloudBackup()` debounced helper：350ms 內的多次 mutation 合併成一次 cloud push。取代散在各 action 裡的 `setTimeout(triggerCloudBackup, 0)`：
+  1. **修正 stale closure**：350ms 給 React + Dexie `useLiveQuery` 充分時間 flush state 到 `dataRef`。原本 0ms 的 `setTimeout` 在 `dataRef` 更新前就 push，造成最新一筆 mutation 漏寫雲端。
+  2. **節省雲端寫入額度**：rapid mutation（例如批次 import）原本每筆都 trigger 一次 backup，現在合併。
+
+#### Security
+- **`src/features/settings/components/BrokerSettings.tsx`** — Set3：元件 unmount 時把 `apiSecret` / `caPassword` / `caContent` 從 React state 抹掉。雖然 React 不會 expose state 給其他人，但 React DevTools / 記憶體 dump 都看得到，能短一點 lifetime 就短一點。
+- **`src/features/settings/SettingsView.tsx`** — Set4：`<ImportConflictModal>` 從永遠 mounted 改為 `{isImportModalOpen && <…>}` 條件渲染。Modal 內部 useState 會跨 session 殘留，可能撈到前次未完成的選擇。
+
+#### Deferred — 留待下一輪
+- **C9** sync warnings → user-visible toast：需要新增 toast 基礎建設（目前無 toast 系統），scope 過大本輪 defer。
+
+### Versions
+- `package.json` 3.5.0 → 3.6.0（minor bump 反映資料層改動）
+
 ## [3.5.0] - 2026-04-25
 
 ### Phase 1 — 11 項低風險修復批次

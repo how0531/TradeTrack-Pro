@@ -37,9 +37,35 @@ export interface Trade {
   isDeleted?: boolean;  // 軟刪除旗標，刪除時設為 true 而非真正移除
 }
 
+/**
+ * 一個權益曲線資料點。每個 portfolio 額外的正/負欄位透過 index signature 容納
+ * (`${portfolioId}_pos` / `${portfolioId}_neg`)，因此保留 index signature，
+ * 但核心欄位是強型別。
+ */
+export interface EquityPoint {
+  date: string;          // 顯示用 (e.g. "2026/04/15") 或 'Start'
+  fullDate: string;      // ISO YYYY-MM-DD 或 'Start'
+  timestamp: number;     // epoch ms，圖表 X 軸用
+  equity: number;
+  peak: number;
+  pnl: number;           // 本期 PnL
+  cumulativePnl: number; // equity - initialCapital
+  isNewPeak: boolean;
+  ddPct: number;
+  ddAmt: number;
+  // portfolio 拆色用的動態欄位 (例: portfolio-1_pos, portfolio-2_neg)
+  [key: string]: string | number | boolean | undefined;
+}
+
+export interface DrawdownPoint {
+  date: string;
+  timestamp: number;
+  ddPct: number;  // 通常為負值（畫在 0 以下）
+}
+
 export interface Metrics {
-  curve: any[];
-  drawdown: any[];
+  curve: EquityPoint[];
+  drawdown: DrawdownPoint[];
   currentEq: number;
   eqChange: number;
   eqChangePct: number;
