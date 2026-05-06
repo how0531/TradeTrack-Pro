@@ -520,6 +520,16 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
             emptyDiagnostics.push(result.emptyDiagnostic);
           }
 
+          // Bug A 修復 (v3.7.1)：把每帳號的失敗也升級成 fetchErrors，
+          // 否則「期貨成功 + 證券失敗」會被當作完全成功，使用者看不到證券的錯誤。
+          if (result.accountSummaries && Array.isArray(result.accountSummaries)) {
+            for (const s of result.accountSummaries) {
+              if (s.status === 'error' && s.reason) {
+                fetchErrors.push(`帳號 ${s.account_id}: ${s.reason}`);
+              }
+            }
+          }
+
           // Assign Portfolio ID immediately map back to correct portfolio based on trade accountId
           if (result.details) {
             const taggedDetails = result.details.map(d => {
