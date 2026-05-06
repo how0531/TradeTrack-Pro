@@ -149,9 +149,9 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
     };
 
     const getDisplayModeLabel = () => {
-        if (displayMode === 'amount') return '顯示: 金額';
-        if (displayMode === 'percent') return '顯示: %';
-        return '顯示: 隱藏';
+        if (displayMode === 'amount') return t.share_displayAmount;
+        if (displayMode === 'percent') return t.share_displayPercent;
+        return t.share_displayHidden;
     };
 
     // Helper to split number and unit for styling
@@ -193,7 +193,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                     {/* Header */}
                     <div className="p-6 pb-2 flex justify-between items-center z-10">
                         <div>
-                            <h3 className="text-white font-bold text-lg tracking-wider">交易損益</h3>
+                            <h3 className="text-white font-bold text-lg tracking-wider">{t.share_pnlTitle}</h3>
                             <p className="text-[#666] font-barlow-numeric text-[11px] mt-0.5 tracking-wide font-medium">
                                 {dateRangeStr}
                             </p>
@@ -342,7 +342,7 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                             className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors"
                         >
                             <Layers size={16} className={showChart ? 'text-[#C8B085]' : ''}/>
-                            <span>{showChart ? '顯示日損益' : '隱藏日損益'}</span>
+                            <span>{showChart ? t.share_showDaily : t.share_hideDaily}</span>
                         </button>
                     </div>
 

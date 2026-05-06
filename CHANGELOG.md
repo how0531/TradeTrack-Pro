@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.7.0] - 2026-04-26
+
+### Phase 3 — API 回應 shape 驗證 + i18n 硬編碼字串遷移
+
+#### Added — `src/services/responseValidators.ts`
+- 完整 type guard validator 套件（不引入 zod，避免 +200KB bundle）：
+  - `isPnlSuccessResponse`、`isJobCreateResponse`、`isJobStatusResponse`
+  - `isBrokerProfileSuccess`、`isBrokerProfileMultiAccount`、`isBackendError`
+  - 對應強型別 `PnlSuccessResponse`、`JobCreateResponse`、`JobStatus(Response)`、`BrokerProfileSuccessResponse` 等
+  - `assertShape()` 工具：不符 shape 時 throw 含「實際拿到了什麼」的錯誤前 200 字元，比靜默 `undefined` / `NaN` 容易 debug
+- 後端 schema 改了會在這層 throw，而不是傳到 UI 才出現怪資料
+
+#### Changed — `src/services/brokerService.ts`
+- `fetchBrokerPnl` 同步路徑用 `isPnlSuccessResponse(syncResult)` 取代 `syncResult?.status === 'success'`，並讓 TS narrow 後不再需要 `?.` / `||` 兜底
+- async fallback：用 `isJobCreateResponse(createResult)` 驗證 job 建立、`isJobStatusResponse(statData)` 驗證 polling
+- `fetchBrokerProfile`：用 `isBackendError` / `isBrokerProfileMultiAccount` / `isBrokerProfileSuccess` 三段式檢查取代散落的 `result.status === '...'`
+
+#### i18n
+- `src/constants.ts`：新增 5 組翻譯 key — `share_pnlTitle`、`share_displayAmount`、`share_displayPercent`、`share_displayHidden`、`share_showDaily`、`share_hideDaily`
+- `src/components/modals/ShareCardModal.tsx`：line 152-154、196、345 的硬編碼中文（顯示模式、交易損益標題、顯示日損益切換）改用 i18n key
+
+### Versions
+- `package.json` 3.6.0 → 3.7.0
+
 ## [3.6.0] - 2026-04-25
 
 ### Phase 2 — 7 項中等改動：型別、資料層、同步、安全

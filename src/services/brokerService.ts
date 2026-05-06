@@ -2,6 +2,14 @@
 import type { BrokerConfig } from '../types';
 import type { TransactionDetail, BrokerSyncResult } from '../types/broker';
 import { backendFetch } from './backendGateway';
+import {
+    isPnlSuccessResponse,
+    isJobCreateResponse,
+    isJobStatusResponse,
+    isBrokerProfileSuccess,
+    isBrokerProfileMultiAccount,
+    isBackendError,
+} from './responseValidators';
 
 export type { TransactionDetail, BrokerSyncResult };
 
@@ -117,14 +125,14 @@ export const fetchBrokerPnl = async (
                 timeout: 110000, // 110s：留 10s buffer 在 gunicorn 120s 之內
             });
 
-            if (ok && syncResult?.status === 'success') {
+            if (ok && isPnlSuccessResponse(syncResult)) {
                 if (onProgress) onProgress(95, 100, "整理交易資料...", "");
                 const totalTime = performance.now() - startTime;
-                console.log(`✅ [PNL Sync] 取得 ${syncResult.details?.length || 0} 筆，耗時: ${totalTime.toFixed(0)}ms`);
+                console.log(`✅ [PNL Sync] 取得 ${syncResult.details.length} 筆，耗時: ${totalTime.toFixed(0)}ms`);
                 return {
-                    totalPnl: syncResult.total_pnl || 0,
-                    dailyResults: syncResult.daily_results || [],
-                    details: (syncResult.details || []).sort((a: any, b: any) => b.date.localeCompare(a.date)),
+                    totalPnl: syncResult.total_pnl,
+                    dailyResults: syncResult.daily_results,
+                    details: [...syncResult.details].sort((a, b) => b.date.localeCompare(a.date)),
                     caStatus: syncResult.ca_status,
                     emptyReason: syncResult.empty_reason,
                     accountSummaries: syncResult.account_summaries,
@@ -199,10 +207,11 @@ export const fetchBrokerPnl = async (
                 throw new Error(errMsg);
             }
 
-            const jobId = createResult.job_id;
-            if (!jobId) {
+            // 驗證 createResult 的 shape — 後端 schema 改了會在這裡 throw 而非 silent undefined
+            if (!isJobCreateResponse(createResult)) {
                 throw new Error('未取得 Job ID，請確認後端是否支援。');
             }
+            const jobId = createResult.job_id;
 
             // 2. 輪詢進度 — 指數退避
             // 前 5 次 1.5s 頻繁抓早期進度；之後依進度拉長到最多 5s，
@@ -260,10 +269,10 @@ export const fetchBrokerPnl = async (
                     }
                     consecutive404 = 0;
 
-                    if (statOk && statData.status === 'success') {
+                    if (statOk && isJobStatusResponse(statData)) {
                         consecutiveFailures = 0; // 重置失敗計數
                         const job = statData.job;
-                        lastProgress = typeof job.progress === 'number' ? job.progress : lastProgress;
+                        lastProgress = job.progress;
 
                         // 回報進度給 UI
                         if (onProgress && job.progress > 0) {
@@ -413,33 +422,34 @@ export const fetchBrokerProfile = async (
             const totalElapsed = performance.now() - startTime;
             console.log(`✅ [PERF] fetchBrokerProfile 完成: ${totalElapsed.toFixed(0)}ms`);
 
-            if (result.status === 'error') {
+            if (isBackendError(result)) {
                 throw new Error(result.message || result.error || '後端回報錯誤 (Backend reported an error)');
             }
 
             // If the backend says multiple accounts, return it immediately
-            if (result.status === 'multiple_accounts') {
-                return result;
+            if (isBrokerProfileMultiAccount(result)) {
+                return result as any;
+            }
+
+            // 走到這裡應該是 success — 用 type guard 確認 shape，否則 throw 含 dump
+            if (!isBrokerProfileSuccess(result)) {
+                throw new Error('後端 profile 回應格式不符預期，可能版本不相容。');
             }
 
             if (result.environment !== 'production') {
                 throw new Error(`登入失敗：預期 'production' 環境，但得到 '${result.environment}'`);
             }
 
-            if (!result.branchCode || !result.username) {
-                throw new Error("登入失敗：缺少帳號資訊 (Missing account info)");
-            }
-
-            const rawCode = String(result.branchCode || '').trim();
+            const rawCode = result.branchCode.trim();
 
             return {
                 status: 'success',
                 branchCode: rawCode,
-                branch: result.branch || rawCode,
+                branch: (result as any).branch || rawCode,
                 username: result.username,
                 environment: result.environment as any,
                 apiKeyHint: result.apiKeyHint,
-                accountId: result.account_id || result.accountId, // Backend may return account_id or accountId
+                accountId: (result as any).account_id || result.accountId,
                 signedAccounts: result.signedAccounts || []
             };
 
