@@ -171,40 +171,76 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
             _log(f"❌ [Date Error] Invalid date format: {ve}")
             return 0, [], 0, 0, f"error:日期格式錯誤，請確認日期是否為 YYYY-MM-DD 格式 ({ve})"
 
-        def _call_pnl(use_str: bool):
+        def _call_pnl(chunk_start_dt, chunk_end_dt, use_str: bool):
+            """單次 list_profit_loss 呼叫；接受自訂日期區間以支援 chunking。"""
             if use_str:
-                return api.list_profit_loss(target_account, start_str, end_str)
-            return api.list_profit_loss(target_account, start_dt, end_dt)
+                return api.list_profit_loss(
+                    target_account,
+                    chunk_start_dt.strftime("%Y-%m-%d"),
+                    chunk_end_dt.strftime("%Y-%m-%d"),
+                )
+            return api.list_profit_loss(target_account, chunk_start_dt, chunk_end_dt)
 
         primary_use_str = is_futures  # 期貨用 str，其餘用 date
-        pnl_data = None
-        try:
-            pnl_data = _call_pnl(use_str=primary_use_str)
-        except Exception as api_e:
-            err_str = str(api_e)
-            if "406" in err_str or "Account Not Acceptable" in err_str:
-                _log(f"ℹ️ [Skip 406] {acc_id} not supported by list_profit_loss")
-                pnl_data = []
-            elif "incorrect type" in err_str.lower() or "expected" in err_str.lower():
-                # Shioaji 改了型別簽名，交換型別再試一次
-                _log(f"⚠️ [Type Swap] {acc_id} primary({'str' if primary_use_str else 'date'}) failed: {api_e}; retrying with swapped type")
-                try:
-                    pnl_data = _call_pnl(use_str=not primary_use_str)
-                    _log(f"✅ [Type Swap] {acc_id} succeeded with {'date' if primary_use_str else 'str'}")
-                except Exception as swap_e:
-                    _log(f"❌ [Type Swap] {acc_id} both types failed: primary={api_e}, swapped={swap_e}")
-                    return 0, [], 0, 0, f"error:Shioaji API 型別錯誤 ({api_e})"
-            elif "date" in err_str.lower() or "invalid" in err_str.lower():
-                _log(f"❌ [Date Error] {acc_id}: {api_e}")
-                return 0, [], 0, 0, f"error:日期範圍無效，請確認起訖日期是否正確 ({api_e})"
-            else:
-                # Single retry on transient errors
-                _log(f"⚠️ [Retry] {acc_id} first attempt failed: {api_e}")
-                try:
-                    pnl_data = _call_pnl(use_str=primary_use_str)
-                except Exception as retry_e:
-                    _log(f"❌ [Failed] {acc_id} retry also failed: {retry_e}")
-                    return 0, [], 0, 0, f"error:{retry_e}"
+
+        # ── Bug B 修復 (v3.7.1) ──
+        # 證券帳戶 list_profit_loss 對單次呼叫的日期區間有 ~90 天上限，
+        # 超過會回「Argument 'begin_date' has incorrect type」這種誤導性錯誤。
+        # 將證券帳戶長區間自動切成 ≤90 天 chunks，逐段呼叫並合併結果。
+        # 期貨帳戶經 v3.3.2 timing logs 驗證可單次抓完整一年，不需切。
+        STOCK_PNL_MAX_DAYS = 90
+        range_days = (end_dt - start_dt).days
+        if not is_futures and range_days > STOCK_PNL_MAX_DAYS:
+            _log(f"📅 [Chunk] {acc_id} 證券帳戶 {range_days} 天 > {STOCK_PNL_MAX_DAYS}，分段抓取")
+            chunks = []
+            cursor = start_dt
+            while cursor <= end_dt:
+                chunk_end = cursor + timedelta(days=STOCK_PNL_MAX_DAYS - 1)
+                if chunk_end > end_dt:
+                    chunk_end = end_dt
+                chunks.append((cursor, chunk_end))
+                cursor = chunk_end + timedelta(days=1)
+            _log(f"📅 [Chunk] {acc_id} 分為 {len(chunks)} 段")
+        else:
+            chunks = [(start_dt, end_dt)]
+
+        # 對每個 chunk 呼叫 _call_pnl，套用 type-swap fallback，並累積結果
+        pnl_data = []
+        for chunk_idx, (chunk_start, chunk_end) in enumerate(chunks):
+            chunk_label = f"chunk {chunk_idx + 1}/{len(chunks)}" if len(chunks) > 1 else "single"
+            try:
+                chunk_data = _call_pnl(chunk_start, chunk_end, use_str=primary_use_str)
+            except Exception as api_e:
+                err_str = str(api_e)
+                if "406" in err_str or "Account Not Acceptable" in err_str:
+                    _log(f"ℹ️ [Skip 406] {acc_id} {chunk_label} not supported")
+                    chunk_data = []
+                elif "incorrect type" in err_str.lower() or "expected" in err_str.lower():
+                    # Shioaji 改了型別簽名，交換型別再試一次
+                    _log(f"⚠️ [Type Swap] {acc_id} {chunk_label} primary({'str' if primary_use_str else 'date'}) failed: {api_e}; retrying swapped")
+                    try:
+                        chunk_data = _call_pnl(chunk_start, chunk_end, use_str=not primary_use_str)
+                        _log(f"✅ [Type Swap] {acc_id} {chunk_label} succeeded with {'date' if primary_use_str else 'str'}")
+                    except Exception as swap_e:
+                        # 兩種型別都失敗：保留兩者錯誤訊息給上層判斷
+                        _log(f"❌ [Type Swap] {acc_id} {chunk_label} both failed: primary={api_e}, swapped={swap_e}")
+                        return 0, [], 0, 0, f"error:Shioaji API 拒絕請求（兩種型別皆失敗，可能為日期範圍超出限制）：primary={api_e}; swapped={swap_e}"
+                elif "date" in err_str.lower() or "invalid" in err_str.lower():
+                    _log(f"❌ [Date Error] {acc_id} {chunk_label}: {api_e}")
+                    return 0, [], 0, 0, f"error:日期範圍無效，請確認起訖日期是否正確 ({api_e})"
+                else:
+                    # transient error → single retry
+                    _log(f"⚠️ [Retry] {acc_id} {chunk_label} first attempt failed: {api_e}")
+                    try:
+                        chunk_data = _call_pnl(chunk_start, chunk_end, use_str=primary_use_str)
+                    except Exception as retry_e:
+                        _log(f"❌ [Failed] {acc_id} {chunk_label} retry also failed: {retry_e}")
+                        return 0, [], 0, 0, f"error:{retry_e}"
+
+            if chunk_data:
+                pnl_data.extend(chunk_data)
+                if len(chunks) > 1:
+                    _log(f"📊 [Chunk] {acc_id} {chunk_label} → {len(chunk_data)} 筆")
 
         if pnl_data is None:
             pnl_data = []

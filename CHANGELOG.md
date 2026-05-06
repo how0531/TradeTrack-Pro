@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.7.1] - 2026-04-26
+
+### Fixed — 證券長區間同步失敗 + 期貨/證券混合匯入只剩期貨
+
+**使用者回報兩個 bug**：
+1. 證券帳戶跨年度（>90 天）同步出現「Argument 'begin_date' has incorrect type (expected str, got datetime.date)」
+2. 期貨 + 證券一起匯入時，最終只剩期貨資料
+
+兩者**根因相關**：
+
+#### Bug B 根因
+Shioaji 的 `list_profit_loss` 對證券帳戶有 ~90 天範圍上限，超過會回傳誤導性的「型別錯誤」。v3.3.3 加的 type-swap fallback 兩種型別都試了仍失敗（因為實際上是日期範圍問題，不是型別問題），但回給使用者的訊息只取 primary 那次的錯誤，看起來像型別 bug。
+
+**修復** — `backend/core/pnl.py`：
+- 新增 `STOCK_PNL_MAX_DAYS = 90` 常數
+- 證券帳戶（`is_futures=False`）超過 90 天時，**自動切成多個 ≤90 天 chunks** 逐段呼叫 `list_profit_loss`，最後合併結果
+- `_call_pnl()` 重構為接受自訂日期區間以支援 chunking
+- type-swap fallback 失敗時的錯誤訊息改成包含**雙方**錯誤，並提示「可能為日期範圍超出限制」（不再誤導為純型別問題）
+- 期貨帳戶保持單次呼叫（v3.3.2 logs 證實期貨可一次抓完整年）
+
+#### Bug A 根因
+混合帳戶匯入時，後端對每個帳號 sequential fetch；證券因 Bug B 失敗、期貨成功，後端按既有邏輯：「details 非空 → 整體 status: success」回傳。前端只把 `result.emptyDiagnostic` 當作 0 筆時的提示，**`result.accountSummaries[]` 內的 per-account `status: 'error'` 從未被升級成使用者可見的 `fetchErrors`**，所以使用者看到「成功」但實際只有期貨資料。
+
+**修復** — `src/components/modals/SyncDateModal.tsx`：
+- 接收 `fetchBrokerPnl` 回傳後，掃描 `result.accountSummaries[]`
+- 任何 `status === 'error'` 的項目 push 到 `fetchErrors`
+- 既有訊息邏輯（`fetchErrors.length > 0`）會自動顯示「⚠️ 部分帳號同步失敗：...」
+
+### Versions
+- `package.json` 3.7.0 → 3.7.1
+- 後端 `/` endpoint `v1.5.3` → v1.5.4
+
 ## [3.7.0] - 2026-04-26
 
 ### Phase 3 — API 回應 shape 驗證 + i18n 硬編碼字串遷移
