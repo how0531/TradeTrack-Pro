@@ -23,8 +23,17 @@ except ImportError as e:
         raise
 
 app = Flask(__name__)
-# Explicitly allow all origins for debugging, or specify frontend URL
-CORS(app, resources={r"/*": {"origins": "*"}})
+
+# CORS: read allowed origins from env (comma-separated). Falls back to a safe
+# localhost-only allowlist instead of the previous wildcard "*", which let any
+# site call this backend with the user's session.
+_allowed_origins_raw = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+)
+_allowed_origins = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
+CORS(app, resources={r"/*": {"origins": _allowed_origins}}, supports_credentials=True)
+print(f"[STARTUP] CORS allowed origins: {_allowed_origins}", flush=True)
 
 # 伺服器重啟後，把上一輪還卡在 pending/running 的任務標為 error，
 # 讓前端輪詢時能拿到明確訊息而不是 404。
