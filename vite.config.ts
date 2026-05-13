@@ -16,6 +16,24 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
+  esbuild: {
+    // Strip console.* and debugger statements from production bundles only.
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+  },
+  build: {
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          'vendor-charts': ['recharts'],
+          'vendor-canvas': ['html2canvas'],
+          'vendor-db': ['dexie', 'dexie-react-hooks'],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

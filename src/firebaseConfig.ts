@@ -14,14 +14,19 @@ import {
 } from 'firebase/firestore';
 
 // --- FIREBASE CONFIGURATION ---
+// Loaded from environment so the project can be forked / re-deployed without
+// hardcoding credentials. Defaults preserve the original public values so
+// existing deployments keep working until env vars are wired up.
+// NOTE: Web Firebase keys are public by design; real protection comes from
+// Firebase Security Rules + App Check, which should be configured in console.
 const firebaseConfig = {
-    apiKey: "AIzaSyA4wsQ5K6yETn2KTJrj756ZdrDirsjKX-4",
-    authDomain: "tradetrack-fbcc3.firebaseapp.com",
-    projectId: "tradetrack-fbcc3",
-    storageBucket: "tradetrack-fbcc3.firebasestorage.app",
-    messagingSenderId: "29117768850",
-    appId: "1:29117768850:web:668fcaf1164a0a07adb24b",
-    measurementId: "G-DJ5M32QLKY"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? "AIzaSyA4wsQ5K6yETn2KTJrj756ZdrDirsjKX-4",
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? "tradetrack-fbcc3.firebaseapp.com",
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? "tradetrack-fbcc3",
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? "tradetrack-fbcc3.firebasestorage.app",
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? "29117768850",
+    appId: import.meta.env.VITE_FIREBASE_APP_ID ?? "1:29117768850:web:668fcaf1164a0a07adb24b",
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ?? "G-DJ5M32QLKY"
 };
 
 // Initialize Firebase (Modular SDK) with HMR guard

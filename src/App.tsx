@@ -1,27 +1,20 @@
-// [Manage] Last Updated: 2026-01-26 (Force V1.5.0 Stable)
-import React, { useState, useMemo, useEffect } from 'react';
-
-// FORCE PURGE CACHE - Kill V1.6.0 SW
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(regs => {
-        for(let reg of regs) reg.unregister();
-    });
-}
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { TrendingUp, Activity, Eye, EyeOff, Filter, Cloud, CloudOff, RefreshCw, AlertOctagon, Check, AlertCircle, BrainCircuit, Share2 } from 'lucide-react';
+import { AlertOctagon } from 'lucide-react';
 
 // Modules & Hooks
-import { THEME, I18N } from './constants';
-import { Trade, ViewMode, TimeRange, Frequency } from './types';
-import { getLocalDateStr, formatDecimal, formatCompactNumber } from './utils/format';
+import { Trade } from './types';
+import { getLocalDateStr, formatDecimal } from './utils/format';
 import { calculateMetrics, safeDateParse } from './utils/calculations';
 
-// Components & Pages
+// Components (eager — needed for shell render)
 import { Layout } from './components/Layout';
-import { StatsPage } from './pages/StatsPage';
-import { JournalPage } from './pages/JournalPage';
-import { LogsPage } from './pages/LogsPage';
-import { SettingsPage } from './pages/SettingsPage';
+
+// Pages (lazy — split into per-route chunks)
+const StatsPage = lazy(() => import('./pages/StatsPage').then(m => ({ default: m.StatsPage })));
+const JournalPage = lazy(() => import('./pages/JournalPage').then(m => ({ default: m.JournalPage })));
+const LogsPage = lazy(() => import('./pages/LogsPage').then(m => ({ default: m.LogsPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 
 // Global Modals
 import { TradeModal } from './features/trade/TradeModal';
@@ -206,10 +199,11 @@ function MainApp() {
                 </div>
             )}
 
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[#94A3B8] text-xs">Loading…</div>}>
             <Routes>
                 <Route path="/" element={<Layout lang={lang} onFabClick={() => { setEditingId(null); setForm({ id: '', pnl: 0, date: getLocalDateStr(), amount: '', type: 'profit', strategy: '', note: '', emotion: '', image: '', portfolioId: activePortfolioIds[0] || '' }); setIsModalOpen(true); }} />}>
                     <Route index element={
-                        <StatsPage 
+                        <StatsPage
                             metrics={metrics}
                             portfolios={portfolios}
                             activePortfolioIds={activePortfolioIds}
@@ -322,6 +316,7 @@ function MainApp() {
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
             </Routes>
+            </Suspense>
 
             {/* MODALS */}
             <TradeModal 

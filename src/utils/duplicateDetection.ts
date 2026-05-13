@@ -24,14 +24,20 @@ export function detectDuplicates(
   const groups: DuplicateGroup[] = [];
   const processed = new Set<string>();
 
+  // 舊版 SyncDateModal 在 Shioaji 未回傳單號時會塞合成的 `unknown-{i}`，
+  // 不同批次都從 unknown-0 開始發號，純字串相等比對會錯誤命中。這裡判斷
+  // 「是否為真正的券商單號」時，先過濾掉這些合成值。
+  const isRealOrderNo = (no?: string | null): no is string =>
+    !!no && !no.startsWith('unknown');
+
   trades.forEach((trade, index) => {
     if (processed.has(trade.id)) return;
 
     const duplicates = trades.slice(index + 1).filter(other => {
       if (processed.has(other.id)) return false;
 
-      // 方法 1: 使用 orderNo（最準確）
-      if (trade.orderNo && other.orderNo) {
+      // 方法 1: 使用 orderNo（最準確）— 僅當兩邊都是真實單號才採用
+      if (isRealOrderNo(trade.orderNo) && isRealOrderNo(other.orderNo)) {
         return trade.orderNo === other.orderNo;
       }
 

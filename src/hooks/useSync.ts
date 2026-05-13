@@ -70,6 +70,15 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
   const lastPullTimeRef = useRef<number>(0);
   const migrationDoneRef = useRef(false);
 
+  // Serialisation: only one push may be in flight at a time. Concurrent
+  // callers set rescheduleAfterSyncRef so the in-flight push fires a
+  // follow-up once it lands, capturing any mutations that arrived during it.
+  // (Previously `isSyncing` was a pure React state flag that got cleared in
+  // the finally block, allowing a second push to start before React had
+  // re-rendered, leading to two near-simultaneous Firestore writes.)
+  const inFlightPushRef = useRef(false);
+  const rescheduleAfterSyncRef = useRef(false);
+
   useEffect(() => { dataRef.current = data; }, [data]);
   useEffect(() => { syncStatusRef.current = syncStatus; }, [syncStatus]);
   useEffect(() => { lastSyncTimeStrRef.current = lastSyncTimeStr; }, [lastSyncTimeStr]);
@@ -143,6 +152,16 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
       return { success: false, error: 'User is offline' };
     }
 
+    // Serialisation: if a push is already in flight, just mark that another
+    // round needs to run once it finishes. The in-flight push will read
+    // dataRef.current at start time and may miss mutations that arrived
+    // after that snapshot, hence the follow-up.
+    if (inFlightPushRef.current) {
+      rescheduleAfterSyncRef.current = true;
+      return { success: true };
+    }
+
+    inFlightPushRef.current = true;
     setSyncStatus('saving');
     setIsSyncing(true);
     try {
@@ -184,6 +203,14 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
       return { success: false, error: e.message || 'Unknown error' };
     } finally {
       setIsSyncing(false);
+      inFlightPushRef.current = false;
+
+      if (rescheduleAfterSyncRef.current) {
+        rescheduleAfterSyncRef.current = false;
+        // Tiny delay so React state from the previous push settles before
+        // the follow-up reads dataRef.current.
+        setTimeout(() => { triggerCloudBackup(); }, 50);
+      }
     }
   }, [user, authStatus, db, getLastSyncDate, saveSyncTime]);
 

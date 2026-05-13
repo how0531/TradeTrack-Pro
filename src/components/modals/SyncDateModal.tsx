@@ -49,6 +49,41 @@ interface SyncDateModalProps {
   onAutoSyncComplete?: () => void;
 }
 
+/**
+ * Trade row enriched with UI state for the sync preview table. We diverge from
+ * the on-disk `Trade` type in a few places (e.g. `selected`, `isDuplicate`,
+ * `sourceKey`) so keeping a dedicated shape avoids the `as any` casts that
+ * used to litter the JSX.
+ */
+interface SyncTransaction {
+  id: string;
+  date: string;
+  orderNo?: string;
+  code: string;
+  pnl: number;
+  price?: number;
+  quantity?: number;
+  side?: 'Buy' | 'Sell';
+  selected: boolean;
+  isDuplicate: boolean;
+  duplicateReason: string;
+  portfolioId: string;
+  strategy: string;
+  emotion: string;
+  /** User-attached tag/emotion picked in the preview table. */
+  tag?: string;
+  note: string;
+  showNoteInput: boolean;
+  raw_yield?: number;
+  category?: string;
+  configId?: string;
+  /** uniqueKey `${configId}|${code}|${idx}` linking the row back to the broker account/portfolio mapping. */
+  sourceKey?: string;
+  entryPrice?: number;
+  exitPrice?: number;
+  points: string;
+}
+
 // --- Internal Component: GlassSelect Moved to common/GlassSelect.tsx ---
 
 // --- Constants & Animations ---
@@ -107,7 +142,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   const [selectedConfigIds, setSelectedConfigIds] = useState<string[]>([]);
   // REMOVED: const [portfolios, setPortfolios] = useState<Portfolio[]>([]); // Use Context
   const [targetPortfolioId, setTargetPortfolioId] = useState<string>("");
-  const [transactions, setTransactions] = useState<any[]>([]); // Need Trade type + selected
+  const [transactions, setTransactions] = useState<SyncTransaction[]>([]);
   const [autoMerge, setAutoMerge] = useLocalStorage("sync_auto_merge", false);
 
   // New: Map specific broker accounts to specific portfolios
@@ -129,6 +164,13 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   const prevBackendStatusRef = useRef<string>('');
   // handleFetchRef: always points to the latest handleFetch, avoids stale closure in effects
   const handleFetchRef = useRef<() => void>(() => {});
+
+  // Cancellation token for in-flight broker fetches. Every handleFetch bumps
+  // this; before any post-await setState we check that our ticket still
+  // matches. If the modal was closed (or a newer fetch started) the late
+  // response is dropped silently. Avoids "phantom result pops up after close"
+  // and "setState on unmounted" warnings without touching the service layer.
+  const fetchTokenRef = useRef(0);
 
   // --- Effects ---
   useEffect(() => {
@@ -152,7 +194,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         }
       }
     } else {
-      // Reset
+      // Reset + invalidate any pending fetch so its late result is discarded.
+      fetchTokenRef.current += 1;
       setStep(1);
       setStatus("idle");
       setTransactions([]);
@@ -160,6 +203,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     }
 
   }, [isOpen, portfolios]);
+
+  // Bump the token on unmount too, in case the parent unmounts us mid-fetch
+  // without going through the close path.
+  useEffect(() => () => { fetchTokenRef.current += 1; }, []);
 
   // 📱 Auto-proceed: backend 從休眠恢復後自動開始同步
   useEffect(() => {
@@ -299,7 +346,11 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
   const formatMoney = (val: number) => val.toLocaleString();
 
-  const updateTxField = (id: string, field: string, val: any) => {
+  const updateTxField = <K extends keyof SyncTransaction>(
+    id: string,
+    field: K,
+    val: SyncTransaction[K],
+  ) => {
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, [field]: val } : t)),
     );
@@ -358,6 +409,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
     setStatus("loading");
     setResultMsg("");
+
+    // Claim a cancellation ticket for this fetch. Any later setState that
+    // would mutate post-close UI checks `token === fetchTokenRef.current`
+    // and drops the update if a newer fetch (or close) has bumped the ref.
+    const token = ++fetchTokenRef.current;
+    const isStale = () => token !== fetchTokenRef.current;
 
     // 🟢 Status Sync: Set to 'checking' (Yellow) or 'online' (Green) to prevent "OFFLINE" contradiction
     // If we are starting a fetch, we assume we are trying to be online.
@@ -659,12 +716,17 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         return {
           id: stableId,
           date: normalizedDate,
-          orderNo: d.orderNo || `unknown-${i}`,
+          // 只儲存真正的券商單號；舊版會 fallback 成 `unknown-${i}`，
+          // 但下次同步時新批次又從 unknown-0 開始發號，導致 Method A
+          // 的 orderNo === orderNo 在兩批之間誤命中、把新交易全部標成
+          // 「已存在」。改成 undefined 後，缺單號的交易會走 Method B
+          // (date + code + pnl + qty + price) 比對。
+          orderNo: isValidOrderNo ? d.orderNo : undefined,
           code: d.code,
           pnl: d.pnl,
           price: d.price,
           quantity: d.quantity,
-          side: d.quantity > 0 ? "Buy" : "Sell",
+          side: (d.quantity > 0 ? "Buy" : "Sell") as 'Buy' | 'Sell',
           selected: true,
           isDuplicate: false,
           duplicateReason: "",
@@ -775,7 +837,18 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
           const match = existingTrades.find((e) => {
             // --- 方法A: orderNo 比對 ---
-            if (trade.orderNo && e.orderNo && trade.orderNo === e.orderNo) {
+            // 排除舊版寫入的合成單號 `unknown-{i}`：兩批同步都會從 unknown-0
+            // 開始發號，純字串相等比對會錯誤命中。只有真正的券商單號才採用
+            // Method A，否則直接落到 Method B 的內容比對。
+            const tradeHasRealOrderNo =
+              !!trade.orderNo && !trade.orderNo.startsWith('unknown');
+            const existingHasRealOrderNo =
+              !!e.orderNo && !e.orderNo.startsWith('unknown');
+            if (
+              tradeHasRealOrderNo &&
+              existingHasRealOrderNo &&
+              trade.orderNo === e.orderNo
+            ) {
               return true;
             }
 
@@ -840,6 +913,13 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         `✅ [PERF] 步驟3 - 資料處理完成: ${(performance.now() - step3Start).toFixed(0)}ms`,
       );
 
+      // Bail out before committing UI state if the user closed the modal or
+      // kicked off a newer fetch while we were processing.
+      if (isStale()) {
+        console.log('[Sync] fetch superseded — discarding result');
+        return;
+      }
+
       setTransactions(processedTrades);
       setStatus("idle");
 
@@ -872,6 +952,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       );
     } catch (e: any) {
       console.error("Fetch Error:", e);
+      if (isStale()) return;
       setStatus("error");
       setResultMsg(e.message || "同步失敗，請確認後端連線或憑證");
     }
@@ -1454,11 +1535,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                   value={currentTargetId}
                                   onChange={(val) => {
                                     setAccountPortfolioMap(prev => ({ ...prev, [key]: val }));
-                                    setTransactions(prev => prev.map(t => {
-                                      // @ts-ignore
-                                      if (t.sourceKey === key) return { ...t, portfolioId: val };
-                                      return t;
-                                    }));
+                                    setTransactions(prev => prev.map(t =>
+                                      t.sourceKey === key ? { ...t, portfolioId: val } : t
+                                    ));
                                   }}
                                   options={portfolios.map(p => ({ value: p.id, label: p.name }))}
                                   variant="capsule"
@@ -1653,7 +1732,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                             {/* Tag */}
                             <div className="flex-1 min-w-[60px]">
                               <GlassSelect
-                                value={tx.tag}
+                                value={tx.tag ?? ""}
                                 onChange={(val) =>
                                   updateTxField(tx.id, "tag", val)
                                 }

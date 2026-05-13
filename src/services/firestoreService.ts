@@ -24,6 +24,11 @@ import {
   query,
   where,
   orderBy,
+  limit as fsLimit,
+  startAfter,
+  Query,
+  QueryConstraint,
+  QueryDocumentSnapshot,
   Timestamp,
   serverTimestamp,
   DocumentData,
@@ -108,24 +113,45 @@ export const softDeleteTrade = async (
 /**
  * 增量拉取：取得 updatedAt > since 的所有 trade (含軟刪除)
  * since 為 null 代表全量拉取 (首次同步或遷移後初始化)
+ *
+ * 採用游標分頁 (limit + startAfter) 以避免一次撈光整個 collection；
+ * 對於老帳號 (數千筆 trade) 可大幅降低 Firestore read quota 與
+ * 客戶端記憶體峰值。每頁預設 500 筆，與 push 的 batch 大小對齊。
  */
+const DEFAULT_PAGE_SIZE = 500;
+
 export const pullTrades = async (
   db: Firestore,
   uid: string,
-  since: Date | null
+  since: Date | null,
+  pageSize: number = DEFAULT_PAGE_SIZE,
 ): Promise<Trade[]> => {
   const col = tradesCol(db, uid);
+  const baseConstraints: QueryConstraint[] = since
+    ? [where('updatedAt', '>', Timestamp.fromDate(since)), orderBy('updatedAt', 'asc')]
+    : [orderBy('updatedAt', 'asc')];
 
-  let q;
-  if (since) {
-    const sinceTs = Timestamp.fromDate(since);
-    q = query(col, where('updatedAt', '>', sinceTs), orderBy('updatedAt', 'asc'));
-  } else {
-    q = query(col, orderBy('updatedAt', 'asc'));
+  const out: Trade[] = [];
+  let cursor: QueryDocumentSnapshot<DocumentData> | null = null;
+  // Hard ceiling so a runaway loop can't burn the read quota.
+  const MAX_PAGES = 200;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const q: Query<DocumentData> = cursor
+      ? query(col, ...baseConstraints, startAfter(cursor), fsLimit(pageSize))
+      : query(col, ...baseConstraints, fsLimit(pageSize));
+
+    const snap = await getDocs(q);
+    if (snap.empty) break;
+
+    for (const d of snap.docs) {
+      out.push(firestoreDocToTrade(d.id, d.data()));
+    }
+    if (snap.docs.length < pageSize) break;
+    cursor = snap.docs[snap.docs.length - 1];
   }
 
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => firestoreDocToTrade(d.id, d.data()));
+  return out;
 };
 
 // ─────────────── Metadata ───────────────

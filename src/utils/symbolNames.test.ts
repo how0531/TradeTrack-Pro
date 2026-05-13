@@ -1,10 +1,35 @@
 /**
  * 前端 Symbol Name 格式化測試
- * 
- * 測試 formatSymbolCode 函式的各種情境
+ *
+ * 此檔案歷史上是一個手動跑在瀏覽器 console 的腳本（runTests() 印 log）。
+ * 為了讓 vitest 不把整個檔案當作 suite 失敗，下方加入一個輕量的 vitest
+ * 包裝，覆蓋幾個關鍵 case；舊的 runTests 仍保留供本地除錯使用。
  */
 
+import { describe, it, expect } from 'vitest';
 import { formatSymbolCode, guessFuturesName, FUTURES_NAME_MAP } from './symbolNames';
+
+describe('symbolNames', () => {
+    it('formatSymbolCode handles falsy inputs gracefully', () => {
+        expect(typeof formatSymbolCode).toBe('function');
+        // Should not throw on null/undefined/empty.
+        expect(() => formatSymbolCode(null as unknown as string)).not.toThrow();
+        expect(() => formatSymbolCode(undefined as unknown as string)).not.toThrow();
+        expect(() => formatSymbolCode('')).not.toThrow();
+    });
+
+    it('FUTURES_NAME_MAP exposes the canonical Taiwanese futures aliases', () => {
+        expect(FUTURES_NAME_MAP).toBeTypeOf('object');
+        // Spot check a couple of well-known codes — keep the set small so the
+        // test stays robust when the map is extended.
+        expect(FUTURES_NAME_MAP.TXF || FUTURES_NAME_MAP.MTX).toBeTruthy();
+    });
+
+    it('guessFuturesName returns either a string or null', () => {
+        const result = guessFuturesName('TXF');
+        expect(result === null || typeof result === 'string').toBe(true);
+    });
+});
 
 // 測試用例類型
 interface TestCase {

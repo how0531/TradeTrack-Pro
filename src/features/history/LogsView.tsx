@@ -1,6 +1,10 @@
 // [Manage] Last Updated: 2024-05-22
 import React, { useState, useMemo, useEffect } from 'react';
-import { Scroll, Trash2, Edit2, Calendar, ArrowDown, ArrowUp, StickyNote } from 'lucide-react';
+import { Scroll, Trash2, Edit2, Calendar, ArrowDown, ArrowUp, StickyNote, ChevronDown } from 'lucide-react';
+
+// 一次最多渲染的卡片數，超過則用「Load more」按鈕逐批顯示。
+// 200 筆對應約 4 螢幕，覆蓋常見瀏覽情境，同時避開上千筆時的初次 render 卡頓。
+const RENDER_PAGE = 200;
 import { Trade, LogsViewProps, Lang } from '../../types';
 import { I18N } from '../../constants';
 import { formatCompactNumber, formatDate, formatPointsDisplay } from '../../utils/format';
@@ -267,6 +271,7 @@ export const LogsView = ({ trades, lang, hideAmounts, portfolios, onEdit, onDele
     const t = I18N[lang] || I18N['zh'];
     const [sortType, setSortType] = useState<SortType>('date');
     const [showNotesOnly, setShowNotesOnly] = useState(false);
+    const [visibleCount, setVisibleCount] = useState<number>(RENDER_PAGE);
 
     const filteredTrades = useMemo(() => showNotesOnly ? trades.filter(t => t.note && t.note.trim().length > 0) : trades, [trades, showNotesOnly]);
 
@@ -278,12 +283,24 @@ export const LogsView = ({ trades, lang, hideAmounts, portfolios, onEdit, onDele
         return sorted;
     }, [filteredTrades, sortType]);
 
+    // Reset the render window whenever the underlying list / sort changes so
+    // we don't show e.g. only 50 of 200 after a filter switch.
+    useEffect(() => {
+        setVisibleCount(RENDER_PAGE);
+    }, [sortType, showNotesOnly, filteredTrades.length]);
+
+    const visibleTrades = useMemo(
+        () => sortedTrades.slice(0, visibleCount),
+        [sortedTrades, visibleCount],
+    );
+    const remainingCount = Math.max(0, sortedTrades.length - visibleCount);
+
     const groups = useMemo(() => {
         if (sortType !== 'date') return null;
         const g: Record<string, Trade[]> = {};
-        sortedTrades.forEach(trade => { if (!g[trade.date]) g[trade.date] = []; g[trade.date].push(trade); });
+        visibleTrades.forEach(trade => { if (!g[trade.date]) g[trade.date] = []; g[trade.date].push(trade); });
         return g;
-    }, [sortedTrades, sortType]);
+    }, [visibleTrades, sortType]);
 
     // 每日盈虧小計 — useMetrics 已算過但沒傳進來；這裡用同樣的累加直接從 group 算。
     // 顯示在日期 pill 內讓使用者一眼看出當日總盈虧。
@@ -358,7 +375,19 @@ export const LogsView = ({ trades, lang, hideAmounts, portfolios, onEdit, onDele
                         </div>
                     );
                 }) : (
-                    <div className="flex flex-col w-full mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500 gap-0.5">{sortedTrades.map(trade => <SpineCard key={trade.id} trade={trade} onEdit={onEdit} onDelete={onDelete} hideAmounts={hideAmounts} />)}</div>
+                    <div className="flex flex-col w-full mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500 gap-0.5">{visibleTrades.map(trade => <SpineCard key={trade.id} trade={trade} onEdit={onEdit} onDelete={onDelete} hideAmounts={hideAmounts} />)}</div>
+                )}
+
+                {remainingCount > 0 && (
+                    <div className="flex justify-center mt-6 mb-2 relative z-10">
+                        <button
+                            onClick={() => setVisibleCount(c => c + RENDER_PAGE)}
+                            className="flex items-center gap-1.5 bg-[#050505]/80 border border-white/10 rounded-full px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 hover:text-white hover:bg-white/5 transition-all"
+                        >
+                            <ChevronDown size={11} />
+                            {lang === 'zh' ? `載入更多（剩 ${remainingCount} 筆）` : `Load more (${remainingCount} left)`}
+                        </button>
+                    </div>
                 )}
             </div>
         </div>

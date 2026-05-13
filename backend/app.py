@@ -1,43 +1,56 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import sys
+import logging
 import os
-import traceback
 
-# 添加 core 目錄到路徑 (如果尚未添加) - 雖然通常在同一包下不需要，但為了確保
-# sys.path.append(os.path.join(os.path.dirname(__file__), "core"))
+# ─── Logging ──────────────────────────────────────────────────────────────
+# Single source of truth for all backend output. Render / Docker tail stdout,
+# so a single line format keeps container logs readable. Set LOG_LEVEL env to
+# override (DEBUG / INFO / WARNING / ERROR).
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("tradetrack.backend")
 
+# ─── Imports ──────────────────────────────────────────────────────────────
+# Two valid invocation paths:
+#   1. `python app.py` from inside backend/   → `from core.pnl` works
+#   2. `python -m backend.app` from repo root → `from backend.core.pnl` works
+# We try the package-relative form first (more explicit), then fall back to
+# the in-directory form. Anything else is a real configuration error.
 try:
-    from core.pnl import login_and_fetch_pnl, verify_simulation_account
-    from core import job_store
-    print(f"DEBUG: Imported core modules successfully", flush=True)
-except ImportError as e:
-    print(f"Error importing core.pnl: {e}")
-    # Fallback for dev environment path issues
-    try: 
-        from backend.core.pnl import login_and_fetch_pnl, verify_simulation_account
-        from backend.core import job_store
-        print(f"DEBUG: Imported from backend.core.pnl (fallback)", flush=True)
-    except:
-        print(f"Critical Import Error: {e}")
-        raise
+    from backend.core.pnl import login_and_fetch_pnl, verify_simulation_account
+    from backend.core import job_store
+except ImportError:
+    from core.pnl import login_and_fetch_pnl, verify_simulation_account  # type: ignore[no-redef]
+    from core import job_store  # type: ignore[no-redef]
 
 app = Flask(__name__)
-# Explicitly allow all origins for debugging, or specify frontend URL
-CORS(app, resources={r"/*": {"origins": "*"}})
+
+# CORS: read allowed origins from env (comma-separated). Falls back to a safe
+# localhost-only allowlist instead of the previous wildcard "*", which let any
+# site call this backend with the user's session.
+_allowed_origins_raw = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+)
+_allowed_origins = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
+CORS(app, resources={r"/*": {"origins": _allowed_origins}}, supports_credentials=True)
+logger.info("CORS allowed origins: %s", _allowed_origins)
 
 # 伺服器重啟後，把上一輪還卡在 pending/running 的任務標為 error，
 # 讓前端輪詢時能拿到明確訊息而不是 404。
 try:
     _orphan_count = job_store.recover_orphaned_jobs()
     if _orphan_count:
-        print(
-            f"♻️  [STARTUP] 偵測到 {_orphan_count} 個上一輪未完成的同步任務，"
-            f"已標記為 error（請用戶重新執行）",
-            flush=True,
+        logger.info(
+            "Recovered %d orphaned sync jobs (marked as error)",
+            _orphan_count,
         )
-except Exception as _e:
-    print(f"[STARTUP] recover_orphaned_jobs failed: {_e}", flush=True)
+except Exception:
+    logger.exception("recover_orphaned_jobs failed")
 
 
 @app.route("/", methods=["GET"])
@@ -67,10 +80,12 @@ def health_check():
 def get_broker_profile():
     try:
         data = request.json
-        print(f"\n{'='*20} PROFILE REQUEST {'='*20}", flush=True)
-        print(f"Keys received: {list(data.keys())}", flush=True)
-        print(f"Person ID: {_mask_id(data.get('personId'))}", flush=True)
-        print(f"CA Path: {data.get('caPath')}", flush=True)
+        logger.info(
+            "Profile request — personId=%s caPath=%s keys=%s",
+            _mask_id(data.get("personId")),
+            data.get("caPath"),
+            list(data.keys()),
+        )
 
         required_fields = ["apiKey", "apiSecret", "personId", "caPassword"]
         missing_fields = [field for field in required_fields if not data.get(field)]
@@ -80,10 +95,8 @@ def get_broker_profile():
 
         if missing_fields:
             error_msg = f"缺少必要欄位 (Missing fields): {', '.join(missing_fields)}"
-            print(f"[ERROR] {error_msg}", flush=True)
+            logger.warning("Profile request rejected: %s", error_msg)
             return jsonify({"status": "error", "message": error_msg}), 400
-
-
 
         # 從請求中獲取環境設定，預設為正式環境
         env_pref = data.get("environment", "production")
@@ -103,7 +116,7 @@ def get_broker_profile():
             profile_only=True,  # M4: 只需登入列帳號，跳過 PnL 抓取
         )
 
-        print(f"[RESULT] Status: {result.get('status')}", flush=True)
+        logger.info("Profile result status=%s", result.get("status"))
 
         if result.get("status") == "error":
             return jsonify(result), 400
@@ -128,10 +141,8 @@ def get_broker_profile():
         return jsonify(response)
 
     except Exception as e:
-        print(f"\n[EXCEPTION] Profile Error: {str(e)}", flush=True)
-        traceback.print_exc()
-        error_response = jsonify({"status": "error", "message": str(e)})
-        return error_response, 500
+        logger.exception("Profile request failed")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/api/broker/pnl", methods=["POST"])
@@ -141,9 +152,10 @@ def get_broker_pnl():
     """
     try:
         data = request.json
-        print(f"\n{'='*20} PNL REQUEST {'='*20}", flush=True)
-        print(
-            f"Date Range: {data.get('startDate')} to {data.get('endDate')}", flush=True
+        logger.info(
+            "PnL request — startDate=%s endDate=%s",
+            data.get("startDate"),
+            data.get("endDate"),
         )
 
         required_fields = ["apiKey", "apiSecret", "personId", "caPassword", "startDate", "endDate"]
@@ -153,7 +165,7 @@ def get_broker_pnl():
 
         if missing_fields:
             error_msg = f"缺少必要欄位 (Missing fields): {', '.join(missing_fields)}"
-            print(f"[ERROR] {error_msg}", flush=True)
+            logger.warning("PnL request rejected: %s", error_msg)
             return jsonify({"status": "error", "message": error_msg}), 400
 
         # 從請求中獲取環境設定
@@ -174,9 +186,10 @@ def get_broker_pnl():
             type_filter=data.get("accountType"),   # Pass strict account type filter
         )
 
-        print(
-            f"[RESULT] Status: {result.get('status')} | Items: {result.get('details_count', 0)}",
-            flush=True,
+        logger.info(
+            "PnL result status=%s details_count=%s",
+            result.get("status"),
+            result.get("details_count", 0),
         )
 
         if result.get("status") == "error":
@@ -200,8 +213,7 @@ def get_broker_pnl():
         return jsonify(response)
 
     except Exception as e:
-        print(f"\n[EXCEPTION] P&L Error: {str(e)}", flush=True)
-        traceback.print_exc()
+        logger.exception("PnL request failed")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -267,10 +279,9 @@ def _run_pnl_job(job_id, data):
             job_store.complete_job(job_id, final_result)
             
     except Exception as e:
-        print(f"❌ [Job Failed] {job_id}: {str(e)}", flush=True)
-        traceback.print_exc()
+        logger.exception("PnL job %s failed", job_id)
         job_store.fail_job(job_id, str(e))
-        
+
     finally:
         # 定期清理老舊任務 (順便執行)
         job_store.cleanup_old_jobs()
@@ -280,7 +291,7 @@ def create_pnl_job():
     """建立非同步券商損益查詢 Job"""
     try:
         data = request.json
-        print(f"\n{'='*20} CREATING ASYNC PNL JOB {'='*20}", flush=True)
+        logger.info("Creating async PnL job")
 
         required_fields = ["apiKey", "apiSecret", "personId", "caPassword", "startDate", "endDate"]
         missing_fields = [field for field in required_fields if not data.get(field)]
@@ -300,10 +311,9 @@ def create_pnl_job():
         thread.start()
         
         return jsonify({"status": "success", "job_id": job_id})
-        
+
     except Exception as e:
-        print(f"\n[EXCEPTION] Create Job Error: {str(e)}", flush=True)
-        traceback.print_exc()
+        logger.exception("Create job failed")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/jobs/<job_id>/status", methods=["GET"])
@@ -348,8 +358,7 @@ def verify_broker_account():
     """
     try:
         data = request.json
-        print(f"\n{'='*20} VERIFICATION REQUEST {'='*20}", flush=True)
-        print(f"Account: {_mask_id(data.get('accountId'))}", flush=True)
+        logger.info("Verification request for account=%s", _mask_id(data.get("accountId")))
 
         required_fields = ["apiKey", "apiSecret", "personId", "caPassword", "accountId"]
         missing_fields = [field for field in required_fields if not data.get(field)]
@@ -374,8 +383,7 @@ def verify_broker_account():
         return jsonify(result)
 
     except Exception as e:
-        print(f"\n[EXCEPTION] Verification Error: {str(e)}", flush=True)
-        traceback.print_exc()
+        logger.exception("Verification request failed")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/stock/info/<code_input>", methods=["GET"])
@@ -404,20 +412,15 @@ def get_stock_info_route(code_input):
              return jsonify({"status": "error", "message": "Stock not found"}), 404
              
     except Exception as e:
-        print(f"[StockInfo Error] {e}")
+        logger.exception("Stock info lookup failed for %s", code_input)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("TradeTrack Pro - Backend Service (Cloud Ready)")
-    print("=" * 60)
-
     # Cloud platforms set PORT environment variable
     port = int(os.environ.get("PORT", 5000))
-
-    print(f"Server starting on http://0.0.0.0:{port}", flush=True)
-
     # B11: debug mode via env var, defaults to False for production safety
     is_debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+
+    logger.info("TradeTrack Pro backend starting on 0.0.0.0:%s (debug=%s)", port, is_debug)
     app.run(host="0.0.0.0", port=port, debug=is_debug)

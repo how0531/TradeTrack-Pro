@@ -42,16 +42,13 @@ describe('Calculations - Metrics', () => {
     it('should handle Infinite Risk/Reward (Win Only)', () => {
         const winOnlyTrades = [mockTrades[0]];
         const result = calculateMetrics(winOnlyTrades, mockPortfolios, ['p1'], 'daily', 'en', null, null);
-        // R:R logic: if losses == 0, if gProfit > 0 return 999 or handled? 
-        // In code: (losses > 0 && gLoss > 0) ? ... : 0
-        // Wait, if no loss, R:R is technically undef or inf. Code returns 0 currently for safety?
-        // Let's check source: (losses > 0 && gLoss > 0) ? ... : 0.
-        // So it returns 0. That's why ShareCard handled it manually?
-        expect(result.riskReward).toBe(0);
-        
-        // Profit Factor should be specialized?
-        // pf: gLoss === 0 ? (gProfit > 0 ? 999 : 0) : gProfit / gLoss
-        expect(result.pf).toBe(999);
+        // No losses + at least one win: R:R is undefined mathematically.
+        // calculations.ts contract returns Infinity in this case so the UI can
+        // render a special glyph (∞) instead of a misleading 0.
+        expect(result.riskReward).toBe(Infinity);
+
+        // Profit Factor: gLoss === 0 ? (gProfit > 0 ? Infinity : 0) : gProfit / gLoss
+        expect(result.pf).toBe(Infinity);
     });
 });
 
