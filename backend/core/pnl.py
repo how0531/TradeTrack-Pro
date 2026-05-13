@@ -287,7 +287,11 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
                     "price": price,
                     "quantity": raw_qty,
                     "pnl": realized,
-                    "orderNo": getattr(item, "dseq", getattr(item, "seqno", "")),
+                    # Return None (not "") when neither dseq nor seqno is
+                    # present so the front-end's isValidOrderNo can treat
+                    # "no broker order number" uniformly without relying on
+                    # empty-string heuristics.
+                    "orderNo": getattr(item, "dseq", getattr(item, "seqno", None)) or None,
                     "category": category,
                     "buyAmt": buy_amt,
                     "sellAmt": sell_amt,
