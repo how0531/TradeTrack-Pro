@@ -1,20 +1,24 @@
-# 📈 TradeTrack Pro
+# TradeTrack Pro
 
 <div align="center">
   <img width="1200" height="475" alt="TradeTrack Pro Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
   <p align="center">
-    <img src="https://img.shields.io/badge/Version-1.1.0-gold?style=for-the-badge" alt="Version" />
-    <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" />
-    <img src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
-    <img src="https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
+    <img src="https://img.shields.io/badge/Version-3.7.1-gold?style=for-the-badge" alt="Version" />
+    <img src="https://img.shields.io/badge/React-18-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React 18" />
+    <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/Vite-5-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite 5" />
+    <img src="https://img.shields.io/badge/Firebase-10-FFCA28?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
+    <img src="https://img.shields.io/badge/PWA-Enabled-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
   </p>
 </div>
 
 ---
 
-**TradeTrack Pro** 是一款專為專業交易者打造的績效追蹤與心理分析儀表板。不僅能記錄損益，更能透過精準的數據可視化與風險監控，協助您建立穩健的交易系統。
+**TradeTrack Pro** 是一款為專業交易者打造的績效追蹤與心理分析儀表板。
 
-## 📸 介面展示
+採 Mobile-first 與 PWA 設計，本地以 IndexedDB 離線保存資料、雲端透過 Firebase 增量同步至多裝置；後端串接永豐金 Shioaji API，可直接從券商拉取真實成交損益，不必手動鍵入。
+
+## 介面展示
 
 <table style="width: 100%;">
   <tr>
@@ -27,120 +31,175 @@
   </tr>
 </table>
 
-## 🌟 核心亮點
+## 核心功能
 
-### 1. 進階數據可視化
+### 數據視覺化
 
-- **動態淨值曲線**：支援「純損益」與「含本金淨值」切換，配備平滑過渡動畫。
-- **情緒背景漸層 (Mood Gradient)**：系統根據您的勝率與近期表現，自動調整界面光暈背景。
-- **多維度分析**：依策略、心理情緒、投資組合進行細分統計。
+- **動態淨值曲線**：可在「純損益 (Pure PnL)」與「含本金淨值 (Equity)」之間切換，平滑過渡。
+- **多維度分析**：依策略 (Strategy)、情緒 (Emotion)、投資組合 (Portfolio) 細分績效。
+- **完整指標**：Win Rate、Profit Factor、Expectancy、Risk-Reward、Sharpe、最大回撤 (MDD)、連勝連敗、停滯期。
 
-### 2. 隱私與安全性
+### 風險預警
 
-- **全域隱私模式 (Privacy Blur)**：一鍵開啟全域模糊效果，隱藏所有金額顯示。適用於公開分享績效卡片，同時保留數據結構的可讀性。
-- **Firebase 實時同步**：數據加密同步至雲端，支援 Google 帳號登入與多裝置無縫切換。
+- **Drawdown 警報**：回撤達使用者自訂門檻時，自動以紅色視覺警示橫幅提醒。
+- **連敗暫停建議**：連續虧損達門檻自動跳出休息提醒，避免情緒交易。
 
-### 3. 風險控管預警
+### 隱私
 
-- **Drawdown 警報**：當帳戶回撤達到預設比例時，自動觸發紅色風險視覺警示。
-- **連敗暫停建議**：自動偵測連敗次數，提醒交易者適時休息。
+- **全域 Privacy Blur**：一鍵模糊所有金額顯示，公開分享績效卡時保留結構但隱藏絕對數字。
+- **Firebase 加密同步**：透過 Google 帳號登入，數據加密傳輸；Web SDK Key 與 App Check / Firestore Rules 配合使用。
 
-### 4. 社交分享系統
+### 資料來源
 
-- **多樣化視圖**：可切換「純數據」、「圖表」或「完整報告」分享。
-- **年份日期統一**：內建美觀的分享卡片模組，全日期格式統一為 `YYYY/MM/DD`。
+| 方式 | 說明 |
+|---|---|
+| 手動輸入 | 表單建立／編輯交易紀錄，支援標籤與筆記。 |
+| JSON 匯入 | 相容舊版備份，自動偵測重複並提示合併。 |
+| 券商同步 | 串接永豐金 Shioaji API，支援多帳號、期貨／證券混合，分塊處理 90 天上限。 |
 
-## 📖 功能頁面 (App Pages)
+### 同步架構
 
-### 1. 📊 首頁儀表板 (Dashboard)
+- **本地**：Dexie / IndexedDB，離線可用、毫秒級讀寫。
+- **雲端**：Firestore sub-collection 增量同步——推送只送有變動的 trades，拉取只取 `updatedAt > lastSyncTime` 的差異；游標分頁避免大帳號一次撈光 read quota。
+- **軟刪除**：刪除以 `isDeleted: true` 標記，避免跨裝置「殭屍交易」復活。
+- **串行化**：雲端推送以 ref 控制單一 in-flight，並發 mutation 自動排隊。
 
-![Dashboard](./public/screenshots/dashboard_v2.png)
+## 頁面
 
-- **核心指標**: 實時顯示 Win Rate, Profit Factor, Expectancy 等關鍵數據。
-- **策略分析**: 針對不同交易策略 (Strategy) 與心理狀態 (Emotion) 進行績效歸因。
-- **淨值曲線**: 可視化帳戶淨值成長與回撤 (Drawdown) 狀況。
+| 頁面 | 路徑 | 主要內容 |
+|---|---|---|
+| Dashboard | `/` | 核心指標、淨值曲線、策略歸因、分享卡 |
+| Journal | `/journal` | 月曆熱力圖、連勝連敗、月度統計 |
+| Logs | `/logs` | 交易流水帳、篩選排序、分批 render（避免大列表卡頓） |
+| Settings | `/settings` | 券商串接、資料匯出、語系與顯示設定 |
 
-### 2. 📅 交易日誌 (Journal)
+## 技術棧
 
-![Journal](./public/screenshots/journal_v2.png)
+**前端**
 
-- **月曆視圖**: 直觀呈現每日損益熱力圖 (Heatmap)。
-- **連勝連敗**: 自動追蹤目前的連勝/連敗場次 (Streak)，輔助風險控管。
+- React 18 · TypeScript 5 · react-router-dom v7
+- Vite 5 · vite-plugin-pwa（autoUpdate, Workbox runtime caching）
+- Tailwind CSS（Glassmorphism design）· Recharts · Lucide React
+- Dexie 4 · dexie-react-hooks（IndexedDB）
+- Firebase 10（Auth + Firestore）
 
-### 3. 📝 歷史紀錄 (Logs)
+**後端**
 
-![Logs](./public/screenshots/logs_v2.png)
+- Python 3 · Flask · Flask-CORS
+- Shioaji SDK（永豐金證券 API）
 
-- **交易流水帳**: 完整的交易列表，支援篩選與排序。
-- **編輯管理**: 可快速修改或刪除錯誤的交易紀錄。
+**Bundle splitting**：`vendor-firebase` / `vendor-charts` / `vendor-canvas` / `vendor-react` / `vendor-db` 各自獨立 chunk；路由級 lazy load，首屏 gzip 約 115 KB。
 
-### 4. ⚙️ 系統設定 (Settings)
+## 環境需求
 
-![Settings](./public/screenshots/settings_v2.png)
+- Node.js `>= 20`
+- Python `>= 3.10`（僅在需要 Shioaji 同步時）
 
-- **券商串接**: 設定 Shioaji API 連線與憑證管理。
-- **資料管理**: 執行雲端備份、還原與匯出功能。
-- **個人化**: 切換語系 (中/英)、設定停損顯色偏好。
+## 快速開始
 
-## 🛠 技術棧
+### 1. 安裝
 
-- **Frontend**: React (Hooks, Context API)
-- **Styling**: Tailwind CSS, Vanilla CSS (Glassmorphism design)
-- **Charts**: Recharts (Custom active dots & animations)
-- **Icons**: Lucide React
-- **Backend**: Firebase Store & Auth
-- **Build Tool**: Vite
+```bash
+git clone https://github.com/how0531/TradeTrack-Pro.git
+cd TradeTrack-Pro
+npm install
+```
 
-## 🚀 快速開始
+### 2. 設定環境變數
 
-### 環境需求
+```bash
+cp .env.example .env.local
+```
 
-- Node.js v18.0.0 或更高版本
+在 [Firebase Console](https://console.firebase.google.com) 建立專案後，填入 Web SDK 設定：
 
-### 安裝與啟動
+```env
+# 後端 URL（留空 → 本地 Vite proxy → http://localhost:5000）
+VITE_API_URL=
 
-1. **Clone 專案**
+# Firebase Web SDK
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_MEASUREMENT_ID=
+```
 
-   ```bash
-   git clone https://github.com/how0531/TradeTrack-Pro.git
-   cd TradeTrack-Pro
-   ```
+> Firebase Web Keys 本就會出現在前端 bundle，公開不影響安全。真正的保護來自 **Firestore Security Rules** 與 **App Check**——請至 Firebase Console 啟用。
 
-2. **安裝依賴**
+### 3. 啟動前端
 
-   ```bash
-   npm install
-   ```
+```bash
+npm run dev
+```
 
-3. **配置環境變數**
-   建立 `.env.local` 檔案並填入您的 Firebase 設定：
+預設 `http://localhost:5173`。
 
-   ```env
-   VITE_FIREBASE_API_KEY=your_api_key
-   VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
-   VITE_FIREBASE_PROJECT_ID=your_project_id
-   ```
+### 4. 啟動後端（選用）
 
-4. **啟動開發環境**
-   ```bash
-   npm run dev
-   ```
+只有需要從券商同步損益時才需要：
 
-### 🔗 永豐金證券 (Shioaji API) 串接
+```bash
+cd backend
+pip install -r requirements.txt
+python app.py
+```
 
-本專案支援原生串接永豐金證券損益資料。如需使用此功能，請先啟動後端服務：
+後端預設聽 `:5000`，CORS 預設只允許 `localhost`。生產環境用 `ALLOWED_ORIGINS` env 指定白名單：
 
-1. **啟動後端**
-   進入 `backend` 資料夾並執行 `start.bat`。系統會自動安裝 Python 依賴並啟動 Flask 伺服器。
+```bash
+ALLOWED_ORIGINS=https://your-frontend.example.com python app.py
+```
 
-   如果您希望在電腦關閉時也能運作，請參考 [雲端佈署計畫](./cloud_deployment_plan.md) 將後端佈署至 Render 或 Railway。
+詳細登入流程、錯誤處理與雲端佈署請參考 [docs/BACKEND_FLOW.md](./docs/BACKEND_FLOW.md)。
 
-   > 📘 **詳細連線流程與錯誤處理**：請參考 [後台連接流程圖](./docs/BACKEND_FLOW.md)。
+## NPM Scripts
 
-## 📄 版本更新
+| 指令 | 用途 |
+|---|---|
+| `npm run dev` | Vite dev server（HMR） |
+| `npm run build` | Production build → `dist/` |
+| `npm run preview` | 本地預覽 production build |
+| `npm test` | Vitest watch mode |
+| `npx vitest run` | 一次性跑完所有測試（CI 用） |
+| `npm start` | `serve dist`（靜態託管 fallback） |
 
-詳細變更紀錄請參閱 [CHANGELOG.md](./CHANGELOG.md)。
+## 專案結構
+
+```
+TradeTrack-Pro/
+├── src/
+│   ├── App.tsx                  # 路由 + global modals
+│   ├── pages/                   # 路由頁面（lazy-loaded）
+│   ├── features/                # Domain features（dashboard / calendar / history / trade / settings ...）
+│   ├── components/              # 共用元件、modals
+│   ├── context/                 # TradeContext / BackendContext / AuthContext
+│   ├── hooks/                   # useSync / useMetrics / useIndexedDBData / useAuth ...
+│   ├── services/                # firestoreService / brokerService / backendGateway / responseValidators
+│   ├── utils/                   # calculations / format / duplicateDetection / haptics ...
+│   └── types/                   # 共用型別
+├── backend/
+│   ├── app.py                   # Flask routes + CORS + stdlib logging
+│   └── core/
+│       ├── pnl.py               # Shioaji 登入 + PnL 抓取 + 90 天 chunking
+│       ├── job_store.py         # 非同步同步任務佇列
+│       └── session.py
+├── public/                      # PWA assets + screenshots
+└── .github/workflows/ci.yml     # typecheck / vitest / build
+```
+
+## 測試與 CI
+
+- **TypeScript strict** 編譯檢查：`npx tsc --noEmit`
+- **Vitest** 單元測試：`npx vitest run`
+- **GitHub Actions**：每次 push / PR 對 `main` 自動跑 typecheck → tests → production build
+
+## Changelog
+
+完整變更紀錄請見 [CHANGELOG.md](./CHANGELOG.md)。
 
 ---
 
-_Developed with ❤️ for traders who seek discipline and edge._
+_Built for traders who seek discipline and edge._
