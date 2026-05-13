@@ -286,7 +286,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 8. Import/Export State & Handlers (Refactored from old useTradeData)
     const [pendingImport, setPendingImport] = useState<any>(null);
 
-    const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>, t: Translation) => {
+    const handleImportJSON = useCallback((e: React.ChangeEvent<HTMLInputElement>, t: Translation) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
@@ -352,9 +352,9 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
         reader.readAsText(file);
         e.target.value = '';
-    };
+    }, [trades, lang, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, triggerCloudBackup]);
 
-    const resolveImportConflict = (choice: 'merge' | 'overwrite') => {
+    const resolveImportConflict = useCallback((choice: 'merge' | 'overwrite') => {
         if (!pendingImport) return;
         const data = pendingImport;
 
@@ -399,9 +399,9 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         setPendingImport(null);
         scheduleCloudBackup();
-    };
+    }, [pendingImport, trades, strategies, emotions, portfolios, activePortfolioIds, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, scheduleCloudBackup]);
 
-    const resetAllData = async (t: Translation) => {
+    const resetAllData = useCallback(async (t: Translation) => {
         console.log('🚀 Data Reset Started...');
         try {
             // Cloud Reset (Explicitly Clear)
@@ -438,7 +438,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             try { await indexedDB.deleteDatabase('TradeTrackDB'); } catch (_) {}
             window.location.reload();
         }
-    };
+    }, [user, authStatus]);
 
     const onResolveSyncConflict = async (choice: 'cloud' | 'local' | 'merge') => {
         if (choice === 'cloud') {
@@ -509,8 +509,9 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsSyncModalOpen(false);
     };
 
-    // Combine Actions
-    const combinedActions = {
+    // Combine Actions — memoised so consumers depending on `actions` keep a stable
+    // reference across re-renders that don't actually change the action surface.
+    const combinedActions = useMemo(() => ({
         ...localActions,
         resetAllData,
         handleImportJSON,
@@ -523,7 +524,6 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updatePortfolio: (id: string, k: keyof Portfolio, v: Portfolio[keyof Portfolio]) => { localActions.updatePortfolio(id, k, v); scheduleCloudBackup(); },
         addPortfolio: (p: Portfolio) => {
             localActions.addPortfolio(p);
-            // Optional: Auto-activate new portfolio
             setActivePortfolioIds(prev => [...prev, p.id]);
             scheduleCloudBackup();
         },
@@ -536,7 +536,6 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addEmotion: (e: string) => { localActions.addEmotion(e); scheduleCloudBackup(); },
         deleteStrategy: (s: string) => { localActions.deleteStrategy(s); scheduleCloudBackup(); },
         deleteEmotion: (e: string) => { localActions.deleteEmotion(e); scheduleCloudBackup(); },
-        // 重複交易檢測與合併
         detectDuplicates: (options?: DetectionOptions) => detectDuplicates(trades, options),
         removeDuplicates: () => {
             const duplicateGroups = detectDuplicates(trades);
@@ -545,10 +544,14 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             setTrades(cleaned);
             scheduleCloudBackup();
         },
-    };
+    }), [localActions, resetAllData, handleImportJSON, resolveImportConflict, pendingImport, scheduleCloudBackup, setActivePortfolioIds, setTrades, trades]);
 
+    const t = useMemo(() => I18N[lang] || I18N['zh'], [lang]);
 
-    const value: TradeContextType = {
+    // Memoise the context value so consumers don't re-render every time the
+    // provider re-renders if no field they care about changed. Setters from
+    // useState/useLocalStorage are stable; we only list values + memoised callbacks.
+    const value = useMemo<TradeContextType>(() => ({
         trades, strategies, emotions, portfolios,
         activePortfolioIds, setActivePortfolioIds,
         currentMonth, setCurrentMonth,
@@ -578,9 +581,23 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         syncError, repairDatabase: resetFirestoreCache,
         actions: combinedActions,
         authStatus, user, login, logout,
-        t: I18N[lang] || I18N['zh'],
+        t,
         autoSyncParams, setAutoSyncParams
-    };
+    }), [
+        trades, strategies, emotions, portfolios,
+        activePortfolioIds, currentMonth,
+        filterStrategy, filterEmotion, timeRange, frequency, customRange,
+        isDatePickerOpen, isFilterOpen,
+        lang, hideAmounts, ddThreshold, maxLossStreak, chartHeight, lossColor,
+        brokerConfigs, activeBrokerId, updateBrokerConfig, addBrokerConfig, deleteBrokerConfig, activeBrokerConfig,
+        filteredTrades, metrics, streaks, riskStreaks, dailyPnlMap,
+        availableStrategies, availableEmotions,
+        isSyncing, syncStatus, lastBackupTime, triggerCloudBackup, manualPull,
+        isSyncModalOpen, onResolveSyncConflict, conflictStats, syncError,
+        combinedActions, authStatus, user, login, logout, t,
+        autoSyncParams,
+        setActivePortfolioIds,
+    ]);
 
     return (
         <TradeContext.Provider value={value}>
