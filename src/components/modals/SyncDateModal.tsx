@@ -165,6 +165,13 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   // handleFetchRef: always points to the latest handleFetch, avoids stale closure in effects
   const handleFetchRef = useRef<() => void>(() => {});
 
+  // Cancellation token for in-flight broker fetches. Every handleFetch bumps
+  // this; before any post-await setState we check that our ticket still
+  // matches. If the modal was closed (or a newer fetch started) the late
+  // response is dropped silently. Avoids "phantom result pops up after close"
+  // and "setState on unmounted" warnings without touching the service layer.
+  const fetchTokenRef = useRef(0);
+
   // --- Effects ---
   useEffect(() => {
     if (isOpen) {
@@ -187,7 +194,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         }
       }
     } else {
-      // Reset
+      // Reset + invalidate any pending fetch so its late result is discarded.
+      fetchTokenRef.current += 1;
       setStep(1);
       setStatus("idle");
       setTransactions([]);
@@ -195,6 +203,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     }
 
   }, [isOpen, portfolios]);
+
+  // Bump the token on unmount too, in case the parent unmounts us mid-fetch
+  // without going through the close path.
+  useEffect(() => () => { fetchTokenRef.current += 1; }, []);
 
   // 📱 Auto-proceed: backend 從休眠恢復後自動開始同步
   useEffect(() => {
@@ -397,6 +409,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
     setStatus("loading");
     setResultMsg("");
+
+    // Claim a cancellation ticket for this fetch. Any later setState that
+    // would mutate post-close UI checks `token === fetchTokenRef.current`
+    // and drops the update if a newer fetch (or close) has bumped the ref.
+    const token = ++fetchTokenRef.current;
+    const isStale = () => token !== fetchTokenRef.current;
 
     // 🟢 Status Sync: Set to 'checking' (Yellow) or 'online' (Green) to prevent "OFFLINE" contradiction
     // If we are starting a fetch, we assume we are trying to be online.
@@ -895,6 +913,13 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         `✅ [PERF] 步驟3 - 資料處理完成: ${(performance.now() - step3Start).toFixed(0)}ms`,
       );
 
+      // Bail out before committing UI state if the user closed the modal or
+      // kicked off a newer fetch while we were processing.
+      if (isStale()) {
+        console.log('[Sync] fetch superseded — discarding result');
+        return;
+      }
+
       setTransactions(processedTrades);
       setStatus("idle");
 
@@ -927,6 +952,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       );
     } catch (e: any) {
       console.error("Fetch Error:", e);
+      if (isStale()) return;
       setStatus("error");
       setResultMsg(e.message || "同步失敗，請確認後端連線或憑證");
     }

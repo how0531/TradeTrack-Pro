@@ -1,3 +1,4 @@
+import logging
 import os
 import gc
 import time
@@ -11,15 +12,22 @@ import shioaji as sj
 
 
 # ─── Shared Logger ───
+# Delegate to the stdlib logger so container hosts (Render / Docker / k8s)
+# can collect logs through their normal pipeline. A side file is kept for
+# local-machine debugging of the long-running shioaji loop where stdout
+# from a backgrounded process is hard to reach.
+logger = logging.getLogger("tradetrack.backend.pnl")
 _LOG_FILE = os.path.join(os.path.expanduser("~"), "debug_backend.log")
+
 
 def _log(msg):
     try:
         with open(_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now()}] {msg}\n")
-    except:
+    except Exception:
+        # Local file logging is best-effort — never block the request.
         pass
-    print(msg, flush=True)
+    logger.info(msg)
 
 
 def _rss_mb():
