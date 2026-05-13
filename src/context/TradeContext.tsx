@@ -6,7 +6,7 @@ import { useMetrics } from '../hooks/useMetrics';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { detectDuplicates, mergeDuplicates, DuplicateGroup, DetectionOptions } from '../utils/duplicateDetection';
 import { safeDateParse } from '../utils/calculations';
-import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams } from '../types';
+import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams, User } from '../types';
 import { db, resetFirestoreCache } from '../firebaseConfig';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { I18N, THEME } from '../constants';
@@ -107,8 +107,8 @@ interface TradeContextType {
     };
 
     // Auth (exposed for settings)
-    authStatus: string;
-    user: any; // Keep generic for now if User type has issues, or switch to User | null
+    authStatus: 'loading' | 'online' | 'offline';
+    user: User | null;
     login: () => void;
     logout: () => void;
 
