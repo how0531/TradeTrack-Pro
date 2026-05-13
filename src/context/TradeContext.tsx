@@ -220,23 +220,39 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         db,
         data: { trades, strategies, emotions, portfolios, lossColor },
         onPull: async (patches) => {
-            // 增量合併：upsert 差異記錄，而非全量覆蓋
-            if (patches.trades && patches.trades.length > 0) {
-                // 將所有 patch trade 寫入 IndexedDB (bulkPut = upsert)
-                // 軟刪除的記錄也會寫入，因為 useLiveQuery 已設定過濾掉 isDeleted:true
-                await localActions.saveTrades(
-                    patches.trades.map(t => ({
-                        ...t,
-                        updatedAt: t.updatedAt || new Date().toISOString(),
-                        isDeleted: t.isDeleted ?? false,
-                    }))
-                );
+            // 增量合併：upsert 差異記錄，而非全量覆蓋。
+            // Defensive validation — Firestore can race during writes and
+            // produce a doc that is missing fields or has a null id; silently
+            // upserting those into IndexedDB used to give the user "phantom"
+            // trades or worse, drop the primary key and skip writes entirely.
+            if (Array.isArray(patches.trades) && patches.trades.length > 0) {
+                const validTrades = patches.trades.filter(t => {
+                    const ok = !!t && typeof t.id === 'string' && t.id.length > 0;
+                    if (!ok) console.warn('[Sync] dropped malformed pull trade:', t);
+                    return ok;
+                });
+                if (validTrades.length > 0) {
+                    await localActions.saveTrades(
+                        validTrades.map(t => ({
+                            ...t,
+                            updatedAt: t.updatedAt || new Date().toISOString(),
+                            isDeleted: t.isDeleted ?? false,
+                        }))
+                    );
+                }
             }
-            if (patches.strategies) setStrategies(patches.strategies);
-            if (patches.emotions) setEmotions(patches.emotions);
-            if (patches.portfolios) {
-                setPortfolios(patches.portfolios);
-                setActivePortfolioIds(patches.portfolios.map((p: any) => p.id));
+            if (Array.isArray(patches.strategies)) {
+                setStrategies(patches.strategies.filter((s): s is string => typeof s === 'string'));
+            }
+            if (Array.isArray(patches.emotions)) {
+                setEmotions(patches.emotions.filter((e): e is string => typeof e === 'string'));
+            }
+            if (Array.isArray(patches.portfolios)) {
+                const validPortfolios = patches.portfolios.filter(
+                    (p: Portfolio) => !!p && typeof p.id === 'string' && p.id.length > 0
+                );
+                setPortfolios(validPortfolios);
+                setActivePortfolioIds(validPortfolios.map(p => p.id));
             }
             if (patches.settings?.lossColor) setLossColor(patches.settings.lossColor);
         }
@@ -295,56 +311,54 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const data = JSON.parse(event.target?.result as string);
                 if (trades.length > 0) {
                     setPendingImport(data);
-                } else {
-                    // Direct Import
-                    if (data.trades) setTrades(data.trades);
-                    if (data.strategies) setStrategies(data.strategies);
-                    if (data.emotions) setEmotions(data.emotions);
-                    if (data.portfolios && Array.isArray(data.portfolios)) {
-                        setPortfolios(data.portfolios);
-                        const newIds = data.portfolios.map((p: any) => p.id);
-                        setActivePortfolioIds(newIds);
-                    }
-                    if (data.settings && data.settings.lossColor) {
-                        setLossColor(data.settings.lossColor);
-                    }
-
-                    // 檢查是否啟用「匯入後自動合併」
-                    const autoMerge = localStorage.getItem('auto_merge_on_import') === 'true';
-
-                    // 自動檢測重複並提示合併
-                    setTimeout(() => {
-                        const duplicates = detectDuplicates(data.trades || []);
-                        if (duplicates.length > 0) {
-                            const total = duplicates.reduce((sum, group) => sum + group.duplicates.length, 0);
-
-                            // 若啟用自動合併，直接合併不詢問
-                            if (autoMerge) {
-                                const cleaned = mergeDuplicates(data.trades, duplicates);
-                                setTrades(cleaned);
-                                alert(
-                                    lang === 'zh'
-                                        ? `匯入完成！已自動合併 ${total} 筆重複交易。`
-                                        : `Import complete! Auto-merged ${total} duplicates.`
-                                );
-                            } else {
-                                // 未啟用則詢問使用者
-                                if (window.confirm(
-                                    lang === 'zh'
-                                        ? `匯入完成！檢測到 ${total} 筆重複交易，是否要合併？`
-                                        : `Import complete! Found ${total} duplicates. Merge them?`
-                                )) {
-                                    const cleaned = mergeDuplicates(data.trades, duplicates);
-                                    setTrades(cleaned);
-                                }
-                            }
-                        } else {
-                            alert(t.importSuccess);
-                        }
-                    }, 100);
-
-                    setTimeout(triggerCloudBackup, 200);
+                    return;
                 }
+
+                // Direct Import (no existing trades — no conflict modal)
+                if (data.trades) setTrades(data.trades);
+                if (data.strategies) setStrategies(data.strategies);
+                if (data.emotions) setEmotions(data.emotions);
+                if (data.portfolios && Array.isArray(data.portfolios)) {
+                    setPortfolios(data.portfolios);
+                    setActivePortfolioIds(data.portfolios.map((p: Portfolio) => p.id));
+                }
+                if (data.settings?.lossColor) {
+                    setLossColor(data.settings.lossColor);
+                }
+
+                // Duplicate detection runs on the parsed input directly — no need
+                // to wait for React to flush state, so the old setTimeout(...,100)
+                // was a guard for nothing. Same goes for the 200ms cloud-push
+                // delay: scheduleCloudBackup already debounces by 350ms.
+                const autoMerge = localStorage.getItem('auto_merge_on_import') === 'true';
+                const duplicates = detectDuplicates(data.trades || []);
+
+                if (duplicates.length > 0) {
+                    const total = duplicates.reduce((sum, group) => sum + group.duplicates.length, 0);
+                    const shouldMerge =
+                        autoMerge ||
+                        window.confirm(
+                            lang === 'zh'
+                                ? `匯入完成！檢測到 ${total} 筆重複交易，是否要合併？`
+                                : `Import complete! Found ${total} duplicates. Merge them?`
+                        );
+
+                    if (shouldMerge) {
+                        const cleaned = mergeDuplicates(data.trades, duplicates);
+                        setTrades(cleaned);
+                        if (autoMerge) {
+                            alert(
+                                lang === 'zh'
+                                    ? `匯入完成！已自動合併 ${total} 筆重複交易。`
+                                    : `Import complete! Auto-merged ${total} duplicates.`
+                            );
+                        }
+                    }
+                } else {
+                    alert(t.importSuccess);
+                }
+
+                scheduleCloudBackup();
             } catch (err) {
                 console.error(err);
                 alert(t.importError);
@@ -352,54 +366,60 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
         reader.readAsText(file);
         e.target.value = '';
-    }, [trades, lang, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, triggerCloudBackup]);
+    }, [trades, lang, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, scheduleCloudBackup]);
 
     const resolveImportConflict = useCallback((choice: 'merge' | 'overwrite') => {
         if (!pendingImport) return;
         const data = pendingImport;
+        const importedPortfolios: Portfolio[] | null = Array.isArray(data.portfolios) ? data.portfolios : null;
 
-        if (choice === 'overwrite') {
-            if (data.trades) setTrades(data.trades);
-            if (data.strategies) setStrategies(data.strategies);
-            if (data.emotions) setEmotions(data.emotions);
-            if (data.portfolios && Array.isArray(data.portfolios)) {
-                setPortfolios(data.portfolios);
-                const newIds = data.portfolios.map((p: any) => p.id);
-                setActivePortfolioIds(newIds);
+        try {
+            if (choice === 'overwrite') {
+                if (Array.isArray(data.trades)) setTrades(data.trades);
+                if (Array.isArray(data.strategies)) setStrategies(data.strategies);
+                if (Array.isArray(data.emotions)) setEmotions(data.emotions);
+                if (importedPortfolios) {
+                    setPortfolios(importedPortfolios);
+                    setActivePortfolioIds(importedPortfolios.map(p => p.id));
+                }
+                if (data.settings?.lossColor) setLossColor(data.settings.lossColor);
+            } else {
+                // MERGE — last-write-wins on id collision
+                if (Array.isArray(data.trades)) {
+                    const tradeMap = new Map(trades.map(t => [t.id, t]));
+                    data.trades.forEach((t: Trade) => tradeMap.set(t.id, t));
+                    setTrades(
+                        Array.from(tradeMap.values()).sort((a, b) =>
+                            safeDateParse(b.date).getTime() - safeDateParse(a.date).getTime()
+                        )
+                    );
+                }
+                if (Array.isArray(data.strategies)) {
+                    setStrategies(Array.from(new Set([...strategies, ...data.strategies])));
+                }
+                if (Array.isArray(data.emotions)) {
+                    setEmotions(Array.from(new Set([...emotions, ...data.emotions])));
+                }
+                if (importedPortfolios) {
+                    const portMap = new Map(portfolios.map(p => [p.id, p]));
+                    importedPortfolios.forEach(p => portMap.set(p.id, p));
+                    setPortfolios(Array.from(portMap.values()));
+                    setActivePortfolioIds(
+                        Array.from(new Set([...activePortfolioIds, ...importedPortfolios.map(p => p.id)]))
+                    );
+                }
+                if (data.settings?.lossColor) setLossColor(data.settings.lossColor);
             }
-            if (data.settings && data.settings.lossColor) {
-                setLossColor(data.settings.lossColor);
-            }
-        } else {
-            // MERGE LOGIC
-            if (data.trades) {
-                const tradeMap = new Map(trades.map(t => [t.id, t]));
-                data.trades.forEach((t: Trade) => tradeMap.set(t.id, t));
-                const merged = Array.from(tradeMap.values()).sort((a, b) => safeDateParse(b.date).getTime() - safeDateParse(a.date).getTime());
-                setTrades(merged);
-            }
-            if (data.strategies) {
-                const merged = Array.from(new Set([...strategies, ...data.strategies]));
-                setStrategies(merged);
-            }
-            if (data.emotions) {
-                const merged = Array.from(new Set([...emotions, ...data.emotions]));
-                setEmotions(merged);
-            }
-            if (data.portfolios && Array.isArray(data.portfolios)) {
-                const portMap = new Map(portfolios.map(p => [p.id, p]));
-                data.portfolios.forEach((p: Portfolio) => portMap.set(p.id, p));
-                const merged = Array.from(portMap.values());
-                setPortfolios(merged);
-
-                const newActive = Array.from(new Set([...activePortfolioIds, ...data.portfolios.map((p: Portfolio) => p.id)]));
-                setActivePortfolioIds(newActive);
-            }
-            if (data.settings && data.settings.lossColor) setLossColor(data.settings.lossColor);
+            scheduleCloudBackup();
+        } catch (err) {
+            // Don't let a malformed import file crash the React tree. Best-effort
+            // recovery: clear the conflict modal and surface the failure.
+            console.error('Import conflict resolution failed:', err);
+            alert(lang === 'zh' ? '匯入失敗：檔案格式錯誤' : 'Import failed: malformed file');
+        } finally {
+            setPendingImport(null);
         }
-        setPendingImport(null);
-        scheduleCloudBackup();
-    }, [pendingImport, trades, strategies, emotions, portfolios, activePortfolioIds, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, scheduleCloudBackup]);
+    }, [pendingImport, trades, strategies, emotions, portfolios, activePortfolioIds, lang, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, scheduleCloudBackup]);
 
     const resetAllData = useCallback(async (t: Translation) => {
         console.log('🚀 Data Reset Started...');

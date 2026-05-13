@@ -49,6 +49,41 @@ interface SyncDateModalProps {
   onAutoSyncComplete?: () => void;
 }
 
+/**
+ * Trade row enriched with UI state for the sync preview table. We diverge from
+ * the on-disk `Trade` type in a few places (e.g. `selected`, `isDuplicate`,
+ * `sourceKey`) so keeping a dedicated shape avoids the `as any` casts that
+ * used to litter the JSX.
+ */
+interface SyncTransaction {
+  id: string;
+  date: string;
+  orderNo?: string;
+  code: string;
+  pnl: number;
+  price?: number;
+  quantity?: number;
+  side?: 'Buy' | 'Sell';
+  selected: boolean;
+  isDuplicate: boolean;
+  duplicateReason: string;
+  portfolioId: string;
+  strategy: string;
+  emotion: string;
+  /** User-attached tag/emotion picked in the preview table. */
+  tag?: string;
+  note: string;
+  showNoteInput: boolean;
+  raw_yield?: number;
+  category?: string;
+  configId?: string;
+  /** uniqueKey `${configId}|${code}|${idx}` linking the row back to the broker account/portfolio mapping. */
+  sourceKey?: string;
+  entryPrice?: number;
+  exitPrice?: number;
+  points: string;
+}
+
 // --- Internal Component: GlassSelect Moved to common/GlassSelect.tsx ---
 
 // --- Constants & Animations ---
@@ -107,7 +142,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   const [selectedConfigIds, setSelectedConfigIds] = useState<string[]>([]);
   // REMOVED: const [portfolios, setPortfolios] = useState<Portfolio[]>([]); // Use Context
   const [targetPortfolioId, setTargetPortfolioId] = useState<string>("");
-  const [transactions, setTransactions] = useState<any[]>([]); // Need Trade type + selected
+  const [transactions, setTransactions] = useState<SyncTransaction[]>([]);
   const [autoMerge, setAutoMerge] = useLocalStorage("sync_auto_merge", false);
 
   // New: Map specific broker accounts to specific portfolios
@@ -299,7 +334,11 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
   const formatMoney = (val: number) => val.toLocaleString();
 
-  const updateTxField = (id: string, field: string, val: any) => {
+  const updateTxField = <K extends keyof SyncTransaction>(
+    id: string,
+    field: K,
+    val: SyncTransaction[K],
+  ) => {
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, [field]: val } : t)),
     );
@@ -669,7 +708,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           pnl: d.pnl,
           price: d.price,
           quantity: d.quantity,
-          side: d.quantity > 0 ? "Buy" : "Sell",
+          side: (d.quantity > 0 ? "Buy" : "Sell") as 'Buy' | 'Sell',
           selected: true,
           isDuplicate: false,
           duplicateReason: "",
@@ -1470,11 +1509,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                                   value={currentTargetId}
                                   onChange={(val) => {
                                     setAccountPortfolioMap(prev => ({ ...prev, [key]: val }));
-                                    setTransactions(prev => prev.map(t => {
-                                      // @ts-ignore
-                                      if (t.sourceKey === key) return { ...t, portfolioId: val };
-                                      return t;
-                                    }));
+                                    setTransactions(prev => prev.map(t =>
+                                      t.sourceKey === key ? { ...t, portfolioId: val } : t
+                                    ));
                                   }}
                                   options={portfolios.map(p => ({ value: p.id, label: p.name }))}
                                   variant="capsule"
@@ -1669,7 +1706,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                             {/* Tag */}
                             <div className="flex-1 min-w-[60px]">
                               <GlassSelect
-                                value={tx.tag}
+                                value={tx.tag ?? ""}
                                 onChange={(val) =>
                                   updateTxField(tx.id, "tag", val)
                                 }
