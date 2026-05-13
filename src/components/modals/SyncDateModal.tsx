@@ -659,7 +659,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         return {
           id: stableId,
           date: normalizedDate,
-          orderNo: d.orderNo || `unknown-${i}`,
+          // 只儲存真正的券商單號；舊版會 fallback 成 `unknown-${i}`，
+          // 但下次同步時新批次又從 unknown-0 開始發號，導致 Method A
+          // 的 orderNo === orderNo 在兩批之間誤命中、把新交易全部標成
+          // 「已存在」。改成 undefined 後，缺單號的交易會走 Method B
+          // (date + code + pnl + qty + price) 比對。
+          orderNo: isValidOrderNo ? d.orderNo : undefined,
           code: d.code,
           pnl: d.pnl,
           price: d.price,
@@ -775,7 +780,18 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
           const match = existingTrades.find((e) => {
             // --- 方法A: orderNo 比對 ---
-            if (trade.orderNo && e.orderNo && trade.orderNo === e.orderNo) {
+            // 排除舊版寫入的合成單號 `unknown-{i}`：兩批同步都會從 unknown-0
+            // 開始發號，純字串相等比對會錯誤命中。只有真正的券商單號才採用
+            // Method A，否則直接落到 Method B 的內容比對。
+            const tradeHasRealOrderNo =
+              !!trade.orderNo && !trade.orderNo.startsWith('unknown');
+            const existingHasRealOrderNo =
+              !!e.orderNo && !e.orderNo.startsWith('unknown');
+            if (
+              tradeHasRealOrderNo &&
+              existingHasRealOrderNo &&
+              trade.orderNo === e.orderNo
+            ) {
               return true;
             }
 
