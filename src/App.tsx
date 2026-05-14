@@ -9,6 +9,7 @@ import { calculateMetrics, safeDateParse } from './utils/calculations';
 
 // Components (eager — needed for shell render)
 import { Layout } from './components/Layout';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
 // Pages (lazy — split into per-route chunks)
 const StatsPage = lazy(() => import('./pages/StatsPage').then(m => ({ default: m.StatsPage })));
@@ -83,7 +84,9 @@ function MainApp() {
         onResolveSyncConflict,
         conflictStats,
         autoSyncParams,
-        setAutoSyncParams
+        setAutoSyncParams,
+        toast,
+        dismissToast,
     } = useTradeContext();
 
     // 1.5 Auto-Sync URL Parser
@@ -123,9 +126,19 @@ function MainApp() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [detailStrategy, setDetailStrategy] = useState<string | null>(null);
     
-    // Derived state
-    const isDDAlert = Math.abs(metrics.currentDD) >= ddThreshold;
-    const isStreakAlert = riskStreaks.currentLoss >= maxLossStreak;
+    // Risk-alert dismissal: timestamp of "user pressed snooze". We compare it
+    // against now() each render and only suppress alerts within the snooze
+    // window. Replaces the old "set threshold to 99" hack which permanently
+    // killed all future alerts until the user manually re-tuned settings.
+    const ALERT_SNOOZE_MS = 24 * 60 * 60 * 1000; // 24h
+    const [ddDismissedAt, setDdDismissedAt] = useLocalStorage<number>('alert_dd_dismissed_at', 0);
+    const [streakDismissedAt, setStreakDismissedAt] = useLocalStorage<number>('alert_streak_dismissed_at', 0);
+
+    const now = Date.now();
+    const isDDAlertRaw = Math.abs(metrics.currentDD) >= ddThreshold;
+    const isStreakAlertRaw = riskStreaks.currentLoss >= maxLossStreak;
+    const isDDAlert = isDDAlertRaw && now - ddDismissedAt > ALERT_SNOOZE_MS;
+    const isStreakAlert = isStreakAlertRaw && now - streakDismissedAt > ALERT_SNOOZE_MS;
     const isRiskAlert = isDDAlert || isStreakAlert;
     const hasActiveFilters = filteredTrades.length !== trades.length;
 
@@ -179,7 +192,7 @@ function MainApp() {
     }, [detailStrategy, filteredTrades, portfolios, activePortfolioIds, frequency, lang]);
 
     return (
-        <div className={`min-h-[100dvh] bg-[#000000] text-[#E0E0E0] font-sans flex flex-col w-full max-w-full sm:max-w-md mx-auto relative shadow-2xl transition-all duration-700 overflow-x-hidden ${isRiskAlert ? 'shadow-[0_0_50px_rgba(208,90,90,0.3)] border-x border-red-500/20' : ''}`}>
+        <div className={`min-h-[100dvh] bg-[#000000] text-[#E0E0E0] font-sans flex flex-col w-full max-w-full sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl mx-auto relative shadow-2xl transition-all duration-700 overflow-x-hidden ${isRiskAlert ? 'shadow-[0_0_50px_rgba(208,90,90,0.3)] border-x border-red-500/20' : ''}`}>
             
             {/* <div className="fixed inset-0 pointer-events-none z-0 transition-all duration-1000 ease-in-out" style={{ background: moodGradient }} /> */}
 
@@ -195,7 +208,17 @@ function MainApp() {
                              }
                         </span>
                     </div>
-                    <button onClick={() => isDDAlert ? setDdThreshold(99) : setMaxLossStreak(99)} className="text-[10px] text-[#D05A5A] underline opacity-80 hover:opacity-100 font-bold px-2 py-0.5">{lang === 'zh' ? '忽略' : 'Dismiss'}</button>
+                    <button
+                        onClick={() => {
+                            const ts = Date.now();
+                            if (isDDAlert) setDdDismissedAt(ts);
+                            if (isStreakAlert) setStreakDismissedAt(ts);
+                        }}
+                        className="text-[10px] text-[#D05A5A] underline opacity-80 hover:opacity-100 font-bold px-2 py-0.5"
+                        title={lang === 'zh' ? '暫停 24 小時' : 'Snooze 24h'}
+                    >
+                        {lang === 'zh' ? '暫停 24 小時' : 'Snooze 24h'}
+                    </button>
                 </div>
             )}
 
@@ -361,12 +384,28 @@ function MainApp() {
                 stats={conflictStats ?? undefined}
             />
 
-            <ShareModal 
-                isOpen={isShareModalOpen} 
-                onClose={() => setIsShareModalOpen(false)} 
-                metrics={metrics} 
-                lang={lang} 
+            <ShareModal
+                isOpen={isShareModalOpen}
+                onClose={() => setIsShareModalOpen(false)}
+                metrics={metrics}
+                lang={lang}
             />
+
+            {/* Ephemeral toast (auto-dismiss after 4s; click to dismiss sooner) */}
+            {toast && (
+                <button
+                    onClick={dismissToast}
+                    className={`fixed left-1/2 -translate-x-1/2 bottom-28 z-[150] px-4 py-2 rounded-full text-[11px] font-bold tracking-wider backdrop-blur-xl border shadow-lg animate-in slide-in-from-bottom-4 fade-in duration-300 ${
+                        toast.kind === 'success'
+                            ? 'bg-[#5B9A8B]/15 border-[#5B9A8B]/40 text-[#5B9A8B]'
+                            : toast.kind === 'error'
+                              ? 'bg-[#D05A5A]/15 border-[#D05A5A]/40 text-[#D05A5A]'
+                              : 'bg-white/10 border-white/20 text-white'
+                    }`}
+                >
+                    {toast.message}
+                </button>
+            )}
         </div>
     );
 }

@@ -1,6 +1,6 @@
 
 // [Manage] Last Updated: 2024-05-22
-import { useMemo } from 'react';
+import { useMemo, useDeferredValue } from 'react';
 import { Trade, Portfolio, Frequency, Lang, TimeRange } from '../types';
 import { calculateMetrics, calculateStreaks } from '../utils/calculations';
 
@@ -11,10 +11,19 @@ export const useMetrics = (
     frequency: Frequency,
     lang: Lang,
     customRange: { start: string | null, end: string | null },
-    filterStrategy: string[],
-    filterEmotion: string[],
-    timeRange: TimeRange
+    filterStrategyInput: string[],
+    filterEmotionInput: string[],
+    timeRangeInput: TimeRange,
 ) => {
+    // useDeferredValue lets React keep the old metrics on screen while the
+    // expensive recompute runs in the background. Without it, switching a
+    // strategy/emotion/time-range filter unmounts the chart for ~200-500 ms
+    // on big trade sets, producing the "blank flash → redraw" jank the user
+    // complained about. The filter chips themselves stay responsive because
+    // they read the raw input, not the deferred copy.
+    const filterStrategy = useDeferredValue(filterStrategyInput);
+    const filterEmotion = useDeferredValue(filterEmotionInput);
+    const timeRange = useDeferredValue(timeRangeInput);
     // 1. Filter Trades (Expensive)
     const filteredTrades = useMemo(() => {
         // 1. Filter by Portfolio

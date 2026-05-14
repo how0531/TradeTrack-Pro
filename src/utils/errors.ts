@@ -181,6 +181,82 @@ export function getUserFriendlyErrorMessage(error: Error, lang: 'zh' | 'en' = 'z
 }
 
 /**
+ * Map an arbitrary thrown value (string / Error / unknown) to a user-friendly
+ * message. Use this at every UI catch site to avoid leaking raw engineering
+ * strings ("Job status polling failed", "Failed to fetch", "AbortError",
+ * Shioaji tracebacks…) to end users.
+ */
+export function friendlyMessage(err: unknown, lang: 'zh' | 'en' = 'zh'): string {
+  // Typed errors first — preserve the existing detailed handling.
+  if (err instanceof BrokerConnectionError || err instanceof BrokerAuthError
+      || err instanceof BrokerAPIError || err instanceof ValidationError) {
+    return getUserFriendlyErrorMessage(err, lang);
+  }
+
+  const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  const lower = raw.toLowerCase();
+  const zh = lang === 'zh';
+
+  // Network / abort
+  if (lower.includes('failed to fetch') || lower.includes('networkerror')) {
+    return zh ? '網路連線中斷，請確認網路後重試。' : 'Network unavailable. Please check your connection and retry.';
+  }
+  if (lower.includes('aborterror') || lower.includes('aborted')) {
+    return zh ? '請求被取消。' : 'Request was cancelled.';
+  }
+
+  // Backend cold start / hibernation
+  if (lower.includes('hibernat') || lower.includes('cold start')
+      || lower.includes('冷啟動') || lower.includes('喚醒')) {
+    return zh
+      ? '後端正在喚醒中（首次啟動約需 30 秒），請稍候再試。'
+      : 'Backend is waking up (first-boot takes ~30s). Please retry shortly.';
+  }
+
+  // HTTP-ish gateway codes that bubble up as strings
+  if (/\b50[234]\b/.test(raw)) {
+    return zh
+      ? '後端暫時無法回應（HTTP 502/503/504），通常數十秒內會自動恢復。'
+      : 'Backend temporarily unavailable (HTTP 502/503/504). Usually recovers in seconds.';
+  }
+  if (/\b401\b/.test(raw)) {
+    return zh ? '帳號驗證失敗，請重新登入。' : 'Authentication failed. Please sign in again.';
+  }
+  if (/\b403\b/.test(raw)) {
+    return zh ? '權限不足，無法存取此資源。' : 'You do not have permission for this resource.';
+  }
+
+  // Polling failures emitted by brokerService
+  if (lower.includes('polling') || lower.includes('job status')) {
+    return zh
+      ? '同步任務查詢失敗，後端可能正在重啟。請 30 秒後重試。'
+      : 'Sync job lookup failed; the backend may be restarting. Retry in 30 seconds.';
+  }
+
+  // Shioaji / broker-specific signals
+  if (lower.includes('ca') && (lower.includes('expired') || lower.includes('過期') || lower.includes('未啟動'))) {
+    return zh
+      ? '券商憑證已過期或未啟動，請至「設定」重新上傳 .pfx 檔案。'
+      : 'Broker certificate expired or inactive. Re-upload the .pfx file in Settings.';
+  }
+  if (lower.includes('begin_date') || lower.includes('incorrect type')) {
+    return zh
+      ? '日期範圍超過券商允許上限（證券 90 天）。請改用較短的區間。'
+      : 'Date range exceeds broker limit (90 days for stocks). Try a shorter range.';
+  }
+
+  // Permission denied from Firebase
+  if (lower.includes('permission-denied') || lower.includes('permission denied')) {
+    return zh
+      ? '雲端權限不足，請確認已用同一個 Google 帳號登入。'
+      : 'Cloud permission denied. Make sure you signed in with the same Google account.';
+  }
+
+  // Fall back to the raw message; if there is none, supply a generic one.
+  return raw || (zh ? '發生未知錯誤，請稍後重試。' : 'An unknown error occurred. Please try again.');
+}
+
+/**
  * 判斷錯誤是否可重試
  */
 export function isRetryableError(error: Error): boolean {

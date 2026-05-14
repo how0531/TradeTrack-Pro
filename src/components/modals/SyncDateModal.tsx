@@ -37,6 +37,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { useTradeContext } from "../../context/TradeContext";
 import { useBackend } from "../../context/BackendContext";
 import { getCache, setCache } from "../../utils/cache";
+import { friendlyMessage } from "../../utils/errors";
 
 // --- Interfaces ---
 interface SyncDateModalProps {
@@ -954,7 +955,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       console.error("Fetch Error:", e);
       if (isStale()) return;
       setStatus("error");
-      setResultMsg(e.message || "同步失敗，請確認後端連線或憑證");
+      setResultMsg(friendlyMessage(e, lang));
     }
   };
 
