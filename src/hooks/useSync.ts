@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, onSnapshot, Timestamp, Firestore } from 'firebase/firestore';
 import { useLocalStorage } from './useLocalStorage';
 import { SyncStatus, User, Trade, Portfolio } from '../types';
+import { friendlyMessage } from '../utils/errors';
 import {
   pushTrades,
   pullTrades,
@@ -199,8 +200,9 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     } catch (e: any) {
       console.error('[Sync] Backup failed:', e);
       setSyncStatus('error');
-      setSyncError(e.message || 'Unknown error');
-      return { success: false, error: e.message || 'Unknown error' };
+      const msg = friendlyMessage(e);
+      setSyncError(msg);
+      return { success: false, error: msg };
     } finally {
       setIsSyncing(false);
       inFlightPushRef.current = false;
@@ -232,8 +234,9 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     } catch (e: any) {
       console.error('[Sync] Manual pull failed:', e);
       setSyncStatus('error');
-      setSyncError(e.message || 'Unknown error');
-      return { success: false, error: e.message || 'Unknown error' };
+      const msg = friendlyMessage(e);
+      setSyncError(msg);
+      return { success: false, error: msg };
     }
   }, [user, authStatus, doPull, onPull, saveSyncTime]);
 
@@ -283,7 +286,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         } catch (e) {
           console.error('[Sync] Auto-pull failed:', e);
           setSyncStatus('error');
-          setSyncError((e as any)?.message || 'Pull failed');
+          setSyncError(friendlyMessage(e));
         }
       } else {
         setSyncStatus('synced');
@@ -292,7 +295,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     }, (err) => {
       console.error('[Sync] onSnapshot error:', err);
       setSyncStatus('error');
-      setSyncError(err.message || 'Permission denied or network issue');
+      setSyncError(friendlyMessage(err));
     });
 
     return () => unsubscribe();

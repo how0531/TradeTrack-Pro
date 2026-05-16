@@ -7,7 +7,7 @@ import { TradeModalProps, Trade } from '../../types';
 import { I18N, THEME } from '../../constants';
 import { StrategyChipsInput, EmotionChipsInput, PortfolioChipsInput } from '../../components/form/ChipInputs';
 import html2canvas from 'html2canvas';
-import { formatCompactNumber, formatDecimal } from '../../utils/format';
+import { formatCompactNumber, formatDecimal, getLocalDateStr } from '../../utils/format';
 import { vibrate } from '../../utils/haptics';
 
 type DisplayMode = 'amount' | 'percent' | 'hidden';
@@ -20,6 +20,19 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
     if (!isOpen) return null;
     const { strategies, emotions, portfolios, lang, metrics } = useTradeContext();
     const t = I18N[lang] || I18N['zh'];
+
+    // Capture the original portfolioId when the modal opens so we can warn
+    // the user if they accidentally re-route an existing trade to a different
+    // portfolio while editing. Reset whenever we open with a different trade.
+    const originalPortfolioIdRef = React.useRef<string | null>(null);
+    React.useEffect(() => {
+        if (isOpen) originalPortfolioIdRef.current = form.portfolioId ?? null;
+    }, [isOpen, form.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    const originalPortfolio = isEditing && originalPortfolioIdRef.current
+        ? portfolios.find(p => p.id === originalPortfolioIdRef.current)
+        : null;
+    const portfolioChanged = isEditing && originalPortfolio
+        && form.portfolioId !== originalPortfolioIdRef.current;
 
     // ── C3: beforeunload 防護 — 表單有未儲存資料時阻止離開 ──
     React.useEffect(() => {
@@ -415,20 +428,63 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                         
                         {/* GLASS CHIPS: PORTFOLIO SELECTOR */}
                         <div>
-                            <label className="text-[10px] font-bold uppercase text-slate-500 mb-1.5 ml-1 block">{t.portfolio}</label>
+                            <label className="text-[10px] font-bold uppercase text-slate-500 mb-1.5 ml-1 block">
+                                {t.portfolio} <span className="text-[#D05A5A]" aria-label="required">*</span>
+                                {isEditing && originalPortfolio && (
+                                    <span className="ml-2 text-slate-500 normal-case font-normal">
+                                        {lang === 'zh' ? '原本：' : 'Originally: '}
+                                        <span className={portfolioChanged ? 'text-[#D05A5A] font-bold' : 'text-slate-400'}>
+                                            {originalPortfolio.name}
+                                        </span>
+                                        {portfolioChanged && (
+                                            <button
+                                                type="button"
+                                                onClick={() => updateForm('portfolioId', originalPortfolioIdRef.current || '')}
+                                                className="ml-2 text-[9px] underline text-slate-400 hover:text-white"
+                                            >
+                                                {lang === 'zh' ? '還原' : 'Revert'}
+                                            </button>
+                                        )}
+                                    </span>
+                                )}
+                            </label>
                             <PortfolioChipsInput portfolios={portfolios} value={form.portfolioId || (portfolios[0]?.id || '')} onChange={(val) => updateForm('portfolioId', val)} />
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 ml-1 block">Date</label>
-                            <input 
-                                type="date" 
-                                required 
-                                value={form.date} 
-                                onChange={e => updateForm('date', e.target.value)} 
-                                className="w-full h-[40px] px-3 rounded-lg bg-white/5 border border-white/10 text-base text-white font-barlow-numeric outline-none focus:border-white/20 focus:bg-white/10 transition-colors backdrop-blur-sm text-center appearance-none"
-                                style={{ WebkitAppearance: 'none' }} // Fix for iOS Safari appearance
-                            />
+                            <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 ml-1 block">
+                                {lang === 'zh' ? '日期' : 'Date'} <span className="text-[#D05A5A]" aria-label="required">*</span>
+                            </label>
+                            <div className="flex gap-2 items-stretch">
+                                <input
+                                    type="date"
+                                    required
+                                    value={form.date}
+                                    onChange={e => updateForm('date', e.target.value)}
+                                    className="flex-1 h-[40px] px-3 rounded-lg bg-white/5 border border-white/10 text-base text-white font-barlow-numeric outline-none focus:border-white/20 focus:bg-white/10 transition-colors backdrop-blur-sm text-center appearance-none"
+                                    style={{ WebkitAppearance: 'none' }} // Fix for iOS Safari appearance
+                                />
+                                {/* Quick-pick chips: avoid the slow native month picker for the common case. */}
+                                <button
+                                    type="button"
+                                    onClick={() => { updateForm('date', getLocalDateStr()); vibrate('selection'); }}
+                                    className="px-3 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                                >
+                                    {lang === 'zh' ? '今天' : 'Today'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const d = new Date();
+                                        d.setDate(d.getDate() - 1);
+                                        updateForm('date', getLocalDateStr(d));
+                                        vibrate('selection');
+                                    }}
+                                    className="px-3 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                                >
+                                    {lang === 'zh' ? '昨天' : 'Yest.'}
+                                </button>
+                            </div>
                         </div>
 
                         <div className="flex gap-2 items-center bg-white/5 p-1 rounded-xl border border-white/5">

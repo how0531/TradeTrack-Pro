@@ -102,6 +102,10 @@ interface TradeContextType {
         handleImportJSON: (e: React.ChangeEvent<HTMLInputElement>, t: Translation) => void;
         resolveImportConflict: (choice: 'merge' | 'overwrite') => void;
         isImportModalOpen: boolean;
+        /** Pre-computed: trades from the incoming import that collide by id with an existing trade. */
+        importConflicts: Array<{ incoming: Trade; existing: Trade }>;
+        /** Total trade count in the incoming import file. */
+        incomingImportCount: number;
         detectDuplicates: (options?: DetectionOptions) => DuplicateGroup[];
         removeDuplicates: () => void;
     };
@@ -118,6 +122,10 @@ interface TradeContextType {
     // Auto Execution
     autoSyncParams: AutoSyncParams | null;
     setAutoSyncParams: React.Dispatch<React.SetStateAction<AutoSyncParams | null>>;
+
+    // Ephemeral toast (auto-dismisses); null when nothing to show.
+    toast: { kind: 'info' | 'success' | 'error'; message: string } | null;
+    dismissToast: () => void;
 }
 
 const TradeContext = createContext<TradeContextType | undefined>(undefined);
@@ -209,6 +217,15 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [autoSyncParams, setAutoSyncParams] = useState<AutoSyncParams | null>(null);
+
+    // Lightweight ephemeral toast — used to give visible confirmation of
+    // background operations the user kicked off (e.g. smart-merge result).
+    // Replaces the previous "modal closes silently, hope it worked" UX.
+    const [toast, setToast] = useState<{ kind: 'info' | 'success' | 'error'; message: string } | null>(null);
+    const showToast = useCallback((kind: 'info' | 'success' | 'error', message: string) => {
+        setToast({ kind, message });
+        window.setTimeout(() => setToast(prev => (prev && prev.message === message ? null : prev)), 4000);
+    }, []);
 
     // 5. Sync Logic
     const {
@@ -462,11 +479,11 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const onResolveSyncConflict = async (choice: 'cloud' | 'local' | 'merge') => {
         if (choice === 'cloud') {
-            // Use cloud version: pull cloud data and overwrite local
             await manualPull();
+            showToast('success', lang === 'zh' ? '已套用雲端版本' : 'Applied cloud version');
         } else if (choice === 'local') {
-            // Use local version: push local to cloud
             await triggerCloudBackup();
+            showToast('success', lang === 'zh' ? '已上傳本機版本' : 'Pushed local version to cloud');
         } else {
             // Smart merge: combine both sides by id, then dedup
             try {
@@ -480,14 +497,13 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 const cloudStrategies: string[] = docSnap.exists() ? (docSnap.data()?.strategies || []) : [];
                 const cloudEmotions: string[] = docSnap.exists() ? (docSnap.data()?.emotions || []) : [];
 
-                // Merge trades by id (local takes priority for same id)
                 const tradeMap = new Map<string, Trade>();
                 cloudTrades.forEach(t => tradeMap.set(t.id, t));
-                trades.forEach(t => tradeMap.set(t.id, t)); // Local overwrites cloud for same id
+                trades.forEach(t => tradeMap.set(t.id, t));
                 const mergedTrades = Array.from(tradeMap.values());
 
-                // Dedup
                 const groups = detectDuplicates(mergedTrades);
+                const dedupedCount = groups.reduce((sum, g) => sum + g.duplicates.length, 0);
                 const cleanedTrades = groups.length > 0 ? mergeDuplicates(mergedTrades, groups) : mergedTrades;
                 setTrades(cleanedTrades);
 
@@ -520,14 +536,36 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 await setDoc(doc(db, 'users', user.uid), JSON.parse(JSON.stringify(rawData, (_, v) => v === undefined ? null : v)));
                 setSyncStatus('synced');
                 setLastSyncTimeStr(now.toISOString());
+                showToast(
+                    'success',
+                    lang === 'zh'
+                        ? `合併完成：${cleanedTrades.length} 筆${dedupedCount > 0 ? `（已去除 ${dedupedCount} 筆重複）` : ''}`
+                        : `Merge complete: ${cleanedTrades.length} trades${dedupedCount > 0 ? ` (${dedupedCount} duplicates removed)` : ''}`
+                );
             } catch (error) {
                 console.error('Smart merge failed:', error);
-                // Fallback: just push local to cloud
                 await triggerCloudBackup();
+                showToast('error', lang === 'zh' ? '合併失敗，已退回上傳本機版本' : 'Merge failed, fell back to pushing local version');
             }
         }
         setIsSyncModalOpen(false);
     };
+
+    // Pre-compute conflicts so the ImportConflictModal can render a preview
+    // without dipping into pendingImport (which is intentionally private).
+    const importConflicts = useMemo(() => {
+        if (!pendingImport || !Array.isArray(pendingImport.trades)) return [];
+        const existingById = new Map(trades.map(t => [t.id, t]));
+        const out: Array<{ incoming: Trade; existing: Trade }> = [];
+        for (const incoming of pendingImport.trades as Trade[]) {
+            const existing = incoming?.id ? existingById.get(incoming.id) : undefined;
+            if (existing) out.push({ incoming, existing });
+        }
+        return out;
+    }, [pendingImport, trades]);
+    const incomingImportCount = pendingImport && Array.isArray(pendingImport.trades)
+        ? pendingImport.trades.length
+        : 0;
 
     // Combine Actions — memoised so consumers depending on `actions` keep a stable
     // reference across re-renders that don't actually change the action surface.
@@ -537,6 +575,8 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         handleImportJSON,
         resolveImportConflict,
         isImportModalOpen: !!pendingImport,
+        importConflicts,
+        incomingImportCount,
         // Wrap actions that should trigger sync
         saveTrade: (t: Trade, id: string | null) => { localActions.saveTrade(t, id); scheduleCloudBackup(); },
         saveTrades: (ts: (Omit<Trade, 'id' | 'timestamp'> & { id?: string; timestamp?: string })[]) => { localActions.saveTrades(ts); scheduleCloudBackup(); },
@@ -564,7 +604,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             setTrades(cleaned);
             scheduleCloudBackup();
         },
-    }), [localActions, resetAllData, handleImportJSON, resolveImportConflict, pendingImport, scheduleCloudBackup, setActivePortfolioIds, setTrades, trades]);
+    }), [localActions, resetAllData, handleImportJSON, resolveImportConflict, pendingImport, scheduleCloudBackup, setActivePortfolioIds, setTrades, trades, importConflicts, incomingImportCount]);
 
     const t = useMemo(() => I18N[lang] || I18N['zh'], [lang]);
 
@@ -602,7 +642,9 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         actions: combinedActions,
         authStatus, user, login, logout,
         t,
-        autoSyncParams, setAutoSyncParams
+        autoSyncParams, setAutoSyncParams,
+        toast,
+        dismissToast: () => setToast(null),
     }), [
         trades, strategies, emotions, portfolios,
         activePortfolioIds, currentMonth,
@@ -617,6 +659,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         combinedActions, authStatus, user, login, logout, t,
         autoSyncParams,
         setActivePortfolioIds,
+        toast,
     ]);
 
     return (

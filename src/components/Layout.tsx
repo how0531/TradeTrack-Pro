@@ -1,9 +1,10 @@
 
 import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, Eye, EyeOff } from 'lucide-react';
 import { I18N } from '../constants';
 import { Lang } from '../types';
+import { useTradeContext } from '../context/TradeContext';
 
 interface LayoutProps {
     lang: Lang;
@@ -14,6 +15,7 @@ export const Layout: React.FC<LayoutProps> = ({ lang, onFabClick }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const t = I18N[lang] || I18N['zh'];
+    const { hideAmounts, setHideAmounts } = useTradeContext();
 
     const getActiveTab = () => {
         const path = location.pathname;
@@ -32,6 +34,22 @@ export const Layout: React.FC<LayoutProps> = ({ lang, onFabClick }) => {
             <div className="flex-1 relative w-full">
                 <Outlet />
             </div>
+
+            {/* Persistent Privacy Blur toggle — available on every route so
+                the user can mask amounts before a screenshot without hunting
+                through a menu. Pinned top-right, tucked away from primary nav. */}
+            <button
+                onClick={() => setHideAmounts(!hideAmounts)}
+                aria-label={lang === 'zh' ? (hideAmounts ? '顯示金額' : '隱藏金額') : (hideAmounts ? 'Show amounts' : 'Hide amounts')}
+                title={lang === 'zh' ? (hideAmounts ? '顯示金額' : '隱藏金額（截圖友善）') : (hideAmounts ? 'Show amounts' : 'Hide amounts (screenshot-friendly)')}
+                className={`fixed top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-colors ${
+                    hideAmounts
+                        ? 'bg-[#C8B085]/20 border-[#C8B085]/40 text-[#C8B085]'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
+                }`}
+            >
+                {hideAmounts ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
 
             {/* PREMIUM FLOATING NAVIGATION BAR */}
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-48px)] max-w-[350px] pointer-events-none h-16">

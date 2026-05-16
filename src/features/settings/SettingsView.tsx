@@ -285,6 +285,24 @@ const AccountRow = ({
     // S1: inline delete confirmation 取代 window.confirm
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+    // Resolve which broker accounts the user has mapped to this portfolio
+    // via SyncDateModal, so the card shows "綁定：永豐 9162673（現股）"
+    // and the user can tell at a glance which real account it represents.
+    // accountPortfolioMap key format: `${configId}|${code}|${subIdx}`.
+    const { brokerConfigs, lang: ctxLang } = useTradeContext();
+    const [accountMap] = useLocalStorage<Record<string, string>>('account_portfolio_map_v2', {});
+    const linkedAccounts = React.useMemo(() => {
+        const out: string[] = [];
+        for (const [key, pid] of Object.entries(accountMap)) {
+            if (pid !== portfolio.id) continue;
+            const [configId, code] = key.split('|');
+            const cfg = brokerConfigs.find(c => c.id === configId);
+            const broker = cfg?.alias || cfg?.brokerUsername || (ctxLang === 'zh' ? '券商' : 'Broker');
+            out.push(code ? `${broker} ${code}` : broker);
+        }
+        return out;
+    }, [accountMap, brokerConfigs, portfolio.id, ctxLang]);
+
     // S1: 自動取消確認（2 秒後不操作就收回）
     React.useEffect(() => {
         if (!showDeleteConfirm) return;
@@ -332,6 +350,19 @@ const AccountRow = ({
                             <Edit2 size={10} className="opacity-0 group-hover/edit:opacity-100 text-[#C8B085]/70 transition-opacity" />
                         </div>
                         <span className="text-xs text-zinc-500 font-mono tracking-tight mt-0.5">{Number(portfolio.initialCapital).toLocaleString()}</span>
+                        {linkedAccounts.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                                {linkedAccounts.map((label, idx) => (
+                                    <span
+                                        key={idx}
+                                        className="text-[9px] font-mono tracking-tight px-1.5 py-0.5 rounded bg-[#C8B085]/10 border border-[#C8B085]/20 text-[#C8B085]/80"
+                                        title={ctxLang === 'zh' ? '綁定的券商帳號' : 'Linked broker account'}
+                                    >
+                                        {label}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -513,8 +544,15 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
         availableStrategies: strategies, availableEmotions: emotions,
         brokerConfigs, activeBrokerId, setActiveBrokerId, updateBrokerConfig, addBrokerConfig, deleteBrokerConfig,
         lossColor, setLossColor, ddThreshold, setDdThreshold, maxLossStreak, setMaxLossStreak,
-        isSyncModalOpen: isImportModalOpen
     } = useTradeContext();
+    // Previously this destructure aliased `isSyncModalOpen` to
+    // `isImportModalOpen`, which meant the ImportConflictModal popped up on
+    // *cloud sync* conflicts (wrong modal at the wrong time) and never on
+    // the actual JSON-import conflict. Pull the real flag + conflict preview
+    // data from `actions` where they live.
+    const isImportModalOpen = actions.isImportModalOpen;
+    const importConflicts = actions.importConflicts;
+    const incomingImportCount = actions.incomingImportCount;
 
 
     const t = I18N[lang] || I18N['zh'];
@@ -1032,6 +1070,8 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                     isOpen={isImportModalOpen}
                     onResolve={actions.resolveImportConflict}
                     lang={lang}
+                    conflicts={importConflicts}
+                    incomingTotal={incomingImportCount}
                 />
             )}
         </div>
