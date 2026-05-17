@@ -153,7 +153,11 @@ python app.py
 ALLOWED_ORIGINS=https://your-frontend.example.com python app.py
 ```
 
-詳細登入流程、錯誤處理與雲端佈署請參考 [docs/BACKEND_FLOW.md](./docs/BACKEND_FLOW.md)。
+詳細登入流程與錯誤處理請參考 [docs/BACKEND_FLOW.md](./docs/BACKEND_FLOW.md)。
+
+## 部署
+
+前端是靜態 SPA（`dist/`），後端是 Flask 程序（僅券商同步需要）。**Zeabur / Render / Netlify 的設定差異與常見雷（特別是 Zeabur 讀 `zbpack.json` 而非 `zeabur.json` 導致的 502）請務必先看 [docs/DEPLOY.md](./docs/DEPLOY.md)。**
 
 ## NPM Scripts
 
