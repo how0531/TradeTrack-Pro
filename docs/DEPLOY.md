@@ -15,54 +15,58 @@ directly from the broker.
 
 ## ⚠️ The Zeabur trap (read this first)
 
-**Zeabur's build system is `zbpack`. It reads `zbpack.json`. It does NOT
-read a file called `zeabur.json`.**
+**The fix that actually holds: deploy Zeabur from the `Dockerfile`.**
+Everything below explains why zbpack auto-detection (`zeabur.json` /
+`zbpack.json`) was unreliable and kept flipping the site between 502 and
+a blank screen.
 
-A `zeabur.json` with `build_type: static` looks plausible but is silently
-ignored. When no valid static config is found, zbpack auto-detects the
-project, sees a `start` script in `package.json`, and deploys the SPA as a
-**long-running Node service** (`serve -s dist -l ...$PORT`). That makes a
-static site depend on a Node process staying alive and bound to the right
-port — every redeploy / restart / free-tier sleep then yields:
+zbpack auto-detection is unreliable here: a `zeabur.json` with
+`build_type: static` is silently ignored, and even `zbpack.json` with
+`output_dir` competes with the `start` script in `package.json`. When
+zbpack classifies the project as a **serverful Node app** it runs
+`npm start` (`serve -s dist -l ...$PORT`), the SPA then depends on a Node
+process staying alive and bound to the right port, and every redeploy /
+restart / free-tier sleep yields:
 
 ```
 502: SERVICE_UNAVAILABLE — 沒有監聽正確的 Port
 ```
 
-### Correct Zeabur config
+### Authoritative config: the `Dockerfile`
 
-`zbpack.json` at the repo root (already committed):
+A `Dockerfile` at the repo root **takes precedence over all zbpack/
+buildpack auto-detection** on Zeabur (and Render, and any Docker-aware
+host). It removes every "static vs serverful / which port" guess.
 
-```json
-{
-  "build_command": "VITE_API_URL=https://tradetrack-pro.onrender.com npm install && npm run build",
-  "output_dir": "dist"
-}
-```
+The committed `Dockerfile` is a multi-stage build:
 
-`output_dir` is the key line: its presence tells zbpack to deploy the
-build output as a **true static site** (served by Zeabur's edge/Caddy) —
-no Node process, no port binding, nothing to keep alive.
+1. `node:20-alpine` → `npm ci` → `npm run build` (with
+   `VITE_API_URL` baked in via `ARG`/`ENV`)
+2. `nginx:alpine` serves `dist/` with SPA fallback
+   (`try_files … /index.html`) and immutable asset caching
+
+It listens on `${PORT}` via the official nginx image's envsubst template
+mechanism (defaults to 80), so it works whether the host routes to the
+EXPOSEd port or injects a dynamic `$PORT`.
+
+> Do **not** re-add `zeabur.json` or `zbpack.json`. With a `Dockerfile`
+> present they are ignored; keeping them only invites the old confusion.
+> The `Dockerfile` is the single source of truth for container hosts.
 
 ### After deploying — verify in the Zeabur dashboard
 
-`zbpack.json` only wins if the dashboard has **not** been manually
-overridden. After a redeploy, check the service:
+The `Dockerfile` only wins if the dashboard service hasn't been pinned to
+a non-Docker build type. After a redeploy, check the **Build log**:
 
-- ✅ Deployment type shows **Static** (no "running process" / port info)
-  → fixed, 502 gone.
-- ❌ Still shows **Service** / has a port → the dashboard has a manual
-  override that beats `zbpack.json`. zbpack.json cannot fix this. You
-  must either change the service to a Static deployment in the Zeabur
-  panel, or delete and recreate it as a fresh Git service so it
-  re-detects from `zbpack.json`.
-
-If a redeploy still 502s, grab the Zeabur **Build / Deployment log** and
-look for whether it says it detected a static site vs. "starting service
-/ npm start" — that distinguishes "zbpack.json not picked up" from
-"dashboard override".
-
-> Do **not** re-add `zeabur.json`. Nothing reads it; it only misleads.
+- ✅ Log shows it building **from the Dockerfile** (`node:20-alpine`,
+  `nginx:alpine` stages) → fixed.
+- ❌ Log shows `npm start` / zbpack Node detection / "starting service"
+  → the dashboard has a manual override beating the Dockerfile. Fix in
+  the Zeabur panel: set the service build type to **Dockerfile**, or
+  delete and recreate it as a fresh Git service so it re-detects.
+- ❓ No new deployment at all → Zeabur isn't auto-deploying from `main`;
+  trigger a manual redeploy and/or wire up the Git auto-deploy hook.
+  (If nothing in the repo ever seems to take effect, this is why.)
 
 ---
 
@@ -119,7 +123,7 @@ Client-side routing (react-router) needs the host to fall back to
 |---|---|---|
 | Netlify | `public/_redirects` | ✅ configured |
 | Render | `env: static` handles SPA | ✅ default |
-| Zeabur | static deploy serves `index.html` fallback for SPA frameworks | ✅ via `zbpack.json` static mode |
+| Zeabur | nginx `try_files … /index.html` in the Dockerfile | ✅ via Dockerfile |
 
 If sub-route refresh 404s on Zeabur after the 502 is resolved, that is a
 separate (secondary) SPA-fallback issue — revisit Zeabur static SPA
