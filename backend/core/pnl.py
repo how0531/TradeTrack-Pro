@@ -189,7 +189,14 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
                 )
             return api.list_profit_loss(target_account, chunk_start_dt, chunk_end_dt)
 
-        primary_use_str = is_futures  # 期貨用 str，其餘用 date
+        # Shioaji type signature for list_profit_loss has drifted across
+        # versions. Historically stock accounts wanted datetime.date and
+        # futures wanted str. But Shioaji 1.3.3 rejects a date for stock
+        # accounts too — "argument 'begin_date': 'date' object is not an
+        # instance of 'str'" — i.e. it now wants `str` for BOTH. So we send
+        # `str` by default and keep the swap-and-retry as forward/backward
+        # compat for any version that flips back to wanting date.
+        primary_use_str = True
 
         # ── Bug B 修復 (v3.7.1) ──
         # 證券帳戶 list_profit_loss 對單次呼叫的日期區間有 ~90 天上限，
@@ -223,8 +230,12 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
                 if "406" in err_str or "Account Not Acceptable" in err_str:
                     _log(f"ℹ️ [Skip 406] {acc_id} {chunk_label} not supported")
                     chunk_data = []
-                elif "incorrect type" in err_str.lower() or "expected" in err_str.lower():
-                    # Shioaji 改了型別簽名，交換型別再試一次
+                elif any(s in err_str.lower() for s in ("incorrect type", "expected", "not an instance", "instance of")):
+                    # Shioaji 改了型別簽名（1.3.3 用 "... is not an instance of
+                    # 'str'" 措辭），交換型別再試一次。
+                    # 注意：此分支必須在下面的 "date" 分支之前 —— 型別錯誤訊息
+                    # 含 "begin_date" 會誤觸 date 分支，導致回傳誤導性的
+                    # 「日期範圍無效」而非真正交換型別重試。
                     _log(f"⚠️ [Type Swap] {acc_id} {chunk_label} primary({'str' if primary_use_str else 'date'}) failed: {api_e}; retrying swapped")
                     try:
                         chunk_data = _call_pnl(chunk_start, chunk_end, use_str=not primary_use_str)
