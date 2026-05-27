@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
 import os
+import re
 
 # ─── Logging ──────────────────────────────────────────────────────────────
 # Single source of truth for all backend output. Render / Docker tail stdout,
@@ -29,14 +30,36 @@ except ImportError:
 
 app = Flask(__name__)
 
-# CORS: read allowed origins from env (comma-separated). Falls back to a safe
-# localhost-only allowlist instead of the previous wildcard "*", which let any
-# site call this backend with the user's session.
-_allowed_origins_raw = os.environ.get(
-    "ALLOWED_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173",
-)
-_allowed_origins = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
+# CORS.
+# Auth model note: every /api/broker/* request carries the user's own broker
+# credentials (apiKey/secret/personId/caPassword/.pfx) in the request body —
+# there is no server-side cookie/session. So the Origin allowlist provides
+# little real security (an attacker still needs the user's own credentials),
+# but a too-strict allowlist silently breaks every deployed frontend with a
+# CORS error that surfaces as "backend won't wake".
+#
+# Therefore:
+#   - If ALLOWED_ORIGINS is set, honour it exactly (operator full control).
+#   - Otherwise default to a generous set covering THIS app's own hosting
+#     targets — localhost (dev) plus regexes for Netlify (incl. dynamic
+#     deploy-preview-* URLs), Zeabur and Render — instead of localhost-only,
+#     which was blocking production/preview frontends.
+_allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "").strip()
+if _allowed_origins_env:
+    _allowed_origins = [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
+else:
+    _allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        # Any *.netlify.app subdomain — covers all the app's Netlify sites
+        # (tradetrack1 / tradetrack888 / tttttt8888) and dynamic
+        # deploy-preview-N--<site>.netlify.app URLs in one pattern.
+        re.compile(r"^https://[a-z0-9-]+\.netlify\.app$"),
+        re.compile(r"^https://[a-z0-9-]+\.zeabur\.app$"),
+        re.compile(r"^https://[a-z0-9-]+\.onrender\.com$"),
+    ]
 CORS(app, resources={r"/*": {"origins": _allowed_origins}}, supports_credentials=True)
 logger.info("CORS allowed origins: %s", _allowed_origins)
 
