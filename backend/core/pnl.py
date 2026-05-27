@@ -300,17 +300,28 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
                     price = round(float(getattr(item, "price", 0)), 4)
                     pr_ratio_val = round(float(getattr(item, "pr_ratio", 0)) * 100, 2)
 
+                # Unique broker order id. Shioaji's ProfitLoss exposes a stable
+                # unique `id` per realized-P&L record; `dseq`/`seqno` are often
+                # EMPTY on stock rows (see scripts/simulate_pnl_logic.py
+                # "Might be missing"). When orderNo ends up None the frontend
+                # can't use exact-id matching and falls back to lossy
+                # date+code+pnl matching, which flags distinct same-day
+                # same-stock trades as "already exists". Prefer `id` so every
+                # row carries a reliable unique key.
+                _order_id = (
+                    getattr(item, "id", None)
+                    or getattr(item, "dseq", None)
+                    or getattr(item, "seqno", None)
+                )
+                _order_id = str(_order_id) if _order_id not in (None, "", 0) else None
+
                 acc_details.append({
                     "date": item_date,
                     "code": display_code,
                     "price": price,
                     "quantity": raw_qty,
                     "pnl": realized,
-                    # Return None (not "") when neither dseq nor seqno is
-                    # present so the front-end's isValidOrderNo can treat
-                    # "no broker order number" uniformly without relying on
-                    # empty-string heuristics.
-                    "orderNo": getattr(item, "dseq", getattr(item, "seqno", None)) or None,
+                    "orderNo": _order_id,
                     "category": category,
                     "buyAmt": buy_amt,
                     "sellAmt": sell_amt,
