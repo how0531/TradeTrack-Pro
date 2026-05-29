@@ -1,5 +1,6 @@
 import shioaji as sj
 import os
+import time
 import threading
 from datetime import datetime
 from threading import Lock
@@ -9,7 +10,12 @@ _SESSION_MANAGER = None
 _SINGLETON_LOCK = Lock()  # B1: 保護 singleton 建立避免 race condition
 
 # CA 啟動有效期（秒）：從 0 改為 1800，避免頻繁重複啟動 CA 導致 Shioaji 底層狀態異常 (PnL 回傳空值)
-_CA_EXPIRY_SECONDS = 1800 
+_CA_EXPIRY_SECONDS = 1800
+
+# Fresh login 後讓 Solace SolClient 期貨通道 (c0,s1)_sinopac 完成 handshake 的等待秒數。
+# 沒有這個 pause，後續對期貨帳號的 list_profit_loss 常見 SessionNotEstablished。
+# 1.0s 是經驗值：足以涵蓋 free tier 雲端的網路抖動，又不會明顯拖慢登入。
+_POST_LOGIN_WARMUP_SECONDS = 1.0
 
 class ShioajiSessionManager:
     def __init__(self):
@@ -151,6 +157,12 @@ class ShioajiSessionManager:
             accounts = login_result[0]
             print(f"DEBUG: Login successful. Found {len(accounts)} account(s).", flush=True)
 
+            # 給 Solace SolClient 期貨通道 (c0,s1)_sinopac 完成 session handshake。
+            # 期貨 list_profit_loss 在 fresh login 後立刻呼叫常因通道未就緒而拋
+            # SubCode(SessionNotEstablished)。session reuse path 不會走到這裡，
+            # 所以只有實際新登入時才付這 ~1s 成本。
+            self._warmup_sol_client(new_api)
+
             self._try_activate_ca(new_api, ca_path, ca_password, person_id)
 
             self.api = new_api
@@ -233,6 +245,19 @@ class ShioajiSessionManager:
             self.ca_activated_time = None
             print(f"WARNING: [CA] ❌ CA Activation failed: {e}", flush=True)
             return False
+
+    def _warmup_sol_client(self, api):
+        """
+        登入後對 Solace SolClient 期貨通道做一次輕量 ping + sleep，讓
+        (c0,s1)_sinopac session 完成 handshake。失敗不 raise — warmup 只是
+        提高首次 PnL 查詢成功率，list_profit_loss 那層仍有 backoff retry 兜底。
+        """
+        try:
+            api.list_accounts()
+        except Exception as e:
+            print(f"DEBUG: [Warmup] list_accounts ping failed (non-critical): {e}", flush=True)
+        time.sleep(_POST_LOGIN_WARMUP_SECONDS)
+        print(f"DEBUG: [Warmup] SolClient handshake wait {_POST_LOGIN_WARMUP_SECONDS}s done", flush=True)
 
     def _safe_logout(self):
         """嘗試安全登出舊連線，避免撞 Shioaji 5 連線上限。"""
