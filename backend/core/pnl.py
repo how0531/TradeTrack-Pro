@@ -122,6 +122,27 @@ def _parse_item_date(raw_date):
     return item_date
 
 
+# ─── Shioaji SolClient session readiness ───
+# 'SessionNotEstablished' / 'NotReady' / "Unable to wait for session ... to be established"
+# 是 Solace 訊息通道 (例如 (c0,s1)_sinopac) 尚未握手完成；常見於 fresh login 後立刻
+# 對期貨帳號呼叫 list_profit_loss。對策：偵測到這類錯誤就退避重試，給通道時間建立。
+_SESSION_RETRY_BACKOFFS = (1.5, 3.0, 6.0)  # 累積最多 10.5s
+
+
+def _is_session_not_ready(err_str: str) -> bool:
+    """偵測 Shioaji SolClient session 尚未建立的 transient error。"""
+    if not err_str:
+        return False
+    compact = err_str.lower().replace(" ", "")
+    if "sessionnotestablished" in compact:
+        return True
+    if "unabletowaitforsession" in compact:
+        return True
+    if "notready" in compact and "solclient" in compact:
+        return True
+    return False
+
+
 # ─── Worker: Fetch PnL for a single account ───
 
 def _fetch_single_account(api, target_account, start_date, end_date, ca_is_active):
@@ -236,6 +257,36 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
                 elif "date" in err_str.lower() or "invalid" in err_str.lower():
                     _log(f"❌ [Date Error] {acc_id} {chunk_label}: {api_e}")
                     return 0, [], 0, 0, f"error:日期範圍無效，請確認起訖日期是否正確 ({api_e})"
+                elif _is_session_not_ready(err_str):
+                    # Solace SolClient session 尚未握手完成 — 指數退避重試
+                    _log(f"⏳ [SessionNotReady] {acc_id} {chunk_label} initial fail: {api_e}")
+                    last_e = api_e
+                    chunk_data = None
+                    for attempt, backoff in enumerate(_SESSION_RETRY_BACKOFFS, start=1):
+                        _log(f"⏳ [SessionNotReady] {acc_id} {chunk_label} sleep {backoff}s → retry #{attempt}")
+                        time.sleep(backoff)
+                        try:
+                            chunk_data = _call_pnl(chunk_start, chunk_end, use_str=primary_use_str)
+                            _log(f"✅ [SessionNotReady] {acc_id} {chunk_label} succeeded on retry #{attempt}")
+                            last_e = None
+                            break
+                        except Exception as rt_e:
+                            last_e = rt_e
+                            if not _is_session_not_ready(str(rt_e)):
+                                # 改變錯誤類型 → 停止 session retry，交由 last_e 處理
+                                _log(f"⚠️ [SessionNotReady] {acc_id} {chunk_label} retry #{attempt} 切換錯誤類型: {rt_e}")
+                                break
+                    if last_e is not None:
+                        if _is_session_not_ready(str(last_e)):
+                            _log(f"❌ [SessionNotReady] {acc_id} {chunk_label} 重試全部失敗: {last_e}")
+                            return 0, [], 0, 0, (
+                                "error:永豐金期貨連線尚未就緒 (SessionNotEstablished)。"
+                                f"已退避重試 {len(_SESSION_RETRY_BACKOFFS)} 次仍失敗，"
+                                "請稍候 30 秒後重試；若持續發生請確認 API 是否在交易時段內開通。"
+                            )
+                        # session 退避途中錯誤類型變了 — 回傳新錯誤，避免誤導訊息
+                        _log(f"❌ [SessionNotReady→Other] {acc_id} {chunk_label} 切換錯誤: {last_e}")
+                        return 0, [], 0, 0, f"error:{last_e}"
                 else:
                     # transient error → single retry
                     _log(f"⚠️ [Retry] {acc_id} {chunk_label} first attempt failed: {api_e}")
@@ -243,6 +294,11 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
                         chunk_data = _call_pnl(chunk_start, chunk_end, use_str=primary_use_str)
                     except Exception as retry_e:
                         _log(f"❌ [Failed] {acc_id} {chunk_label} retry also failed: {retry_e}")
+                        if _is_session_not_ready(str(retry_e)):
+                            return 0, [], 0, 0, (
+                                "error:永豐金期貨連線尚未就緒 (SessionNotEstablished)，"
+                                "請稍候 30 秒後重試。"
+                            )
                         return 0, [], 0, 0, f"error:{retry_e}"
 
             if chunk_data:
@@ -716,6 +772,11 @@ def login_and_fetch_pnl(
             friendly_msg = "API Key 無效或不存在，請至「設定」重新確認 API Key。"
         elif "Account Not Acceptable" in err_str:
             friendly_msg = "帳號授權失敗：該帳號尚未開通 API 權限。請至「帳號管理」執行驗證。"
+        elif _is_session_not_ready(err_str):
+            friendly_msg = (
+                "⏳ 永豐金期貨連線尚未就緒 (SessionNotEstablished)。"
+                "通常稍候 30 秒後重試即可；若持續發生請確認 API 是否在交易時段內開通。"
+            )
         elif "CA" in err_str or "activate_ca" in err_str or "憑證" in err_str:
             friendly_msg = "CA 憑證錯誤：請至「設定」重新上傳 .pfx 憑證並確認密碼正確。"
         elif "timeout" in err_str.lower() or "timed out" in err_str.lower() or "Timeout" in err_str:
