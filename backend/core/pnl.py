@@ -15,18 +15,22 @@ import shioaji as sj
 # Delegate to the stdlib logger so container hosts (Render / Docker / k8s)
 # can collect logs through their normal pipeline. A side file is kept for
 # local-machine debugging of the long-running shioaji loop where stdout
-# from a backgrounded process is hard to reach.
+# from a backgrounded process is hard to reach. Opt-in via LOCAL_DEBUG=1
+# to avoid disk I/O + ephemeral-disk noise on cloud deploys (Render's
+# home dir is wiped on every container restart, so writes there help no one).
 logger = logging.getLogger("tradetrack.backend.pnl")
 _LOG_FILE = os.path.join(os.path.expanduser("~"), "debug_backend.log")
+_LOCAL_DEBUG_LOG = os.getenv("LOCAL_DEBUG", "").lower() in ("1", "true", "yes")
 
 
 def _log(msg):
-    try:
-        with open(_LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now()}] {msg}\n")
-    except Exception:
-        # Local file logging is best-effort — never block the request.
-        pass
+    if _LOCAL_DEBUG_LOG:
+        try:
+            with open(_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now()}] {msg}\n")
+        except Exception:
+            # Local file logging is best-effort — never block the request.
+            pass
     logger.info(msg)
 
 
@@ -145,10 +149,15 @@ def _is_session_not_ready(err_str: str) -> bool:
 
 # ─── Worker: Fetch PnL for a single account ───
 
-def _fetch_single_account(api, target_account, start_date, end_date, ca_is_active):
+def _fetch_single_account(api, target_account, start_date, end_date, ca_is_active, deadline=None):
     """
     Fetch PnL data for a single account. Designed to run in a thread.
     Returns: (pnl, details, equity, open_pnl, empty_reason)
+
+    deadline: optional `time.perf_counter()` absolute deadline. When set, the
+    SessionNotReady backoff loop skips a retry whose sleep would exceed the
+    deadline, so a multi-account request with one slow account doesn't blow
+    past the 110s gunicorn cap and lose ALL accounts' results.
     """
     acc_pnl = 0
     acc_details = []
@@ -262,7 +271,16 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
                     _log(f"⏳ [SessionNotReady] {acc_id} {chunk_label} initial fail: {api_e}")
                     last_e = api_e
                     chunk_data = None
+                    budget_exhausted = False
                     for attempt, backoff in enumerate(_SESSION_RETRY_BACKOFFS, start=1):
+                        # 時間預算保護:若 sleep 完會超過 deadline，立刻放棄重試，
+                        # 把剩餘時間留給後續帳號，避免整個請求一起 timeout。
+                        if deadline is not None and (time.perf_counter() + backoff) > deadline:
+                            remaining = max(0.0, deadline - time.perf_counter())
+                            _log(f"⏱️ [SessionNotReady] {acc_id} {chunk_label} skip retry #{attempt} "
+                                 f"(backoff {backoff}s 超過剩餘預算 {remaining:.1f}s)")
+                            budget_exhausted = True
+                            break
                         _log(f"⏳ [SessionNotReady] {acc_id} {chunk_label} sleep {backoff}s → retry #{attempt}")
                         time.sleep(backoff)
                         try:
@@ -278,11 +296,12 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
                                 break
                     if last_e is not None:
                         if _is_session_not_ready(str(last_e)):
-                            _log(f"❌ [SessionNotReady] {acc_id} {chunk_label} 重試全部失敗: {last_e}")
+                            reason = "本次請求時間預算用盡" if budget_exhausted else f"已退避重試 {len(_SESSION_RETRY_BACKOFFS)} 次仍失敗"
+                            _log(f"❌ [SessionNotReady] {acc_id} {chunk_label} 放棄: {reason} — {last_e}")
                             return 0, [], 0, 0, (
                                 "error:永豐金期貨連線尚未就緒 (SessionNotEstablished)。"
-                                f"已退避重試 {len(_SESSION_RETRY_BACKOFFS)} 次仍失敗，"
-                                "請稍候 30 秒後重試；若持續發生請確認 API 是否在交易時段內開通。"
+                                f"{reason}，請稍候 30 秒後重試；"
+                                "若持續發生請確認 API 是否在交易時段內開通。"
                             )
                         # session 退避途中錯誤類型變了 — 回傳新錯誤，避免誤導訊息
                         _log(f"❌ [SessionNotReady→Other] {acc_id} {chunk_label} 切換錯誤: {last_e}")
@@ -602,6 +621,13 @@ def login_and_fetch_pnl(
         if progress_callback:
             progress_callback(40, f"準備同步 {total_accs} 個帳號的損益資料...")
 
+        # 整個請求的時間預算：gunicorn 預設 120s，保留 ~20s 給 aggregation +
+        # response serialisation + 網路傳輸。傳到 _fetch_single_account 後，
+        # SessionNotReady backoff 會自動跳過會超過 deadline 的 sleep，避免一個
+        # 慢帳號把整批回應一起拖到 timeout。
+        REQUEST_TIME_BUDGET_S = 100.0
+        deadline = request_start + REQUEST_TIME_BUDGET_S
+
         for i, acc in enumerate(valid_accounts):
             acc_display = f"{acc.account_id} ({getattr(acc, 'account_type', 'Unknown')})"
             if progress_callback:
@@ -609,7 +635,7 @@ def login_and_fetch_pnl(
                 progress_callback(pct, f"正在下載帳號 {acc_display} [{i+1}/{total_accs}]...")
 
             with _Stage(f"fetch acc {acc.account_id} [{i+1}/{total_accs}]"):
-                result = _fetch_single_account(api, acc, start_date, end_date, ca_is_active)
+                result = _fetch_single_account(api, acc, start_date, end_date, ca_is_active, deadline=deadline)
             results.append((acc, result))
 
         # ════════════════════════════════════════════════

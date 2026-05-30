@@ -59,6 +59,10 @@ export const TW_HOLIDAYS: ReadonlySet<string> = new Set<string>([
 // 已涵蓋的年份範圍 — 超出此範圍時 isTwHoliday 一律回傳 false，
 // 演算法降級成僅排除週末（即原行為），避免新年度未更新假日表時整年被當成休市。
 const COVERED_YEARS = new Set<number>([2024, 2025, 2026]);
+const MAX_COVERED_YEAR = Math.max(...COVERED_YEARS);
+
+// 一次性 console 警告：跨入未涵蓋年份時提醒維護者更新表格，避免靜默退化。
+let _warnedAboutCoverage = false;
 
 /**
  * 判斷指定日期是否為 TWSE 休市日（不含週末）。
@@ -66,7 +70,18 @@ const COVERED_YEARS = new Set<number>([2024, 2025, 2026]);
  */
 export const isTwHoliday = (date: Date): boolean => {
   const year = date.getFullYear();
-  if (!COVERED_YEARS.has(year)) return false;
+  if (!COVERED_YEARS.has(year)) {
+    if (year > MAX_COVERED_YEAR && !_warnedAboutCoverage) {
+      _warnedAboutCoverage = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[twHolidays] 偵測到 ${year} 年資料，但休市表只涵蓋到 ${MAX_COVERED_YEAR}。` +
+        `未創高天數 / 交易日相關指標將僅排除週末（不含國定假日），結果可能高估約 13 天/年。` +
+        `請更新 src/utils/twHolidays.ts。`
+      );
+    }
+    return false;
+  }
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return TW_HOLIDAYS.has(`${year}-${m}-${d}`);

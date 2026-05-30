@@ -73,7 +73,10 @@ class ShioajiSessionManager:
                         self.last_used_time = datetime.now()
                         return self.api
 
-                # B4: 健康檢查加 timeout，防止 Shioaji 卡住導致 Lock deadlock
+                # B4: 健康檢查加 timeout，防止 Shioaji 卡住導致 Lock deadlock。
+                # 5s → 10s：原 5s 在雲端網路抖動時太短，常誤判存活 session 為失敗，
+                # 觸發不必要的重登入(~3-5s)。健康檢查本來就只在 idle > 60s 時跑，
+                # 把上限拉到 10s 換少一次重登入仍是淨賺。
                 health_ok = [False]
                 _hc_t0 = datetime.now()
                 def _health_check():
@@ -84,7 +87,7 @@ class ShioajiSessionManager:
                         pass
                 ht = threading.Thread(target=_health_check, daemon=True)
                 ht.start()
-                ht.join(timeout=5)
+                ht.join(timeout=10)
                 _hc_dt = (datetime.now() - _hc_t0).total_seconds()
                 print(f"DEBUG: [SessionReuse] health check took {_hc_dt:.2f}s, ok={health_ok[0]}", flush=True)
 
@@ -96,7 +99,7 @@ class ShioajiSessionManager:
                     self.last_used_time = datetime.now()
                     return self.api
                 else:
-                    reason = "timed out (5s)" if ht.is_alive() else "failed"
+                    reason = "timed out (10s)" if ht.is_alive() else "failed"
                     print(
                         f"WARNING: [SessionReuse] Health check {reason}. Will reconnect.",
                         flush=True,
