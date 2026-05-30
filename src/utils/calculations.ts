@@ -2,6 +2,7 @@
 // [Manage] Last Updated: 2024-05-22
 import { Trade, Portfolio, Frequency, Metrics, StrategyStat, Lang, Streaks, EquityPoint, DrawdownPoint } from '../types';
 import { formatDate } from './format';
+import { isTwTradingDay } from './twHolidays';
 
 // Helper to get start of period
 const getPeriodKey = (dateStr: string, freq: Frequency): string => {
@@ -163,11 +164,10 @@ export const calculateMetrics = (
             if (dailyEquity > dailyPeak) {
                 dailyPeak = dailyEquity;
                 currentStagnationStreak = 0;
-            } else {
-                const dayOfWeek = dCursor.getDay();
-                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                    currentStagnationStreak++;
-                }
+            } else if (isTwTradingDay(dCursor)) {
+                // 僅在台股交易日累加未創高天數 — 排除週末 + TWSE 公告國定假日，
+                // 否則春節等長假會讓停滯天數虛增 5-10 天。
+                currentStagnationStreak++;
             }
 
             if (currentStagnationStreak > maxStagnationDays) {
