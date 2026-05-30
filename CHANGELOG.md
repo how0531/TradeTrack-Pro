@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.7.2] - 2026-05-30
+
+### Fixed — 期貨 SessionNotEstablished + 未創高天數誤計國定假日
+
+**使用者回報兩個現象**：
+1. 期貨多帳號同步出現 `SubCode(SessionNotEstablished), Unable to wait for session '(c0,s1)_sinopac' to be established`，0 筆成交、整批失敗。
+2. 「未創高天數」會把春節等長假也算進去，數字虛胖 5-10 天/年。
+
+#### Bug A 根因 — 期貨 SolClient 通道尚未握手完成
+Shioaji fresh login 後立刻對期貨帳號呼叫 `list_profit_loss`，底層 Solace SolClient 期貨通道（`(c0,s1)_sinopac`）還沒完成 session handshake 就被打請求。雲端冷啟動或網路抖動時必中。
+
+**修復** — `backend/core/session.py` + `backend/core/pnl.py`：
+- `session.py`：新增 `_warmup_sol_client()`，fresh login 後做一次 `list_accounts()` ping + 1s sleep，讓 SolClient 通道完成握手；session reuse path 不受影響。
+- `pnl.py`：新增 `_is_session_not_ready()` 偵測 + 指數退避重試 `(1.5s, 3s, 6s)`。中途錯誤類型改變會 fallback 到原錯誤訊息，不誤導使用者。
+- `pnl.py`：catch-all 加 friendly_msg：「⏳ 永豐金期貨連線尚未就緒…請稍候 30 秒後重試」取代原本一長串 Solace 例外。
+- `pnl.py`：`_fetch_single_account` 接受 `deadline` 參數，超預算前主動跳過剩餘 backoff，避免一個慢帳號把整批 sync 拖到 gunicorn 120s 上限。
+
+#### Bug B 根因 — `maxStagnationDays` 沒有台股行事曆概念
+原本只排除週六/週日（`getDay() === 0/6`），春節 / 清明 / 端午 / 中秋等 TWSE 休市日全部當成「停滯交易日」累加。
+
+**修復** — `src/utils/twHolidays.ts`（新檔）+ `src/utils/calculations.ts`：
+- 硬編碼 TWSE 2024-2026 國定假日表（一年 ~13 筆，逐筆註解假日名稱）。
+- 新增 `isTwHoliday(date)` / `isTwTradingDay(date)` helper；超出 `COVERED_YEARS` 時降級成「僅排除週末」並一次性 console.warn 提醒維護者更新。
+- `calculations.ts` line 174：`dayOfWeek !== 0 && dayOfWeek !== 6` → `isTwTradingDay(dCursor)`，停滯天數現在只算真正的台股交易日。
+
+### Hardening
+- `pnl.py`：本地 debug log 改為 opt-in (`LOCAL_DEBUG=1`)。雲端 ephemeral 磁碟不再做無用 disk I/O，stdlib logger 仍照常輸出到 container stdout。
+- `session.py`：cached session health check timeout 5s → 10s。雲端網路抖動時不會再誤判存活 session 為失敗、觸發 ~3-5s 不必要的重登入。
+
+### Versions
+- `package.json` 3.7.1 → 3.7.2
+- 後端 `/` endpoint `v1.5.4` → `v1.5.5`
+
 ## [3.7.1] - 2026-04-26
 
 ### Fixed — 證券長區間同步失敗 + 期貨/證券混合匯入只剩期貨

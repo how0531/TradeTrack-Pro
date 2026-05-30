@@ -3,7 +3,7 @@
 <div align="center">
   <img width="1200" height="475" alt="TradeTrack Pro Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
   <p align="center">
-    <img src="https://img.shields.io/badge/Version-3.7.1-gold?style=for-the-badge" alt="Version" />
+    <img src="https://img.shields.io/badge/Version-3.7.2-gold?style=for-the-badge" alt="Version" />
     <img src="https://img.shields.io/badge/React-18-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React 18" />
     <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Vite-5-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite 5" />
@@ -37,7 +37,7 @@
 
 - **動態淨值曲線**：可在「純損益 (Pure PnL)」與「含本金淨值 (Equity)」之間切換，平滑過渡。
 - **多維度分析**：依策略 (Strategy)、情緒 (Emotion)、投資組合 (Portfolio) 細分績效。
-- **完整指標**：Win Rate、Profit Factor、Expectancy、Risk-Reward、Sharpe、最大回撤 (MDD)、連勝連敗、停滯期。
+- **完整指標**：Win Rate、Profit Factor、Expectancy、Risk-Reward、Sharpe、最大回撤 (MDD)、連勝連敗、停滯期（未創高天數已內建台股行事曆，自動排除週末與國定假日）。
 
 ### 風險預警
 
@@ -55,7 +55,7 @@
 |---|---|
 | 手動輸入 | 表單建立／編輯交易紀錄，支援標籤與筆記。 |
 | JSON 匯入 | 相容舊版備份，自動偵測重複並提示合併。 |
-| 券商同步 | 串接永豐金 Shioaji API，支援多帳號、期貨／證券混合，分塊處理 90 天上限。 |
+| 券商同步 | 串接永豐金 Shioaji API，支援多帳號、期貨／證券混合，分塊處理 90 天上限；期貨 SolClient session 自帶 warmup + 指數退避重試，避免 fresh login 撞到 `SessionNotEstablished`。 |
 
 ### 同步架構
 
@@ -153,7 +153,18 @@ python app.py
 ALLOWED_ORIGINS=https://your-frontend.example.com python app.py
 ```
 
-詳細登入流程、錯誤處理與雲端佈署請參考 [docs/BACKEND_FLOW.md](./docs/BACKEND_FLOW.md)。
+**選用 env**：
+
+| Env | 預設 | 用途 |
+|---|---|---|
+| `ALLOWED_ORIGINS` | `localhost:*` | CORS 白名單，逗號分隔 |
+| `LOCAL_DEBUG` | unset | 設 `1` 才寫 `~/debug_backend.log`；雲端部署請保持 unset，依容器 stdout 即可 |
+
+詳細登入流程與錯誤處理請參考 [docs/BACKEND_FLOW.md](./docs/BACKEND_FLOW.md)。
+
+## 部署
+
+前端是靜態 SPA（`dist/`），後端是 Flask 程序（僅券商同步需要）。**Zeabur / Render / Netlify 的設定差異與常見雷（特別是 Zeabur 讀 `zbpack.json` 而非 `zeabur.json` 導致的 502）請務必先看 [docs/DEPLOY.md](./docs/DEPLOY.md)。**
 
 ## NPM Scripts
 
@@ -178,14 +189,14 @@ TradeTrack-Pro/
 │   ├── context/                 # TradeContext / BackendContext / AuthContext
 │   ├── hooks/                   # useSync / useMetrics / useIndexedDBData / useAuth ...
 │   ├── services/                # firestoreService / brokerService / backendGateway / responseValidators
-│   ├── utils/                   # calculations / format / duplicateDetection / haptics ...
+│   ├── utils/                   # calculations / format / twHolidays（TWSE 行事曆）/ duplicateDetection / haptics ...
 │   └── types/                   # 共用型別
 ├── backend/
 │   ├── app.py                   # Flask routes + CORS + stdlib logging
 │   └── core/
-│       ├── pnl.py               # Shioaji 登入 + PnL 抓取 + 90 天 chunking
+│       ├── pnl.py               # Shioaji 登入 + PnL 抓取 + 90 天 chunking + SessionNotEstablished 退避 + 時間預算 guard
 │       ├── job_store.py         # 非同步同步任務佇列
-│       └── session.py
+│       └── session.py           # Singleton session manager + SolClient warmup + 健康檢查
 ├── public/                      # PWA assets + screenshots
 └── .github/workflows/ci.yml     # typecheck / vitest / build
 ```
