@@ -1,6 +1,6 @@
 flask==3.0.0
 flask-cors==4.0.0
-shioaji
+shioaji==1.5.2
 gunicorn==21.2.0
 python-dotenv
 requests
