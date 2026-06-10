@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.0] - 2026-05-30
+
+### Added — Toast 通知系統（解 v3.6.0 留下的 C9）
+
+之前 C9（sync warnings → user-visible toast）因為缺基礎建設先 defer，這輪補上。
+
+#### `src/components/ui/Toast.tsx`（新檔）
+- 自製輕量級 toast，不依賴額外套件（沒額外 bundle）
+- 4 種類型：`info` / `success` / `warning` / `error`，預設顯示時間 3s/3s/5s/8s
+- 同 type+message 3 秒內重複呼叫**自動去重**，避免事件 spam
+- 右上角固定 stack，max-width 360px
+- `useToast()` hook 給 React 元件、`emitToast()` 給非 React context（utils / services）
+
+#### `src/App.tsx`
+- 整個 app 包進 `<ToastProvider>`，掛在最外層
+- `<ExternalEmitBridge />` 把 React context 的 `showToast` 註冊到模組層級 `_registerExternalEmit`，讓 `emitToast()` 在 service / utils 也能用
+
+#### `src/components/modals/SyncDateModal.tsx`
+- 同步完成時依結果呼叫 `emitToast()`：
+  - 全失敗：`error` toast 顯示 `同步失敗` + detail
+  - 部分失敗：`warning` toast 顯示 `部分帳號同步失敗（N 個）` + detail
+  - CA 未啟動：`warning` toast 顯示 `憑證未啟動`
+  - 0 筆但有後端診斷：`info` toast 顯示 `同步完成但 0 筆交易`
+  - 全成功：`success` toast 顯示 `已匯入 N 筆交易`
+- modal 關掉後 toast 仍可見（自動消失前），不會跟 `setResultMsg` 一起被吃掉
+
+### Versions
+- `package.json` 3.7.2 → 3.8.0
+
 ## [3.7.2] - 2026-05-30
 
 ### Fixed — 期貨 SessionNotEstablished + 未創高天數誤計國定假日

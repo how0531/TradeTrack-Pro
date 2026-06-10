@@ -25,6 +25,7 @@ import { SyncConflictModal } from './components/modals/SyncConflictModal';
 import { ShareModal } from './components/modals/ShareCardModal';
 import { useTradeContext, TradeProvider } from './context/TradeContext';
 import { BackendProvider } from './context/BackendContext';
+import { ToastProvider, useToast, _registerExternalEmit } from './components/ui/Toast';
 
 function MainApp() {
     // 1. Consume Context
@@ -412,12 +413,26 @@ function MainApp() {
 
 export default function App() {
     return (
-        <BackendProvider>
-            <TradeProvider>
-                <BrowserRouter>
-                    <MainApp />
-                </BrowserRouter>
-            </TradeProvider>
-        </BackendProvider>
+        <ToastProvider>
+            <ExternalEmitBridge />
+            <BackendProvider>
+                <TradeProvider>
+                    <BrowserRouter>
+                        <MainApp />
+                    </BrowserRouter>
+                </TradeProvider>
+            </BackendProvider>
+        </ToastProvider>
     );
+}
+
+// 把 useToast.showToast 暴露成模組層級 emitToast()，
+// 讓 service / utils 等非 React 環境也能 dispatch toast。
+const ExternalEmitBridge: React.FC = () => {
+    const { showToast } = useToast();
+    React.useEffect(() => {
+        _registerExternalEmit(showToast);
+        return () => _registerExternalEmit(null);
+    }, [showToast]);
+    return null;
 }
