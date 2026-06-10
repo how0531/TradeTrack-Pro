@@ -36,6 +36,7 @@ import { ACCOUNT_CATEGORY_THEMES } from '../../constants';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { useTradeContext } from "../../context/TradeContext";
 import { useBackend } from "../../context/BackendContext";
+import { emitToast } from "../ui/Toast";
 import { getCache, setCache } from "../../utils/cache";
 import { friendlyMessage } from "../../utils/errors";
 
@@ -929,19 +930,32 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
         if (fetchErrors.length > 0) {
           // 有 API 錯誤才是真正的問題
           setResultMsg(`同步失敗：${fetchErrors.join('；')}`);
+          emitToast({ type: 'error', message: '同步失敗', detail: fetchErrors.join('；') });
         } else if (anyCaNotActivated) {
           setResultMsg("⚠️ 憑證未啟動或已失效，無法取得損益。請至「設定」重新上傳 .pfx 檔案。");
+          emitToast({ type: 'warning', message: '憑證未啟動', detail: '請至「設定」重新上傳 .pfx 檔案' });
         } else if (emptyDiagnostics.length > 0) {
           // 後端逐帳號診斷：可能是未授權 / 複委託 / 範圍內真的無交易
           setResultMsg(`同步成功但 0 筆交易：${emptyDiagnostics.join('；')}`);
+          emitToast({ type: 'info', message: '同步完成但 0 筆交易', detail: emptyDiagnostics.join('；') });
         } else {
           setResultMsg(`此區間（${effectiveStart} ~ ${effectiveEnd}）查無交易紀錄。請確認券商帳號是否有未平倉或已實作損益。`);
         }
         setStep(2);
       } else {
         if (fetchErrors.length > 0) {
-          // 部分成功、部分失敗
+          // 部分成功、部分失敗 — toast 在 modal 關掉後仍可見
           setResultMsg(`⚠️ 部分帳號同步失敗：${fetchErrors.join('；')}`);
+          emitToast({
+            type: 'warning',
+            message: `部分帳號同步失敗（${fetchErrors.length} 個）`,
+            detail: fetchErrors.join('；'),
+          });
+        } else {
+          emitToast({
+            type: 'success',
+            message: `已匯入 ${processedTrades.length} 筆交易`,
+          });
         }
         setStep(2);
       }
