@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.3] - 2026-06-13
+
+### Performance — Stats 圖表手機改善
+
+#### `src/features/dashboard/components/StatsTab.tsx`
+- **策略 bubble chart force-directed layout 自適應收斂**：原本固定跑 50 iter × N² 即使 N=2 也照跑滿，手機上 visible jank。改為：
+  1. 上限 `min(50, 8 + 4*N)` — 小集合不跑 over，N=10 仍給 48 iter 留餘裕
+  2. 每輪追蹤最大位移，<0.3px 視為收斂並 break
+  - 視覺輸出不變（物理參數沒動），預期手機端省 50-80% CPU
+- **圖表 margin RWD**：桌機 `sideMargin: 20px` / 手機（<640px）`sideMargin: 8px`，避免窄螢幕把資料區擠掉
+- 動畫 `chartMarginTop / chartMarginBottom` 共用同一個 `sideMargin`，視覺一致
+
+#### Deferred — 列表虛擬化
+LogsView 在 trade 量 <1000 筆時 React 自身已順暢，加 `react-window` 屬於過度工程。等真有「滑動掉幀」回報再評估，先不引入新依賴。
+
+#### Verified
+- `npx vitest run` → **68 passed**（沒有 regression）
+
+### Versions
+- `package.json` 3.8.2 → 3.8.3
+
 ## [3.8.2] - 2026-06-13
 
 ### Added — 測試覆蓋率
