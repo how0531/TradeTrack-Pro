@@ -214,11 +214,14 @@ TradeTrack-Pro/
 - 設定來源：[`render.yaml`](./render.yaml)
 - URL：`https://tradetrack-pro.onrender.com`
 
-### 前端 — Netlify（推薦）
+### 前端 — Netlify
 - 設定來源：[`netlify.toml`](./netlify.toml)
-- 三個 site（`tradetrack1` / `tradetrack888` / `tttttt8888`）會自動 build 每個 PR / commit
-- 要 promote 成 production：Netlify dashboard → 該 site → **Site configuration → Build & deploy → Production branch = `main`**
+- Production site：**`tracktradepro`**（`https://tracktradepro.netlify.app`）
+- 每個 PR 會自動產生一份 deploy preview，URL 形如 `deploy-preview-<N>--tracktradepro.netlify.app`
+- Production branch：`main`
 - 免費方案無區域限制、無服務時長上限（300 build min/月）
+
+> Site 名稱 `tracktradepro` 在 Netlify 是全域唯一；若建立時被佔用，Netlify 會自動加亂數後綴（例如 `tracktradepro-abc.netlify.app`），可在 Site settings → Site information → Change site name 改回理想名字。
 
 ### 環境變數
 - `VITE_API_URL`：後端 URL，已在 `netlify.toml` 與 `Dockerfile` 都設為 `https://tradetrack-pro.onrender.com`。要改後端時改一次即可。

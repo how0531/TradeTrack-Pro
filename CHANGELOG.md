@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.5] - 2026-06-13
+
+### Changed — Netlify production site 改為 `tracktradepro`
+
+之前的三個 Netlify preview site (`tradetrack1` / `tradetrack888` / `tttttt8888`)
+都是測試版，要被刪除。改成一個正式 site：**`tracktradepro`**
+（`https://tracktradepro.netlify.app`），publish 自 `main`。
+
+#### Files
+- `netlify.toml`：移除舊三 site 的歷史註解，改成單一 production site 的脈絡
+- `README.md`：部署段落改為指向 `tracktradepro.netlify.app`，加上「全域名稱可能被佔用、會自動加後綴」的處理提醒
+
+#### Operator action（無法從 code 自動化）
+1. **Netlify dashboard** → 把舊的 `tradetrack1` / `tradetrack888` / `tttttt8888` 三個 site 全部刪除
+2. **Netlify dashboard** → New site from Git → 連 GitHub `how0531/TradeTrack-Pro` → branch `main`
+3. 建立後到 Site settings → Site information → Change site name → 設成 `tracktradepro`
+4. 等第一次 build 跑完，verify `https://tracktradepro.netlify.app` 正常
+5. 若不想保留 GitHub PR 自動 preview，可在新 site 的 Build & deploy → Deploy previews 改成 Off
+
+### Versions
+- `package.json` 3.8.4 → 3.8.5
+
 ## [3.8.4] - 2026-06-13
 
 ### Added — Netlify production config（取代死掉的 Zeabur cgk1）
