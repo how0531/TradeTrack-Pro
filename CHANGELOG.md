@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.2] - 2026-06-13
+
+### Added — 測試覆蓋率
+
+Phase C 補上單元測試，鎖住前面幾輪修的 bug 不要悄悄回歸。
+
+#### Frontend（vitest）
+- `src/utils/format.test.ts`（新）：11 條 assertions 鎖 `formatDecimal(Infinity)` 在 v3.5.0 之後回傳 `—`（不再是 `∞`），同時鎖 NaN/null/undefined → `'0.00'`、有限值四捨五入到 2 位小數的契約。
+- `src/services/responseValidators.test.ts`（新）：25 條 assertions 鎖 v3.7.0 加的 type guards：`isPnlSuccessResponse` / `isJobCreateResponse` / `isJobStatusResponse` / `isBrokerProfileSuccess` / `isBrokerProfileMultiAccount` / `isBackendError` / `assertShape`。正例 + 已知出現過的負例（job.progress 為字串、details 為物件、empty job_id 等）。
+
+#### Backend（pytest）
+- `backend/tests/__init__.py` + `backend/tests/conftest.py`（新）：`job_store_module` fixture 用 `monkeypatch JOB_STORE_DB` + `importlib.reload` 讓每個 test 跑在自己的 tmp_path SQLite 上，互不污染。
+- `backend/tests/test_job_store.py`（新）：8 條 tests 覆蓋 v3.2.0 SQLite job 持久化：create / update / complete / fail roundtrips、`recover_orphaned_jobs()` 的「只動 pending+running、不碰已 done/error」對比性、idempotency、cleanup_old_jobs() 24h 預設保留視窗。
+- `backend/tests/README.md`（新）：怎麼跑、目前的覆蓋邊界、為什麼 `pnl.py` 與 `session.py` 還沒測（兩者 module-level import shioaji，要拆 I/O surface 才好 mock）。
+
+#### Verified
+- `pytest backend/tests` → 8 passed
+- `npx vitest run src/utils/format.test.ts src/services/responseValidators.test.ts` → 36 passed
+
+### Versions
+- `package.json` 3.8.1 → 3.8.2
+
 ## [3.8.1] - 2026-06-13
 
 ### i18n — 高流量介面硬編碼字串遷移
