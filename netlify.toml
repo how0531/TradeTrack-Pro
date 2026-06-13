@@ -1,0 +1,57 @@
+# Netlify build & deploy configuration
+#
+# Why this file exists
+# --------------------
+# Three Netlify sites have been auto-building this repo from preview links
+# (tradetrack1 / tradetrack888 / tttttt8888) but none was promoted to
+# production — leaving the Zeabur frontend as the public face, which then
+# died when its region (cgk1) ran out of free service hours.
+#
+# Pinning the build settings here so any of the three sites can be promoted
+# to production with identical behaviour, and so future Netlify sites
+# inherit the same config without dashboard tweaking.
+
+[build]
+  # Vite outputs to ./dist
+  publish  = "dist"
+  command  = "npm ci --no-audit --no-fund && npm run build"
+
+[build.environment]
+  # Pin Node to match the toolchain used in Render/Zeabur Dockerfile and
+  # vitest's >=20 requirement. Drift here is a classic source of "works
+  # locally, breaks in CI" build failures.
+  NODE_VERSION = "20"
+  # Backend URL baked into the bundle. The Render free-tier backend has been
+  # the source of truth for the API since v3.0.4; this duplicates the
+  # Dockerfile ARG default so a Netlify build resolves identically.
+  # Override via Netlify UI > Site settings > Environment variables if you
+  # ever move the backend.
+  VITE_API_URL = "https://tradetrack-pro.onrender.com"
+
+# Single-page-app fallback. Without this, hitting /journal or /settings
+# directly (or a deploy-preview URL pasted into a browser) returns 404
+# instead of letting React Router render the route.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# Long-cache the hashed asset bundles. Vite emits content-hashed filenames
+# (e.g. index-62LX37VJ.js) so they're safe to cache for a year — a new
+# build produces a new hash and busts the cache for free.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Don't cache HTML or the service worker shell — those need to flip the
+# moment a new deploy lands, otherwise users keep loading old bundles.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
