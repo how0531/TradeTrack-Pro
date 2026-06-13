@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.1] - 2026-06-13
+
+### i18n — 高流量介面硬編碼字串遷移
+
+延續 Phase 3 ShareCardModal 的方向，把高流量介面（使用者每次同步、結算時都會看到）剩餘的硬編碼中文搬進 I18N 表，順便補英文版翻譯。低風險、無功能變動。
+
+#### New i18n keys
+`src/constants.ts` + `src/types/i18n.ts` 新增可選 key：
+- `share_showChart` / `share_hideChart`（圖表顯示切換）
+- `cloudBackupSection`（雲端備份區段標題）
+- `googleSignIn`（Google 登入卡片標題）
+- `cloudBackup`（雲端備份按鈕）
+- `systemDiagnostics`（系統診斷區段標題）
+
+英文版同步補上對應翻譯。
+
+#### Migrated
+- `src/features/trade/TradeModal.tsx`：顯示模式 label（金額 / % / 隱藏）、圖表顯示切換
+- `src/features/settings/SettingsView.tsx`：4 處 section 標題與按鈕標籤
+
+#### 沒做（明確 defer）
+SyncDateModal / BrokerSettings 各有 60+ 條多為動態狀態訊息（如「正在下載 X 的交易資料…」），全面遷移工程量大、改錯字也會誤傷既有逐項診斷邏輯。等真有英文使用者抱怨再做。
+
+### Versions
+- `package.json` 3.8.0 → 3.8.1
+
 ## [3.8.0] - 2026-05-30
 
 ### Added — Toast 通知系統（解 v3.6.0 留下的 C9）

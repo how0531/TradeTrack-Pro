@@ -241,9 +241,9 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
     };
 
     const getDisplayModeLabel = () => {
-        if (shareDisplayMode === 'amount') return '顯示: 金額';
-        if (shareDisplayMode === 'percent') return '顯示: %';
-        return '顯示: 隱藏';
+        if (shareDisplayMode === 'amount') return t.share_displayAmount ?? '顯示: 金額';
+        if (shareDisplayMode === 'percent') return t.share_displayPercent ?? '顯示: %';
+        return t.share_displayHidden ?? '顯示: 隱藏';
     };
 
     const SharePreview = () => (
@@ -376,7 +376,7 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                             className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center gap-2 text-slate-400 font-bold text-xs uppercase hover:bg-white/10 transition-colors"
                         >
                             <Layers size={16} className={shareShowChart ? 'text-[#C8B085]' : ''}/>
-                            <span>{shareShowChart ? '顯示圖表' : '隱藏圖表'}</span>
+                            <span>{shareShowChart ? (t.share_showChart ?? '顯示圖表') : (t.share_hideChart ?? '隱藏圖表')}</span>
                         </button>
                     </div>
 
