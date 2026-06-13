@@ -624,7 +624,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
         <div className="space-y-8 px-4 sm:px-0 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-48 pt-[max(1rem,env(safe-area-inset-top))] max-w-full overflow-x-hidden">
             {/* CLOUD SYNC */}
             <div className="space-y-4">
-                <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><Cloud size={12} /> Google 雲端備份</h3>
+                <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5"><Cloud size={12} /> {t.cloudBackupSection ?? 'Google 雲端備份'}</h3>
                 <div className={`rounded-3xl relative overflow-hidden border transition-all duration-500 ${currentUser ? 'bg-[#1C1E22] border-[#C8B085]/20 p-5' : 'bg-transparent border-white/5 p-1'}`}>
                     {/* Background Decoration */}
                     <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none transform translate-x-1/3 -translate-y-1/3">
@@ -689,7 +689,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                 <Cloud size={18} className="text-[#C8B085] group-hover:text-black transition-colors" />
                             </div>
                             <div className="flex flex-col flex-1 min-w-0">
-                                <h3 className="text-sm font-bold text-white group-hover:text-[#C8B085] transition-colors truncate">Google 登入</h3>
+                                <h3 className="text-sm font-bold text-white group-hover:text-[#C8B085] transition-colors truncate">{t.googleSignIn ?? 'Google 登入'}</h3>
                                 <p className="text-[10px] text-zinc-500 truncate group-hover:text-zinc-400 transition-colors">
                                     點擊登入即可啟用雲端備份與還原
                                 </p>
@@ -954,7 +954,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                         <div className="p-3 rounded-full bg-[#5B9A8B]/10 text-[#5B9A8B] group-hover:scale-110 transition-transform">
                             {isForceBackingUp ? <Loader2 size={20} className="animate-spin" /> : <Cloud size={20} />}
                         </div>
-                        <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">雲端備份</span>
+                        <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">{t.cloudBackup ?? '雲端備份'}</span>
                     </button>
                 </div>
             </div>
@@ -962,7 +962,7 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
 
             {/* SYSTEM DIAGNOSIS & REPAIR */}
             <div className="space-y-4">
-                <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5">系統診斷與修復</h3>
+                <h3 className="text-xs font-bold text-[#C8B085] uppercase tracking-[0.2em] px-2 flex items-center gap-2 border-l-2 border-[#C8B085]/30 py-0.5">{t.systemDiagnostics ?? '系統診斷與修復'}</h3>
 
                 <div className="p-5 rounded-2xl bg-black/20 border border-white/5 space-y-4">
                     {/* SYNC STATUS DASHBOARD */}
