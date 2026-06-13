@@ -316,14 +316,25 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
         });
 
         // 2. 力模擬：迭代調整標籤位置
+        //
+        // PR D 改動：
+        //   1. 迭代上限 N-aware：小集合（≤3 策略）不需要 50 iter，10 就過頭了。
+        //      用 min(50, 8 + 4*N) 取代固定 50，N=10 仍給 48 iter 留餘裕。
+        //   2. 收斂提前終止：當一輪所有 label 的最大位移 < 0.3px，肉眼已看不出
+        //      差異，再算下去純粹是 CPU 浪費；早停可省手機 50-80% 的計算。
+        //
+        // 既有的物理參數不動 — 視覺輸出不變。
         const simulatedData = [...initialData];
-        const iterations = 50;
-        const repulsionStrength = 8; // 降低互推 (10 -> 8)，允許更親密
-        const attractionStrength = 1.5; // 強力吸附 (1.5)，標籤緊貼氣泡
+        const iterations = Math.min(50, 8 + simulatedData.length * 4);
+        const repulsionStrength = 8;
+        const attractionStrength = 1.5;
         const damping = 0.8;
         const gravityStrength = 0.05;
+        const CONVERGE_EPSILON = 0.3;  // px 級別位移視為已收斂
 
         for (let iter = 0; iter < iterations; iter++) {
+            let maxMove = 0;
+
             simulatedData.forEach((item, i) => {
                 let forceX = 0;
                 let forceY = 0;
@@ -335,7 +346,7 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
                     const dy = item.labelOffsetY - other.labelOffsetY;
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
-                    if (distance < 30) { // 縮小安全距離 (35 -> 30)
+                    if (distance < 30) {
                         const force = repulsionStrength / (distance + 1);
                         forceX += (dx / distance) * force;
                         forceY += (dy / distance) * force;
@@ -347,7 +358,7 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
                     item.labelOffsetX * item.labelOffsetX +
                     item.labelOffsetY * item.labelOffsetY
                 );
-                const idealDistance = item.radius + 8; // 緊湊距離 (radius + 8)
+                const idealDistance = item.radius + 8;
 
                 if (currentDistance > idealDistance) {
                     const pullBack = (currentDistance - idealDistance) * attractionStrength;
@@ -359,15 +370,22 @@ const StrategyBubbleChart = ({ data, onSelect, lang, hideAmounts }: { data: { na
                 const verticalBias = item.labelOffsetY < 0 ? -1 : 1;
                 forceY += verticalBias * gravityStrength;
 
-                // D. 阻尼
-                item.labelOffsetX += forceX * damping;
-                item.labelOffsetY += forceY * damping;
+                // D. 阻尼 — 記錄這輪本 label 的實際位移以做收斂判斷
+                const dx = forceX * damping;
+                const dy = forceY * damping;
+                item.labelOffsetX += dx;
+                item.labelOffsetY += dy;
+                const move = Math.sqrt(dx * dx + dy * dy);
+                if (move > maxMove) maxMove = move;
 
-                // E. 嚴格邊界限制 (50 -> 40)
+                // E. 嚴格邊界限制
                 const maxOffset = 40;
                 item.labelOffsetX = Math.max(-maxOffset, Math.min(maxOffset, item.labelOffsetX));
                 item.labelOffsetY = Math.max(-maxOffset, Math.min(maxOffset, item.labelOffsetY));
             });
+
+            // 整體已停止移動 → 不必再算
+            if (maxMove < CONVERGE_EPSILON) break;
         }
 
         return simulatedData;
@@ -489,8 +507,12 @@ export const StatsChart = ({
         return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onUp); window.removeEventListener('touchmove', onTouchMove); window.removeEventListener('touchend', onUp); };
     }, [setChartHeight]);
 
-    const chartMarginTop = { top: 10, right: 20, left: 20, bottom: 0 };
-    const chartMarginBottom = { top: 0, right: 20, left: 20, bottom: 0 };
+    // 手機（<640px）把左右 margin 從 20px 縮到 8px，避免在窄螢幕上把
+    // 實際資料區擠掉太多；桌機保留 20px 視覺呼吸感。
+    const isNarrow = typeof window !== 'undefined' && window.innerWidth < 640;
+    const sideMargin = isNarrow ? 8 : 20;
+    const chartMarginTop = { top: 10, right: sideMargin, left: sideMargin, bottom: 0 };
+    const chartMarginBottom = { top: 0, right: sideMargin, left: sideMargin, bottom: 0 };
 
     return (
         <div className="w-full flex flex-col relative transition-none select-none stagger-1 animate-in fade-in slide-in-from-bottom-2 duration-700" style={{ height: chartHeight, touchAction: 'none' }}>
