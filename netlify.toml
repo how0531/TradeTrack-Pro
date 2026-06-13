@@ -2,14 +2,11 @@
 #
 # Why this file exists
 # --------------------
-# Three Netlify sites have been auto-building this repo from preview links
-# (tradetrack1 / tradetrack888 / tttttt8888) but none was promoted to
-# production — leaving the Zeabur frontend as the public face, which then
-# died when its region (cgk1) ran out of free service hours.
-#
-# Pinning the build settings here so any of the three sites can be promoted
-# to production with identical behaviour, and so future Netlify sites
-# inherit the same config without dashboard tweaking.
+# The earlier three Netlify preview sites (tradetrack1 / tradetrack888 /
+# tttttt8888) were just experimental setups. They have been removed in
+# favour of one production site, `tracktradepro`, which publishes from
+# `main`. This config pins the build so that site (and any future ones)
+# behave identically without dashboard tweaking.
 
 [build]
   # Vite outputs to ./dist
