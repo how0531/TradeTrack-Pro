@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.4] - 2026-06-13
+
+### Added — Netlify production config（取代死掉的 Zeabur cgk1）
+
+Zeabur Jakarta 區域免費額度用完，前端 service 自動清除。三個 Netlify
+preview site（`tradetrack1` / `tradetrack888` / `tttttt8888`）一直
+都在 build 每個 PR，但沒被 promote 成 production，所以這次直接把
+Netlify 設成正式部署目標。
+
+#### `netlify.toml`（新檔）
+- Node 20 pinned（對齊 Dockerfile + vitest >=20）
+- `VITE_API_URL = "https://tradetrack-pro.onrender.com"` 烤進 build env，與 Dockerfile ARG 預設值同步
+- SPA fallback `/* → /index.html` 避免直接打開 `/journal` `/settings` 404
+- 內容雜湊 bundle 一年 immutable 快取；`index.html` / `sw.js` `must-revalidate`，讓 deploy 一上線立刻生效
+
+#### `README.md`
+- 新增「部署」段落：後端 Render、前端 Netlify、環境變數、為什麼不再用 Zeabur
+
+### Operator action（無法從 code 自動化）
+1. Netlify dashboard → 三個 site 任選一個 → Site configuration → Build & deploy → **Production branch = `main`**
+2. Zeabur dashboard → 刪掉死掉的 `tradetrack-pro` cgk1 service
+
+### Versions
+- `package.json` 3.8.3 → 3.8.4
+
 ## [3.8.3] - 2026-06-13
 
 ### Performance — Stats 圖表手機改善

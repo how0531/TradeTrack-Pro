@@ -207,6 +207,25 @@ TradeTrack-Pro/
 - **Vitest** 單元測試：`npx vitest run`
 - **GitHub Actions**：每次 push / PR 對 `main` 自動跑 typecheck → tests → production build
 
+## 部署
+
+### 後端 — Render
+- Service：`tradetrack-pro` (Python web service, free plan)
+- 設定來源：[`render.yaml`](./render.yaml)
+- URL：`https://tradetrack-pro.onrender.com`
+
+### 前端 — Netlify（推薦）
+- 設定來源：[`netlify.toml`](./netlify.toml)
+- 三個 site（`tradetrack1` / `tradetrack888` / `tttttt8888`）會自動 build 每個 PR / commit
+- 要 promote 成 production：Netlify dashboard → 該 site → **Site configuration → Build & deploy → Production branch = `main`**
+- 免費方案無區域限制、無服務時長上限（300 build min/月）
+
+### 環境變數
+- `VITE_API_URL`：後端 URL，已在 `netlify.toml` 與 `Dockerfile` 都設為 `https://tradetrack-pro.onrender.com`。要改後端時改一次即可。
+
+### 為什麼不用 Zeabur
+之前 Zeabur Jakarta (cgk1) 區域免費額度用完導致前端 service 被自動清除。Netlify 的免費方案沒有區域額度概念，且每個 commit 都已經自動 build。
+
 ## Changelog
 
 完整變更紀錄請見 [CHANGELOG.md](./CHANGELOG.md)。
