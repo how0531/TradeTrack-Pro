@@ -73,14 +73,32 @@ class _Stage:
 
 
 # ─── Futures Contract Multiplier Lookup ───
+# H3 (v3.9.1): 補上 Shioaji API 實際回傳的合約代碼。
+# 原表只收 TAIFEX 網站上的「交易代號」(MTX/TE/TF)，但 Shioaji 的
+# ProfitLoss.code 用的是 API 商品代碼 (MXF/EXF/FXF...)，查不到就
+# fallback 200 — 小台報酬率因此被低估 4 倍（分母乘數 200 vs 正確 50）、
+# 微台錯 20 倍。兩套代號都保留，prefix 長的先查（_get_contract_multiplier
+# 先試 [:3] 再試 [:2]，天然避免 'TX'>'TXF' 的誤配）。
 _FUTURES_MULTIPLIERS = {
+    # Shioaji API 代碼（實際出現在 ProfitLoss.code）
+    'TXF': 200,   # 大台
+    'MXF': 50,    # 小台
+    'TMF': 10,    # 微台
+    'EXF': 4000,  # 電子
+    'ZEF': 500,   # 小電子
+    'FXF': 1000,  # 金融
+    'ZFF': 250,   # 小金融
+    # TAIFEX 網站代號（歷史資料 / 手動輸入相容）
     'MTX': 50, 'MTE': 500, 'TE': 4000, 'TF': 1000,
     'T5F': 100, 'XIF': 200, 'GTF': 100, 'UNF': 200,
-    'TXF': 200,  # Default for 台指期
 }
 
 _FUTURES_NAMES = {
-    'TXF': '台指期', 'MTX': '小台指', 'TE': '電子期', 'MTE': '小電子期',
+    # Shioaji API 代碼
+    'TXF': '台指期', 'MXF': '小台指', 'TMF': '微台指',
+    'EXF': '電子期', 'ZEF': '小電子期', 'FXF': '金融期', 'ZFF': '小金融期',
+    # TAIFEX 網站代號
+    'MTX': '小台指', 'TE': '電子期', 'MTE': '小電子期',
     'TF': '金融期', 'T5F': '櫃買期', 'UNF': '非金電期', 'GTF': '黃金期',
     'XIF': '東證期', 'SP': 'S&P期', 'ND': '那斯達克期',
 }
@@ -235,7 +253,9 @@ def _fetch_single_account(api, target_account, start_date, end_date, ca_is_activ
         # 期貨帳戶經 v3.3.2 timing logs 驗證可單次抓完整一年，不需切。
         STOCK_PNL_MAX_DAYS = 90
         range_days = (end_dt - start_dt).days
-        if not is_futures and range_days > STOCK_PNL_MAX_DAYS:
+        # L2 (v3.9.1): 門檻改 >=。(end-start).days == 90 代表含首尾 91 個
+        # 日曆日，已超過單次呼叫的 90 日上限，舊條件會漏切這個邊界值。
+        if not is_futures and range_days >= STOCK_PNL_MAX_DAYS:
             _log(f"📅 [Chunk] {acc_id} 證券帳戶 {range_days} 天 > {STOCK_PNL_MAX_DAYS}，分段抓取")
             chunks = []
             cursor = start_dt
@@ -608,10 +628,13 @@ def login_and_fetch_pnl(
 
         # Validate date range
         try:
-            from datetime import date as _date
+            from datetime import timezone as _tz
             start_dt_check = datetime.strptime(start_date, "%Y-%m-%d").date()
             end_dt_check = datetime.strptime(end_date, "%Y-%m-%d").date()
-            today = _date.today()
+            # L6 (v3.9.1): 「今天」以台北時區為準。雲端伺服器是 UTC，
+            # 台北 00:00–07:59 之間 date.today() 還是前一天 — 使用者半夜
+            # 同步「到今天」的區間會被誤截，甚至截出 start>end 的錯誤。
+            today = datetime.now(_tz(timedelta(hours=8))).date()
 
             if start_dt_check > end_dt_check:
                 return {
@@ -741,8 +764,10 @@ def login_and_fetch_pnl(
         # Aggregate daily results
         daily_map = {}
         for d in details:
-            daily_map[d["date"]] = round(daily_map.get(d["date"], 0) + d["pnl"], 2)
-        daily_results = [{"date": k, "pnl": v} for k, v in sorted(daily_map.items())]
+            # L7 (v3.9.1): 累加期間不 round（每步 round 會累積 ±0.005×n 誤差），
+            # 全部加完後再統一 round 一次。
+            daily_map[d["date"]] = daily_map.get(d["date"], 0) + d["pnl"]
+        daily_results = [{"date": k, "pnl": round(v, 2)} for k, v in sorted(daily_map.items())]
 
         # Metadata
         signed_ids = []

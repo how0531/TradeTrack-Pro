@@ -28,6 +28,7 @@ import {
 import { validateBackendReady } from '../../services/backendGateway';
 import { getLocalDateStr, formatDateWithWeekday } from "../../utils/format";
 import { formatSymbolCode } from "../../utils/symbolNames";
+import { getFuturesMultiplier } from "../../utils/futuresMultipliers";
 import { CustomDateRangeModal } from "./CustomDateRangeModal";
 import { useClickOutside } from "../../hooks/useClickOutside";
 // No imports needed from SettingsView here
@@ -640,6 +641,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       setLoadingProgress(85);
       setLoadingMessage("正在處理資料...");
       const step3Start = performance.now();
+      // L8 (v3.9.1): 同批次內 contentKey 相同的筆數計數器。
+      // orderNo 無效時 stable ID 是純內容鍵 — 同日同代碼且 pnl/qty/price
+      // 完全相同的兩筆真實交易會產生相同 ID，bulkPut upsert 靜默吃掉一筆。
+      // 第 2 筆起加 -1/-2 序號；後端回傳順序穩定，序號跨同步也穩定。
+      const contentKeyCounts = new Map<string, number>();
+
       let processedTrades = result.details.map((d, i) => {
         // Base transformation
         const isFuture = d.category === '期貨';
@@ -674,13 +681,9 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
             const y = yieldVal.toFixed(2);
             noteValue = `${yieldVal > 0 ? "+" : ""}${y}%`;
           } else {
-            const code = d.code || '';
-            let multiplier = 200;
-            if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
-            else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
-            else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
-            else if (code.includes('XIF') || code.includes('東證')) multiplier = 200;
-            else if (code.includes('GTF') || code.includes('黃金')) multiplier = 100;
+            // H4 (v3.9.1): 統一查表。舊 includes 鏈對 Shioaji API 代碼
+            // (MXF/EXF/FXF) 全 miss → 小台點數錯 4 倍；且 GTF 誤配 TF。
+            const multiplier = getFuturesMultiplier(d.code || '');
 
             const totalDerivedPts = Math.abs(d.pnl) / multiplier;
 
@@ -712,7 +715,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           stableId = `${orderNo}-${normalizedDate}-${stockCode}`;
         } else {
           const contentKey = `${normalizedDate}_${stockCode}_${d.pnl.toFixed(2)}_${d.quantity}_${Number(d.price).toFixed(4)}`;
-          stableId = `tx-${contentKey}`;
+          // L8: 同 contentKey 第 2 筆起加序號（第 1 筆保持舊格式，與既有資料 ID 相容）
+          const dupIdx = contentKeyCounts.get(contentKey) || 0;
+          contentKeyCounts.set(contentKey, dupIdx + 1);
+          stableId = dupIdx === 0 ? `tx-${contentKey}` : `tx-${contentKey}-${dupIdx}`;
         }
 
         return {
@@ -764,28 +770,33 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
           if (groupedMap.has(compositeKey)) {
             const existing = groupedMap.get(compositeKey)!;
-            const totalQty = existing.quantity + trade.quantity;
+            // H5 (v3.9.1): 先取「合併前」的舊數量當加權權重，再覆寫。
+            // 以前 entryPrice/exitPrice 的加權平均寫在 existing.quantity 被改成
+            // totalQty 之後 — existing 那邊的權重被放大成總量，均價計算錯誤。
+            const prevQty = existing.quantity;
+            const totalQty = prevQty + trade.quantity;
             const avgPrice =
               totalQty !== 0
-                ? (existing.price * existing.quantity +
-                  trade.price * trade.quantity) /
-                totalQty
+                ? (existing.price * prevQty + trade.price * trade.quantity) / totalQty
                 : existing.price;
+
+            if (existing.entryPrice && trade.entryPrice && totalQty !== 0) {
+              existing.entryPrice = ((existing.entryPrice * prevQty) + (trade.entryPrice * trade.quantity)) / totalQty;
+            }
+            if (existing.exitPrice && trade.exitPrice && totalQty !== 0) {
+              existing.exitPrice = ((existing.exitPrice * prevQty) + (trade.exitPrice * trade.quantity)) / totalQty;
+            }
 
             existing.quantity = totalQty;
             existing.price = avgPrice;
             existing.pnl += trade.pnl;
 
-            if (existing.entryPrice && trade.entryPrice) {
-              existing.entryPrice = ((existing.entryPrice * existing.quantity) + (trade.entryPrice * trade.quantity)) / totalQty;
-            }
-            if (existing.exitPrice && trade.exitPrice) {
-              existing.exitPrice = ((existing.exitPrice * existing.quantity) + (trade.exitPrice * trade.quantity)) / totalQty;
-            }
-
             const isFuture = existing.category === '期貨';
             const unit = isFuture ? '口' : '張';
-            const mergedQtyValue = isFuture ? Math.abs(totalQty) : Math.abs(totalQty / 1000);
+            // H6 (v3.9.1): 台股 quantity 單位本來就是「張」（初始處理註解明載
+            // "台股為張，直接取用"），不再除以 1000 — 舊算法讓 2+2 張合併後
+            // note 顯示 0張（4/1000 → 0）。
+            const mergedQtyValue = Math.abs(totalQty);
             const mergedSheets = mergedQtyValue.toFixed(0);
 
             const noteParts = existing.note.split("|");
@@ -794,14 +805,8 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               let newPtsStr = noteParts[1].trim();
 
               if (existing.pnl !== 0) {
-                const code = existing.code.toUpperCase();
-                let multiplier = 200;
-                if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
-                else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
-                else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
-                else if (code.includes('XIF') || code.includes('東證')) multiplier = 200;
-                else if (code.includes('GTF') || code.includes('黃金')) multiplier = 100;
-
+                // H4 (v3.9.1): 統一查表（同初始處理處）
+                const multiplier = getFuturesMultiplier(existing.code);
                 const totalDerivedPts = Number((Math.abs(existing.pnl) / multiplier).toFixed(2));
                 newPtsStr = `${existing.pnl >= 0 ? '+' : '-'}${totalDerivedPts} pts`;
               }

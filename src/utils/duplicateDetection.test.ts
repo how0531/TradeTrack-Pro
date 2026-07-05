@@ -70,3 +70,25 @@ describe('detectDuplicates — synthetic orderNo handling', () => {
         expect(groups).toHaveLength(0);
     });
 });
+
+// ─── v3.9.1 H7 迴歸測試 ───
+describe('v3.9.1: Method A requires date+code, not orderNo alone', () => {
+    it('does NOT flag two unrelated trades that share a row-index orderNo', () => {
+        // Shioaji ProfitLoss.id 是列序號：帳號 A 與帳號 B 的第 0 筆都拿到 '0'
+        const trades: Trade[] = [
+            { id: 'a', date: '2026-06-10', code: '2330 台積電', pnl: 5000, orderNo: '0', quantity: 1, price: 600 },
+            { id: 'b', date: '2026-06-11', code: '6147 頎邦', pnl: -2000, orderNo: '0', quantity: 2, price: 80 },
+        ];
+        const groups = detectDuplicates(trades);
+        expect(groups.length).toBe(0);   // 舊 bug: 判成重複 → removeDuplicates 刪掉一筆真實交易
+    });
+
+    it('still flags true duplicates (same orderNo + same date + same code)', () => {
+        const trades: Trade[] = [
+            { id: 'a', date: '2026-06-10', code: '2330 台積電', pnl: 5000, orderNo: 'X123', quantity: 1, price: 600 },
+            { id: 'b', date: '2026-06-10', code: '2330 台積電', pnl: 5000, orderNo: 'X123', quantity: 1, price: 600 },
+        ];
+        const groups = detectDuplicates(trades);
+        expect(groups.length).toBe(1);
+    });
+});
