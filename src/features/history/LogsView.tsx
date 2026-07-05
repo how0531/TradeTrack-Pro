@@ -302,16 +302,17 @@ export const LogsView = ({ trades, lang, hideAmounts, portfolios, onEdit, onDele
         return g;
     }, [visibleTrades, sortType]);
 
-    // 每日盈虧小計 — useMetrics 已算過但沒傳進來；這裡用同樣的累加直接從 group 算。
-    // 顯示在日期 pill 內讓使用者一眼看出當日總盈虧。
+    // 每日盈虧小計 — M4 (v3.9.0)：改從「全量」sortedTrades 計算，而非分頁
+    // 切片後的 visibleTrades（groups 的來源）。以前某天有 10 筆但只有 6 筆
+    // 落在可見分頁內時，該日 pill 顯示的是殘缺的 6 筆小計。
+    // 同時統一用 Number() 轉型，防字串 pnl 觸發字串串接。
     const dailyTotals = useMemo<Record<string, number>>(() => {
-        if (!groups) return {};
         const totals: Record<string, number> = {};
-        for (const [date, ts] of Object.entries(groups)) {
-            totals[date] = ts.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        for (const t of sortedTrades) {
+            totals[t.date] = (totals[t.date] || 0) + (Number(t.pnl) || 0);
         }
         return totals;
-    }, [groups]);
+    }, [sortedTrades]);
 
     if (!trades || trades.length === 0) return <div className="flex flex-col items-center justify-center py-32 text-slate-600 space-y-6"><div className="w-16 h-16 rounded-full bg-gradient-to-b from-white/5 to-transparent flex items-center justify-center border border-white/5"><Scroll size={24} className="opacity-30 text-white"/></div><div className="text-center"><h3 className="text-[10px] font-bold text-slate-400 mb-1">{t.emptyStateTitle}</h3><p className="text-[8px] max-w-[160px] mx-auto leading-relaxed text-zinc-600 font-medium uppercase tracking-wide">{t.emptyStateDesc}</p></div></div>;
 
@@ -366,7 +367,10 @@ export const LogsView = ({ trades, lang, hideAmounts, portfolios, onEdit, onDele
                                 <div className="bg-[#050505] border border-white/5 rounded-full pl-2.5 pr-3 py-1 flex items-center gap-2 shadow-lg ring-1 ring-white/5">
                                     <div className="w-1 h-1 rounded-full bg-[#C8B085] shadow-[0_0_4px_#C8B085]"></div>
                                     <span className="text-[10px] font-bold text-zinc-500 font-barlow-numeric tracking-widest">{formatDate(date, lang)}</span>
-                                    <span className={`text-[10px] font-bold font-barlow-numeric tracking-tight ml-1 ${totalIsProfit ? 'text-[#5B9A8B]' : 'text-[#e89595]'} ${hideAmounts ? 'blur-[5px] select-none opacity-60' : ''}`}>
+                                    {/* H8 (v3.9.0): 顏色修正 — 本 app 採台股慣例：紅=獲利、綠=虧損
+                                        （對齊 SpineCard theme：isProfit→#e89595 紅 / 虧損→#5B9A8B 綠）。
+                                        v3.4.0 引入時誤用了西方慣例（綠=獲利），與整頁其他元素相反。 */}
+                                    <span className={`text-[10px] font-bold font-barlow-numeric tracking-tight ml-1 ${totalIsProfit ? 'text-[#e89595]' : 'text-[#5B9A8B]'} ${hideAmounts ? 'blur-[5px] select-none opacity-60' : ''}`}>
                                         {total >= 0 ? '+' : '-'}{Math.abs(total).toLocaleString('en-US')}
                                     </span>
                                 </div>

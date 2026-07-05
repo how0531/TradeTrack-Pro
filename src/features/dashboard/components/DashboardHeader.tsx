@@ -168,7 +168,9 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                                     <>
                                         {showFullEquity ? (
                                             // Full Equity Animation
-                                            <CountUp end={showPurePnl ? metrics.netProfit : metrics.currentEq} decimals={2} prefix={showPurePnl ? (metrics.netProfit < 0 ? "-$" : "+$") : "$"} />
+                                            // L4 (v3.9.0): netProfit 為負時取絕對值 — prefix 已含 "-$"，
+                                            // CountUp 內部 toFixed 又帶負號會渲染成 "-$-5000.00"
+                                            <CountUp end={showPurePnl ? Math.abs(metrics.netProfit) : metrics.currentEq} decimals={2} prefix={showPurePnl ? (metrics.netProfit < 0 ? "-$" : "+$") : "$"} />
                                         ) : (
                                             // Compact Animation
                                             <span>

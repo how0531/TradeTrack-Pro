@@ -44,9 +44,15 @@ export const formatCompactNumber = (val: number | undefined | null, forceSign = 
         }).format(abs);
         return `${prefix}${formatted}`;
     }
-    
+
     if (abs < 100000000) {
-        return `${prefix}${parseFloat((abs / 10000).toFixed(2))}萬`;
+        // L3 (v3.9.0): 99,995,000~99,999,999 經 toFixed(2) 會進位成 10000.00
+        // → 顯示「10000萬」。round 後達到下一級門檻時改用「億」。
+        const wan = parseFloat((abs / 10000).toFixed(2));
+        if (wan >= 10000) {
+            return `${prefix}${parseFloat((abs / 100000000).toFixed(2))}億`;
+        }
+        return `${prefix}${wan}萬`;
     }
 
     return `${prefix}${parseFloat((abs / 100000000).toFixed(2))}億`;

@@ -46,14 +46,22 @@ export const useMetrics = (
         let startDate: Date | null = null;
         let endDate: Date | null = null;
 
+        // M2 (v3.9.0): setMonth 回推在月底會溢位 — 5/31 回推 1 個月時
+        // 「4/31」不存在，JS 自動滾到 5/1，「近一月」起點比正確值(4/30)晚一天，
+        // 邊界日交易被漏算；3M 回推撞 2 月最多晚 3 天。
+        // 改為「先落到目標月 1 號、再 clamp 到該月實際天數」的安全回推。
+        const monthsAgo = (n: number): Date => {
+            const d = new Date(now.getFullYear(), now.getMonth() - n, 1);
+            const daysInTarget = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+            d.setDate(Math.min(now.getDate(), daysInTarget));
+            d.setHours(0, 0, 0, 0);
+            return d;
+        };
+
         if (timeRange === '1M') {
-            startDate = new Date();
-            startDate.setMonth(now.getMonth() - 1);
-            startDate.setHours(0, 0, 0, 0);
+            startDate = monthsAgo(1);
         } else if (timeRange === '3M') {
-            startDate = new Date();
-            startDate.setMonth(now.getMonth() - 3);
-            startDate.setHours(0, 0, 0, 0);
+            startDate = monthsAgo(3);
         } else if (timeRange === 'YTD') {
             startDate = new Date(now.getFullYear(), 0, 1);
             startDate.setHours(0, 0, 0, 0);

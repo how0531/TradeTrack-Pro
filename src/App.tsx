@@ -149,11 +149,14 @@ function MainApp() {
         const start = new Date(year, month, 1);
         const end = new Date(year, month + 1, 0, 23, 59, 59);
         
-        const monthlyTrades = trades.filter(t => {
+        // M5 (v3.9.0): 改用 filteredTrades（與月曆泡泡的 dailyPnlMap 同源）。
+        // 以前用全量 trades：使用者篩選策略/帳戶組合後，月曆泡泡變了但
+        // 頂部月統計不變，同一畫面兩個數字對不上。
+        const monthlyTrades = filteredTrades.filter(t => {
             const d = safeDateParse(t.date);
             return d >= start && d <= end;
         });
-        
+
         const pnl = monthlyTrades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0);
         // 勝率分母只算「有盈或虧」的交易；PnL=0（平手）不計入，
         // 否則 10 筆全平手 + 5 筆獲利 會被算成 33% 勝率而非 100%。
@@ -162,7 +165,7 @@ function MainApp() {
         const winRate = decisive.length > 0 ? (wins / decisive.length) * 100 : 0;
 
         return { pnl, winRate, count: monthlyTrades.length };
-    }, [trades, currentMonth]);
+    }, [filteredTrades, currentMonth]);
 
     const moodGradient = useMemo(() => {
         if (isRiskAlert) return 'radial-gradient(circle at 50% -20%, rgba(208, 90, 90, 0.15), transparent 70%)';
