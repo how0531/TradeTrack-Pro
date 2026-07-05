@@ -296,16 +296,26 @@ export const CustomDateRangeModal = ({ isOpen, onClose, onApply, initialRange, l
                     >
                         {t.reset}
                     </button>
-                    <button
-                        onClick={() => onApply(startDate, endDate)}
-                        disabled={!startDate || !endDate}
-                        className={`
-                            px-8 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all
-                            ${startDate && endDate ? 'bg-[#C8B085] text-black shadow-[0_8px_16px_rgba(200,176,133,0.3)] hover:scale-[1.02] active:scale-95' : 'bg-[#25282C] text-zinc-700 cursor-not-allowed'}
-                        `}
-                    >
-                        {t.confirm}
-                    </button>
+                    {/* L5 (v3.9.0): 確認鈕加 start<=end guard。「今日」快捷鈕只設
+                        endDate 不驗證順序，可產生 start>end 的區間 → 套用後所有
+                        統計歸零且使用者不知道為什麼。 */}
+                    {(() => {
+                        const rangeValid = !!startDate && !!endDate && startDate <= endDate;
+                        return (
+                            <button
+                                onClick={() => rangeValid && onApply(startDate, endDate)}
+                                disabled={!rangeValid}
+                                className={`
+                                    px-8 py-3 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all
+                                    ${rangeValid ? 'bg-[#C8B085] text-black shadow-[0_8px_16px_rgba(200,176,133,0.3)] hover:scale-[1.02] active:scale-95' : 'bg-[#25282C] text-zinc-700 cursor-not-allowed'}
+                                `}
+                            >
+                                {startDate && endDate && startDate > endDate
+                                    ? (lang === 'zh' ? '起訖顛倒' : 'Invalid range')
+                                    : t.confirm}
+                            </button>
+                        );
+                    })()}
                 </div>
             </div>
         </div>

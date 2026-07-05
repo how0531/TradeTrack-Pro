@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.0] - 2026-06-13
+
+### Fixed — Ultra 深度審計：前端計算核心 13 項瑕疵（第一批）
+
+以多代理工作流（6 個領域 finder × 每發現 3 個對抗式驗證者）掃描全部運算邏輯，
+產出 46 個候選、其中 7 個經 3/3 或 2/3 票確認、另 15 個由主線程人工驗證確認。
+本批修復前端計算核心；券商同步鏈 9 項在下一批（v3.9.1）。
+
+#### HIGH — `src/utils/calculations.ts`
+- **H1 `endDateFilter` 完全未使用**：Sharpe / 停滯天數 / equity 曲線一律跑到「今天」。
+  選歷史區間時，區間結束後每一天都被灌成 0 報酬稀釋 Sharpe（實測 5.48→2.11），
+  停滯天數把區間後所有交易日全計入（實測顯示 300+ 天），曲線多出延伸到今天的平坦尾巴。
+  修：新增 `analysisEnd`（endDateFilter 與今天取小），停滯/Sharpe 迴圈與曲線終點都以它為界。
+- **H2 勝率含平手**：主 `winRate` 與 `stratStats[].winRate` 分母含 pnl=0 的 scratch 單
+  （5 勝 10 平顯示 33% 而非 100%），與 App.tsx monthlyStats 已修正的定義矛盾；
+  `stratStats` 的 avgLoss / riskReward 還把平手算成虧損筆數。修：分母一律 wins+losses。
+
+#### MEDIUM
+- **M1 maxDD/currentDD 隨圖表 frequency 漂移**（calculations.ts）：月檢視下期內回撤被
+  期間淨額抵銷 — 統計卡顯示 0%、回撤警戒不觸發；切回日檢視又變 7.27%。
+  修：統計數字改用日粒度迴圈追蹤的 `dailyMaxDD` / `dailyCurrentDD`，與圖表 frequency 解耦。
+- **M2 setMonth 月底溢位**（useMetrics.ts）：5/31 按「近一月」時 4/31 不存在滾到 5/1，
+  起點晚一天漏算邊界交易；3M 撞 2 月最多晚 3 天。修：安全回推（先落 1 號再 clamp 天數）。
+- **M3 getPeriodKey daily 不正規化**（calculations.ts）：非 YYYY-MM-DD 格式的日期 key
+  與曲線迴圈的 key 對不上，該筆損益從曲線無聲消失。修：daily 也走 toLocalISO 正規化。
+- **M4 每日小計吃到分頁切片**（LogsView.tsx）：dailyTotals 從 visibleTrades（前 200 筆）
+  計算，跨越分頁邊界那天顯示殘缺小計。修：改從全量 sortedTrades 計算 + Number() 轉型。
+- **M5 monthlyStats 用未過濾交易**（App.tsx）：篩選策略/帳戶後月曆泡泡變了但頂部
+  月統計不變。修：改用與月曆同源的 filteredTrades。
+- **M6 平手單解除連敗警報**（calculations.ts calculateStreaks）：連虧 5 筆後一筆 scratch
+  單把 currentLoss 歸零，風控警戒被解除。修：pnl=0 跳過不重置。
+- **M7 Sharpe 年化係數不一致**（calculations.ts）：報酬序列含週末/假日 0 報酬（一年 ~365 筆）
+  卻用 √252 年化，系統性低估 ~17%。修：序列只收台股交易日（非交易日有真實損益仍計入）。
+
+#### LOW
+- **L1 無效日期塌縮曲線**（calculations.ts）：一筆壞日期交易讓 dCursor 從 Invalid Date
+  起跑，整條曲線只剩 Start 點。修：排序前先過濾無效日期。
+- **L3 「10000萬」**（format.ts）：99,995,000–99,999,999 經 toFixed 進位後顯示 10000萬。
+  修：round 後達下一級門檻改用「億」。
+- **L4 雙重負號**（DashboardHeader.tsx）：純損益模式下負值渲染成 -$-5,000.00。
+  修：prefix 已含負號時 end 取絕對值。
+- **L5 起訖顛倒可套用**（CustomDateRangeModal.tsx）：「今日」快捷鈕只設 endDate 不驗證順序，
+  start>end 套用後所有統計歸零。修：確認鈕加 start<=end guard + 顛倒時顯示提示。
+
+#### Tests
+- `src/utils/calculations.test.ts` 新增 6 條迴歸測試（H1/H2×2/M1/M6/L1），
+  `vitest run` 全套 74 passed。
+
+#### 審計中被推翻的誤報（3/3 票否決，記錄供參）
+- 「全虧損時 riskReward = NaN 直接上 UI」×2 — formatDecimal 的 isNaN guard 已兜住
+- 其餘 36 個候選中的多數為描述誇大或上游已有防護
+
+### Versions
+- `package.json` 3.8.5 → 3.9.0
+
+
 ## [3.8.5] - 2026-06-13
 
 ### Changed — Netlify production site 改為 `tracktradepro`
