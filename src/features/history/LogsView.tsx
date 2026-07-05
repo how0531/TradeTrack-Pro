@@ -10,6 +10,7 @@ import { I18N } from '../../constants';
 import { formatCompactNumber, formatDate, formatPointsDisplay } from '../../utils/format';
 import { safeDateParse } from '../../utils/calculations';
 import { formatSymbolCode } from '../../utils/symbolNames';
+import { getFuturesMultiplier } from '../../utils/futuresMultipliers';
 import { vibrate } from '../../utils/haptics';
 
 type SortType = 'date' | 'pnl_high' | 'pnl_low';
@@ -87,12 +88,9 @@ const SpineCard = React.memo(({ trade, onEdit, onDelete, hideAmounts }: { trade:
                     const formatted = points.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                     ptsDisplay = `${formatted} pts`;
                 } else if (trade.pnl !== 0) {
-                    // Fallback: 從 NTD 反推點數
-                    let multiplier = 200;
-                    if (code.includes('MTX') || code.includes('小台')) multiplier = 50;
-                    else if (code.includes('TE') || code.includes('電子')) multiplier = 4000;
-                    else if (code.includes('TF') || code.includes('金融')) multiplier = 1000;
-                    else if (code.includes('TXO') || code.includes('選')) multiplier = 50;
+                    // Fallback: 從 NTD 反推點數 — H4 (v3.9.1) 改用統一查表，
+                    // 舊 includes 鏈對 Shioaji API 代碼（MXF 等）全 miss 且會誤配
+                    const multiplier = getFuturesMultiplier(code);
                     const guessedPts = Number((Math.abs(trade.pnl) / multiplier / Math.abs(trade.quantity || 1)).toFixed(2));
                     if (guessedPts > 0) {
                         ptsDisplay = `${guessedPts.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} pts`;

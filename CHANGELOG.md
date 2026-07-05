@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.1] - 2026-06-13
+
+### Fixed — Ultra 深度審計：券商同步鏈 9 項瑕疵（第二批）
+
+#### HIGH
+- **H3 期貨乘數表缺 Shioaji API 代碼**（backend/core/pnl.py）：原表只收 TAIFEX 網站
+  代號（MTX/TE/TF），但 Shioaji ProfitLoss.code 是 API 商品代碼（MXF/EXF/FXF/TMF...）
+  → 全 miss、fallback 200。**小台報酬率被低估 4 倍、微台 20 倍**。補上兩套代號
+  （TXF/MXF/TMF/EXF/ZEF/FXF/ZFF），_FUTURES_NAMES 同步補齊。
+- **H4 前端乘數 includes() 鏈**（新檔 src/utils/futuresMultipliers.ts）：三處
+  （LogsView 點數反推 / SyncDateModal 初始 / autoMerge）的判斷鏈有兩類錯：
+  Shioaji 代碼全 miss → 200；'GTF'.includes('TF') 黃金期誤用 1000（應 100）、
+  'MTE'.includes('TE') 小電子誤用 4000（應 500）。統一改 getFuturesMultiplier()
+  查表（長 prefix 優先 + 中文關鍵字長詞優先）。
+- **H5 autoMerge 加權平均順序**（SyncDateModal）：entryPrice/exitPrice 的加權平均
+  寫在 existing.quantity 被覆寫成 totalQty 之後 — existing 權重被放大成總量，
+  合併分筆的均價計算錯誤。改為先取 prevQty 當權重再覆寫。
+- **H6 autoMerge 張數 /1000**（SyncDateModal）：初始處理註解明載「台股為張，直接取用」，
+  合併時卻再除以 1000 — 2+2 張合併後 note 顯示「0張」。移除 /1000。
+- **H7 重複偵測 Method A 只比 orderNo**（duplicateDetection.ts）：Shioaji ProfitLoss.id
+  是查詢結果的列序號（0,1,2...）非全域唯一 — 不同帳號/批次的第 N 筆 orderNo 相同，
+  「清除重複」會把兩筆無關的真實交易誤判重複並刪掉一筆。改為 orderNo+日期+代號複合比對。
+
+#### LOW
+- **L2 chunk 門檻 off-by-one**（pnl.py）：(end-start).days == 90 = 含首尾 91 個日曆日，
+  舊條件 > 90 漏切這個邊界。改 >=。
+- **L6 today() 用 UTC**（pnl.py）：雲端伺服器 UTC，台北 00:00–07:59 同步「到今天」
+  的區間會被誤截、甚至截出 start>end。改用 UTC+8 的今天。
+- **L7 daily_map 逐步 round**（pnl.py）：累加期間每步 round 累積 ±0.005×n 誤差。
+  改為全部加完後統一 round。
+- **L8 stableID 內容鍵碰撞**（SyncDateModal）：orderNo 無效時同日同代碼同 pnl/qty/price
+  的兩筆真實交易產生相同 ID，bulkPut upsert 靜默吃掉一筆。同批次同 contentKey
+  第 2 筆起加 -1/-2 序號（第 1 筆保持舊格式，與既有資料 ID 相容）。
+
+#### Tests
+- 新增 src/utils/futuresMultipliers.test.ts（5 組 22 條斷言：API 代碼、誤配前綴、
+  中文關鍵字、fallback、舊代號相容）
+- duplicateDetection.test.ts 新增 2 條（列序號 orderNo 不誤判、真重複仍偵測）
+- 全套：前端 81 passed、後端 pytest 8 passed
+
+### Versions
+- `package.json` 3.9.0 → 3.9.1
+- 後端 `/` endpoint `v1.5.5` → `v1.5.6`
+
+
 ## [3.9.0] - 2026-06-13
 
 ### Fixed — Ultra 深度審計：前端計算核心 13 項瑕疵（第一批）
