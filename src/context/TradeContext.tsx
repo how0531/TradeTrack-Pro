@@ -8,8 +8,9 @@ import { detectDuplicates, mergeDuplicates, DuplicateGroup, DetectionOptions } f
 import { safeDateParse } from '../utils/calculations';
 import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams, User } from '../types';
 import { db, resetFirestoreCache } from '../firebaseConfig';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { wipeCloudData } from '../services/firestoreService';
+import { db as localDb } from '../db';
+import { isTradeDirty } from '../hooks/useSync';
+import { wipeCloudData, pullTrades, pullMetadata, pushMetadata } from '../services/firestoreService';
 import { I18N, THEME } from '../constants';
 import { preemptiveWake } from '../services/backendGateway';
 
@@ -231,7 +232,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 5. Sync Logic
     const {
         isSyncing, syncStatus, syncError, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen,
-        triggerCloudBackup, manualPull, setLastSyncTimeStr, setSyncStatus, conflictStats
+        triggerCloudBackup, manualPull, setSyncStatus, conflictStats
     } = useSync({
         user,
         authStatus,
@@ -250,13 +251,31 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     return ok;
                 });
                 if (validTrades.length > 0) {
-                    await localActions.saveTrades(
-                        validTrades.map(t => ({
-                            ...t,
-                            updatedAt: t.updatedAt || new Date().toISOString(),
-                            isDeleted: t.isDeleted ?? false,
-                        }))
-                    );
+                    // 衝突規則：本機 dirty（有尚未推送的變更）→ 保留本機，
+                    // 下次 push 覆蓋雲端（LWW，最後推送者贏）。以前無條件 bulkPut，
+                    // 剛編輯完還沒推送的交易會被雲端版本蓋回去、變更靜默消失。
+                    // 不比較時間戳 — 本機 updatedAt 是客戶端時鐘、雲端是伺服器時鐘，
+                    // 跨時鐘域比大小不可靠；dirty 與否才是可信的判準。
+                    // 套用的雲端 trade 一律標 syncedAt=updatedAt（與雲端一致 = clean），
+                    // 否則拉下來立刻變 dirty，push 再回推雲端形成 echo 迴圈。
+                    await localDb.transaction('rw', localDb.trades, async () => {
+                        const locals = await localDb.trades.bulkGet(validTrades.map(t => t.id));
+                        const toPut: Trade[] = [];
+                        validTrades.forEach((cloud, i) => {
+                            const local = locals[i];
+                            const cloudUpd = cloud.updatedAt || new Date().toISOString();
+                            if (local && isTradeDirty(local)) {
+                                return; // 本機有未推送變更 → 本機優先
+                            }
+                            toPut.push({
+                                ...cloud,
+                                updatedAt: cloudUpd,
+                                isDeleted: cloud.isDeleted ?? false,
+                                syncedAt: cloudUpd,
+                            });
+                        });
+                        if (toPut.length > 0) await localDb.trades.bulkPut(toPut);
+                    });
                 }
             }
             if (Array.isArray(patches.strategies)) {
@@ -488,21 +507,36 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     setIsSyncModalOpen(false);
                     return;
                 }
-                const docSnap = await getDoc(doc(db, 'users', user.uid));
-                const cloudTrades: Trade[] = docSnap.exists() ? (docSnap.data()?.trades || []) : [];
-                const cloudPortfolios: Portfolio[] = docSnap.exists() ? (docSnap.data()?.portfolios || []) : [];
-                const cloudStrategies: string[] = docSnap.exists() ? (docSnap.data()?.strategies || []) : [];
-                const cloudEmotions: string[] = docSnap.exists() ? (docSnap.data()?.emotions || []) : [];
+                // v3.9.3: 改讀 v2 sub-collection — 舊碼讀寫的是 v1 legacy blob
+                // (users/{uid})，合併結果只寫回 blob，v2 同步管線完全看不到。
+                const [cloudAllTrades, cloudMeta] = await Promise.all([
+                    pullTrades(db, user.uid, null),
+                    pullMetadata(db, user.uid),
+                ]);
+                const cloudTrades = cloudAllTrades.filter(t => !t.isDeleted);
+                const cloudPortfolios: Portfolio[] = cloudMeta?.portfolios || [];
+                const cloudStrategies: string[] = cloudMeta?.strategies || [];
+                const cloudEmotions: string[] = cloudMeta?.emotions || [];
 
                 const tradeMap = new Map<string, Trade>();
-                cloudTrades.forEach(t => tradeMap.set(t.id, t));
+                // 雲端副本標 syncedAt = clean；本機覆蓋同 id（本機優先）
+                cloudTrades.forEach(t => tradeMap.set(t.id, { ...t, syncedAt: t.updatedAt }));
                 trades.forEach(t => tradeMap.set(t.id, t));
                 const mergedTrades = Array.from(tradeMap.values());
 
                 const groups = detectDuplicates(mergedTrades);
                 const dedupedCount = groups.reduce((sum, g) => sum + g.duplicates.length, 0);
                 const cleanedTrades = groups.length > 0 ? mergeDuplicates(mergedTrades, groups) : mergedTrades;
-                setTrades(cleanedTrades);
+
+                // 本機未推送的軟刪除要保留（setTrades 會清空整表）；
+                // 若雲端同 id 還活著，刪除標記優先，否則他機資料復活。
+                const localSoftDeleted = (await localDb.trades.toArray()).filter(t => t.isDeleted);
+                const deletedIds = new Set(localSoftDeleted.map(t => t.id));
+                const finalTrades = [
+                    ...cleanedTrades.filter(t => !deletedIds.has(t.id)),
+                    ...localSoftDeleted,
+                ];
+                await setTrades(finalTrades);
 
                 // Merge portfolios by id
                 const portfolioMap = new Map<string, Portfolio>();
@@ -518,21 +552,19 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 setStrategies(mergedStrategies);
                 setEmotions(mergedEmotions);
 
-                // Push merged result directly to cloud (avoid stale closure from triggerCloudBackup)
-                // triggerCloudBackup reads `data` from its closure, but setTrades hasn't flushed yet.
-                // So we push the merged data directly using setDoc.
-                const now = new Date();
-                const rawData = {
-                    trades: cleanedTrades,
+                // v3 push 直接讀 Dexie（setTrades 已 await 落盤），舊的
+                // 「stale closure 需繞過 triggerCloudBackup」前提不存在了。
+                // dirty 判定會自動只推送本機新增/變更的部分。
+                await triggerCloudBackup();
+                // triggerCloudBackup 的 metadata 來自 dataRef（React 快照，
+                // 可能還是合併前的舊值）— 用合併結果明確再推一次蓋回正確值。
+                await pushMetadata(db, user.uid, {
+                    portfolios: mergedPortfolios,
                     strategies: mergedStrategies,
                     emotions: mergedEmotions,
-                    portfolios: mergedPortfolios,
                     settings: { lossColor },
-                    lastUpdated: now
-                };
-                await setDoc(doc(db, 'users', user.uid), JSON.parse(JSON.stringify(rawData, (_, v) => v === undefined ? null : v)));
+                });
                 setSyncStatus('synced');
-                setLastSyncTimeStr(now.toISOString());
                 showToast(
                     'success',
                     lang === 'zh'

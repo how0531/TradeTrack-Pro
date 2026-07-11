@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.3] - 2026-07-11
+
+### Changed — Ultra 協作審計 Batch 2：同步管線 dirty-flag 重設計（解根因群 A）
+
+v2 增量同步用「全域水位 app_last_sync_time」同時當 push 過濾器與 pull cursor，
+是 8 項 HIGH 缺陷的共同根因。v3 改為每筆交易自帶同步狀態：
+
+- **新增 Trade.syncedAt**：dirty = `!syncedAt || updatedAt > syncedAt`。
+  push 資格由每筆交易自己決定，pull 推進 cursor 不再把未推送的本機交易
+  永久排除在 push 之外（v2 的靜默資料遺失主因）。
+- **push 直接讀 Dexie 全表**（useSync）：不經 React dataRef 快照 —
+  修掉 350ms debounce 競態（快照落後 Dexie 寫入漏推）；且包含軟刪除
+  記錄 — v2 的 push 來源被 useLiveQuery 預先濾掉 isDeleted，刪除永遠
+  推不出去、他機資料復活。推送成功後條件式標 syncedAt（推送期間又被
+  編輯的交易不誤標 clean）。
+- **本機 mutation 一律清 syncedAt**（useIndexedDBData）：不依賴
+  updatedAt > syncedAt 跨時鐘域比較（本機時鐘落後伺服器時，新編輯
+  會被誤判 clean 而永不推送）。
+- **pull 衝突規則**（TradeContext.onPull）：本機 dirty → 保留本機
+  （下次 push 覆蓋，LWW）；v2 無條件 bulkPut 會把剛編輯未推送的交易
+  用雲端舊版蓋掉。套用的雲端 trade 標 syncedAt=updatedAt，避免
+  pull → dirty → push 的 echo 迴圈。
+- **pull cursor 綁定 uid**（app_last_sync_time_v2，JSON {uid,time}）：
+  換帳號登入不再沿用前帳號水位漏拉資料；cursor 只由 pull 路徑用雲端
+  lastUpdated（伺服器時鐘域）推進，push 不再用本機時間蓋 cursor（v2
+  混時鐘域）。登出清除兩代 cursor key。
+- **smart-merge 改用 v2 資料層**（TradeContext）：原本讀寫 v1 legacy
+  blob（users/{uid}），合併結果 v2 同步管線完全看不到。改為
+  pullTrades/pullMetadata 合併 → setTrades → triggerCloudBackup
+  （dirty 判定自動只推差異），並保留本機未推送的軟刪除。
+- **onSnapshot 監聽風暴修復**（useSync）：onPull 是 caller 每次 render
+  重建的 inline arrow，列在 effect deps 造成每次 render 都
+  unsubscribe/resubscribe Firestore 監聽。改走 onPullRef。
+
 ## [3.9.2] - 2026-07-11
 
 ### Fixed — Ultra 協作審計：跨執行緒 / 跨模組協調缺陷（Batch 1，6 項）

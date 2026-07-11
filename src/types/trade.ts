@@ -35,6 +35,13 @@ export interface Trade {
   // Incremental Sync Fields
   updatedAt?: string;   // ISO string — 每次建立或修改都更新，供增量同步使用
   isDeleted?: boolean;  // 軟刪除旗標，刪除時設為 true 而非真正移除
+  /**
+   * ISO string — 最後一次成功推送到雲端（或從雲端拉下來）的時間。
+   * dirty 判定：!syncedAt || updatedAt > syncedAt（皆為本機時鐘域，可安全比較）。
+   * 取代舊的全域 app_last_sync_time 水位當推送過濾器 — 水位被 pull 推進時
+   * 會把尚未推送的本機交易永久排除在 push 之外（靜默資料遺失）。
+   */
+  syncedAt?: string;
 }
 
 /**

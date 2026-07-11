@@ -1,21 +1,28 @@
 /**
  * useSync.ts
  *
- * 增量同步 Hook (Incremental Sync Architecture v2)
+ * 增量同步 Hook (Incremental Sync Architecture v3 — dirty-flag)
  *
  * 核心設計：
- *  - 推送 (Push): 只推送 updatedAt >= lastSyncTime 的交易
- *  - 拉取 (Pull): 只拉取 updatedAt > lastSyncTime 的異動記錄
- *  - 刪除 (Delete): 透過 softDeleteTrade() 標記 isDeleted: true 而非真正刪除
- *  - 感知 (Listen): onSnapshot 監聽輕量的 metadata document，有更新才觸發增量 pull
+ *  - 推送 (Push): 直接讀 Dexie，推送所有 dirty 的交易
+ *      dirty = !syncedAt || updatedAt > syncedAt（皆為本機時鐘域）。
+ *      v2 用全域水位 app_last_sync_time 當推送過濾器，但 pull 也會推進
+ *      同一個水位 → 尚未推送的本機交易被永久排除在 push 之外（靜默遺失）。
+ *      v3 的 push 資格完全由每筆交易自己的 dirty 狀態決定，與 pull 無關。
+ *      直接讀 Dexie 也修掉兩個 v2 缺陷：dataRef 快照趕不上 350ms debounce
+ *      的競態，以及 useLiveQuery 預先濾掉 isDeleted → 軟刪除永遠不同步、
+ *      他機資料復活。
+ *  - 拉取 (Pull): 水位只當 pull cursor（updatedAt > since，雲端伺服器時鐘域）
+ *  - 刪除 (Delete): 軟刪除 isDeleted: true → 變 dirty → 隨 push 傳播
+ *  - 感知 (Listen): onSnapshot 監聽輕量 metadata document，有更新才增量 pull
  *  - 遷移 (Migrate): 首次登入自動將舊版 blob 格式搬遷至 sub-collection
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, onSnapshot, Timestamp, Firestore } from 'firebase/firestore';
-import { useLocalStorage } from './useLocalStorage';
 import { SyncStatus, User, Trade, Portfolio } from '../types';
 import { friendlyMessage } from '../utils/errors';
+import { db as localDb } from '../db';
 import {
   pushTrades,
   pullTrades,
@@ -23,6 +30,55 @@ import {
   pullMetadata,
   migrateFromLegacy,
 } from '../services/firestoreService';
+
+// ─────────────────────────────────────────────────────────────
+// Dirty 判定與 pull cursor（皆為模組層 helper，無 React 依賴）
+// ─────────────────────────────────────────────────────────────
+
+/** 這筆交易是否有尚未推送的本機變更。updatedAt/syncedAt 同為本機 ISO 字串，可字典序比較。 */
+export const isTradeDirty = (t: Trade): boolean => {
+  if (!t.syncedAt) return true;
+  return !!t.updatedAt && t.updatedAt > t.syncedAt;
+};
+
+/**
+ * Pull cursor 存放：綁定 uid，換帳號登入不會沿用前帳號的水位。
+ * 值為 JSON {uid, time}。舊的裸字串 key（app_last_sync_time）無法辨識
+ * 所屬帳號 → 一律視為無效並清除（代價只是一次全量 pull）。
+ */
+const SYNC_CURSOR_KEY = 'app_last_sync_time_v2';
+const LEGACY_SYNC_KEY = 'app_last_sync_time';
+
+const readSyncCursor = (uid: string): string => {
+  try {
+    localStorage.removeItem(LEGACY_SYNC_KEY);
+    const raw = localStorage.getItem(SYNC_CURSOR_KEY);
+    if (!raw) return '';
+    const parsed = JSON.parse(raw);
+    return parsed?.uid === uid && typeof parsed.time === 'string' ? parsed.time : '';
+  } catch {
+    return '';
+  }
+};
+
+const writeSyncCursor = (uid: string, iso: string) => {
+  try {
+    localStorage.setItem(SYNC_CURSOR_KEY, JSON.stringify({ uid, time: iso }));
+  } catch { /* quota/private mode — cursor 失效只導致下次全量 pull */ }
+};
+
+/** Firestore Timestamp / Date / {seconds} / ISO string → Date（無法解析回傳 null） */
+const toDateSafe = (v: any): Date | null => {
+  if (!v) return null;
+  if (typeof v.toDate === 'function') return v.toDate();
+  if (v instanceof Date) return v;
+  if (typeof v.seconds === 'number') return new Timestamp(v.seconds, v.nanoseconds || 0).toDate();
+  if (typeof v === 'string') {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+};
 
 interface SyncData {
   trades: Trade[];
@@ -46,7 +102,7 @@ interface UseSyncProps {
     portfolios?: Portfolio[];
     settings?: { lossColor: string };
     lastUpdated?: any;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -57,7 +113,6 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
   const [lastBackupTime, setLastBackupTime] = useState<Date | null>(null);
-  const [lastSyncTimeStr, setLastSyncTimeStr] = useLocalStorage<string>('app_last_sync_time', '');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [conflictStats] = useState<{
@@ -67,7 +122,10 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
   // Refs to prevent stale closures
   const dataRef = useRef(data);
   const syncStatusRef = useRef(syncStatus);
-  const lastSyncTimeStrRef = useRef(lastSyncTimeStr);
+  const userRef = useRef(user);
+  // onPull 通常是 caller 每次 render 重建的 inline arrow — 走 ref 讓
+  // onSnapshot effect 不必把它列入 deps（否則每次 render 都 resubscribe）。
+  const onPullRef = useRef(onPull);
   const lastPullTimeRef = useRef<number>(0);
   const migrationDoneRef = useRef(false);
 
@@ -82,23 +140,31 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
 
   useEffect(() => { dataRef.current = data; }, [data]);
   useEffect(() => { syncStatusRef.current = syncStatus; }, [syncStatus]);
-  useEffect(() => { lastSyncTimeStrRef.current = lastSyncTimeStr; }, [lastSyncTimeStr]);
+  useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { onPullRef.current = onPull; }, [onPull]);
 
-  // ─── Helper: parse stored sync time → Date ───
+  // ─── Helper: pull cursor（uid 綁定）→ Date ───
   const getLastSyncDate = useCallback((): Date | null => {
-    const str = lastSyncTimeStrRef.current;
+    const uid = userRef.current?.uid;
+    if (!uid) return null;
+    const str = readSyncCursor(uid);
     if (!str) return null;
     const d = new Date(str);
     return isNaN(d.getTime()) ? null : d;
   }, []);
 
-  // ─── Helper: save new sync time ───
+  // ─── Helper: save pull cursor ───
   const saveSyncTime = useCallback((date: Date) => {
-    const iso = date.toISOString();
-    setLastSyncTimeStr(iso);
-    lastSyncTimeStrRef.current = iso;
+    const uid = userRef.current?.uid;
+    if (uid) writeSyncCursor(uid, date.toISOString());
     setLastBackupTime(date);
-  }, [setLastSyncTimeStr]);
+  }, []);
+
+  // 向下相容：TradeContext 的 smart-merge 直接寫 cursor 字串
+  const setLastSyncTimeStr = useCallback((iso: string) => {
+    const uid = userRef.current?.uid;
+    if (uid) writeSyncCursor(uid, iso);
+  }, []);
 
   // ─── Migration: 首次使用自動搬遷舊版 blob 格式 ───
   const runMigrationIfNeeded = useCallback(async (uid: string) => {
@@ -111,7 +177,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         console.log(`✅ [Sync] Legacy migration completed: ${result.tradeCount} trades moved.`);
         // 遷移後，把舊資料同步到本地
         const patches = await doPull(uid, null);
-        if (patches) onPull(patches);
+        if (patches) await onPullRef.current(patches);
       }
     } catch (e) {
       console.warn('[Sync] Migration error (non-fatal):', e);
@@ -167,22 +233,31 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     setIsSyncing(true);
     try {
       const now = new Date();
-      const since = getLastSyncDate();
+      const nowIso = now.toISOString();
       const currentData = dataRef.current;
 
-      // 只推送 updatedAt >= lastSyncTime 或從未同步 (since === null) 的 trades
-      const tradesToPush = since
-        ? currentData.trades.filter((t) => {
-            if (!t.updatedAt) return true; // 沒有 updatedAt 的舊資料全部推送
-            return new Date(t.updatedAt) >= since;
-          })
-        : currentData.trades;
+      // 直接讀 Dexie（含軟刪除），推送所有 dirty 的交易。
+      // 不經 dataRef：React 快照可能落後 Dexie 寫入（350ms debounce 競態），
+      // 且 useLiveQuery 預先濾掉 isDeleted → 軟刪除永遠推不出去。
+      const allTrades = await localDb.trades.toArray();
+      const tradesToPush = allTrades.filter(isTradeDirty);
 
-      await pushTrades(db, user.uid, tradesToPush.map(t => ({
-        ...t,
-        updatedAt: t.updatedAt || now.toISOString(),
-        isDeleted: t.isDeleted ?? false,
-      })));
+      if (tradesToPush.length > 0) {
+        await pushTrades(db, user.uid, tradesToPush.map(t => ({
+          ...t,
+          updatedAt: t.updatedAt || nowIso,
+          isDeleted: t.isDeleted ?? false,
+        })));
+
+        // 標記已同步 — 只在 updatedAt 沒被 push 期間的新編輯改動時才標，
+        // 否則會把「推送中又被使用者改過」的交易誤標成 clean。
+        const pushedUpdatedAt = new Map(tradesToPush.map(t => [t.id, t.updatedAt]));
+        await localDb.trades
+          .where('id').anyOf(tradesToPush.map(t => t.id))
+          .modify(t => {
+            if (t.updatedAt === pushedUpdatedAt.get(t.id)) t.syncedAt = nowIso;
+          });
+      }
 
       // 推送 metadata (portfolios, settings 每次都推送，資料量小)
       await pushMetadata(db, user.uid, {
@@ -192,7 +267,9 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         settings: { lossColor: currentData.lossColor },
       });
 
-      saveSyncTime(now);
+      // 注意：push 不再推進 pull cursor —— cursor 是雲端伺服器時鐘域，
+      // 由 pull 路徑用雲端 lastUpdated 推進（v2 用本機 now 蓋 cursor 混時鐘域）。
+      setLastBackupTime(now);
       lastPullTimeRef.current = Date.now();
       setSyncStatus('synced');
       setSyncError(null);
@@ -214,7 +291,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         setTimeout(() => { triggerCloudBackup(); }, 50);
       }
     }
-  }, [user, authStatus, db, getLastSyncDate, saveSyncTime]);
+  }, [user, authStatus, db]);
 
   // ─── Manual Pull (使用者手動點「從雲端還原」) ───
   const manualPull = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
@@ -223,10 +300,12 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     try {
       // 手動拉取一律做全量 (since: null) 確保資料完整
       const patches = await doPull(user.uid, null);
-      if (patches) onPull(patches);
+      if (patches) await onPullRef.current(patches);
 
-      const pullTime = new Date();
-      saveSyncTime(pullTime);
+      // Cursor 用雲端 metadata 的 lastUpdated（伺服器時鐘域）推進；
+      // 沒有 meta 時退回本機時間（僅影響下次增量 pull 的起點）。
+      const cursorDate = toDateSafe(patches?.lastUpdated) || new Date();
+      saveSyncTime(cursorDate);
       lastPullTimeRef.current = Date.now();
       setSyncStatus('synced');
       setSyncError(null);
@@ -238,7 +317,7 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
       setSyncError(msg);
       return { success: false, error: msg };
     }
-  }, [user, authStatus, doPull, onPull, saveSyncTime]);
+  }, [user, authStatus, doPull, saveSyncTime]);
 
   // ─── Listener: metadata 異動 → 觸發增量拉取 ───
   useEffect(() => {
@@ -254,19 +333,11 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
       if (snap.metadata.hasPendingWrites) return;
 
       const now = Date.now();
-      // 60 秒內剛推送過，不重複拉
+      // 5 秒內剛推送/拉取過，不重複拉
       if (now - lastPullTimeRef.current < 5000) return;
       if (syncStatusRef.current === 'saving') return;
 
-      const cloudMeta = snap.data();
-      const cloudUpdated: Date | null = (() => {
-        const v = cloudMeta?.lastUpdated;
-        if (!v) return null;
-        if (typeof v.toDate === 'function') return v.toDate();
-        if (v instanceof Date) return v;
-        if (typeof v.seconds === 'number') return new Timestamp(v.seconds, v.nanoseconds || 0).toDate();
-        return null;
-      })();
+      const cloudUpdated = toDateSafe(snap.data()?.lastUpdated);
 
       const since = getLastSyncDate();
       const localTime = since?.getTime() ?? 0;
@@ -278,9 +349,14 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         try {
           const patches = await doPull(user.uid, since);
           if (patches && (patches.trades?.length || patches.portfolios?.length)) {
-            onPull(patches);
+            await onPullRef.current(patches);
             if (cloudUpdated) saveSyncTime(cloudUpdated);
             lastPullTimeRef.current = Date.now();
+            setSyncStatus('synced');
+          } else if (cloudUpdated) {
+            // 拉不到 trade/portfolio 異動（可能只是 metadata 更新）也要推進
+            // cursor — 否則每次 metadata 心跳都重複掃同一段 delta。
+            saveSyncTime(cloudUpdated);
             setSyncStatus('synced');
           }
         } catch (e) {
@@ -299,7 +375,9 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     });
 
     return () => unsubscribe();
-  }, [user, authStatus, db, runMigrationIfNeeded, getLastSyncDate, doPull, onPull, saveSyncTime]);
+    // onPull 走 onPullRef；其餘 callback 依賴皆為穩定 identity（deps 只含 db/[]）。
+    // 把它們列進 deps 曾造成每次 render 都 unsubscribe/resubscribe 的監聽風暴。
+  }, [user, authStatus, db, runMigrationIfNeeded, getLastSyncDate, doPull, saveSyncTime]);
 
   return {
     isSyncing,

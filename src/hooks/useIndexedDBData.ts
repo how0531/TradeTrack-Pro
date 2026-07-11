@@ -81,7 +81,10 @@ export const useIndexedDBData = () => {
     saveTrade: async (trade: Trade, editingId: string | null) => {
       const now = new Date().toISOString();
       if (editingId) {
-        await db.trades.update(editingId, { ...trade, updatedAt: now });
+        // syncedAt 清空 = 標記 dirty。不能只靠 updatedAt > syncedAt：
+        // syncedAt 可能來自雲端 pull（伺服器時鐘域），客戶端時鐘落後時
+        // 新編輯的 updatedAt 會比它小，變更就永遠推不出去。
+        await db.trades.update(editingId, { ...trade, updatedAt: now, syncedAt: undefined });
       } else {
         const newTrade = {
           ...trade,
@@ -103,6 +106,9 @@ export const useIndexedDBData = () => {
         timestamp: t.timestamp || now,
         updatedAt: t.updatedAt || now,
         isDeleted: t.isDeleted ?? false,
+        // 本機批次寫入（券商匯入/合併）一律視為 dirty，下次 push 上傳。
+        // 雲端 pull 不走這裡（onPull 直寫 Dexie 並自帶 syncedAt）。
+        syncedAt: undefined,
       }));
       // 使用 bulkPut 代替 bulkAdd，遇到相同 ID 時更新而非報錯
       await db.trades.bulkPut(newTrades as Trade[]);
@@ -110,9 +116,11 @@ export const useIndexedDBData = () => {
 
     deleteTrade: async (id: string) => {
       // 軟刪除：標記為 isDeleted 並更新 updatedAt，不真正移除 document
-      // 這樣其他裝置在增量同步時能正確偵測到刪除事件
+      // 這樣其他裝置在增量同步時能正確偵測到刪除事件。
+      // syncedAt 清空 → dirty → 隨下次 push 傳播（v2 的 push 來源是
+      // useLiveQuery 過濾後的清單，軟刪除從來推不出去，他機會復活）。
       const now = new Date().toISOString();
-      await db.trades.update(id, { isDeleted: true, updatedAt: now });
+      await db.trades.update(id, { isDeleted: true, updatedAt: now, syncedAt: undefined });
     },
 
     updatePortfolio: async (id: string, key: keyof Portfolio, value: any) => {
