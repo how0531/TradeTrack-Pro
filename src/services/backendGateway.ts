@@ -45,6 +45,12 @@ interface BackendFetchOptions extends Omit<RequestInit, 'signal'> {
   autoWake?: boolean;
   /** 進度回報 */
   onProgress?: (msg: string) => void;
+  /**
+   * B1e (v3.9.2): 外部取消訊號。caller（例如 SyncDateModal 關閉時）abort
+   * 會真正中斷 in-flight 網路請求與重試迴圈 — 以前只有 stale-token 丟棄
+   * 結果，110s 請求與 5 分鐘 polling 在 modal 關閉後照常在背景跑完。
+   */
+  abortSignal?: AbortSignal;
 }
 
 interface BackendFetchResult<T = any> {
@@ -170,6 +176,7 @@ export const backendFetch = async <T = any>(
     maxRetries = 2,
     autoWake = true,
     onProgress,
+    abortSignal,
     ...fetchInit
   } = options;
 
@@ -177,22 +184,38 @@ export const backendFetch = async <T = any>(
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // 外部已取消 → 立刻退出重試迴圈
+    if (abortSignal?.aborted) {
+      throw new Error('請求已取消 (aborted)');
+    }
     // 退避延遲（第一次不等）
     if (attempt > 0) {
       const backoff = Math.min(3000 * attempt, 10000);
       onProgress?.(`重試中... (${attempt}/${maxRetries})`);
       await new Promise(r => setTimeout(r, backoff));
+      if (abortSignal?.aborted) {
+        throw new Error('請求已取消 (aborted)');
+      }
     }
 
     try {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), timeout);
+      // 鏈接外部 abort：外部取消時同步中斷本次 fetch。
+      // 不用 AbortSignal.any（Safari 16 不支援），手動 forward。
+      const onExternalAbort = () => controller.abort();
+      abortSignal?.addEventListener('abort', onExternalAbort, { once: true });
 
-      const response = await fetch(url, {
-        ...fetchInit,
-        signal: controller.signal,
-      });
-      clearTimeout(tid);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          ...fetchInit,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(tid);
+        abortSignal?.removeEventListener('abort', onExternalAbort);
+      }
 
       // 502/503/504 → 後端可能在冷啟動
       if ((response.status === 502 || response.status === 503 || response.status === 504) && autoWake) {
@@ -238,8 +261,12 @@ export const backendFetch = async <T = any>(
     } catch (e: any) {
       lastError = e;
 
-      // AbortError = timeout
+      // AbortError：分辨「外部取消」與「timeout」。
+      // 外部取消不重試 — caller 已經不要這個結果了。
       if (e.name === 'AbortError') {
+        if (abortSignal?.aborted) {
+          throw new Error('請求已取消 (aborted)');
+        }
         if (attempt < maxRetries) continue;
         throw new Error(`請求超時 (${timeout / 1000}s)，後端可能正在冷啟動或忙碌中。`);
       }

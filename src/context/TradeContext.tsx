@@ -9,6 +9,7 @@ import { safeDateParse } from '../utils/calculations';
 import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams, User } from '../types';
 import { db, resetFirestoreCache } from '../firebaseConfig';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { wipeCloudData } from '../services/firestoreService';
 import { I18N, THEME } from '../constants';
 import { preemptiveWake } from '../services/backendGateway';
 
@@ -442,16 +443,12 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         console.log('🚀 Data Reset Started...');
         try {
             // Cloud Reset (Explicitly Clear)
+            // B1d (v3.9.2): 改用 wipeCloudData — 舊碼只覆寫 v1 legacy blob
+            // (users/{uid})，v2 同步管線的 trades 子集合與 metadata/main
+            // 原封不動，重置後下次登入全量 pull 又把資料整批拉回來。
             if (user && authStatus === 'online') {
-                console.log('🧹 Clearing Cloud Data...');
-                await setDoc(doc(db, 'users', user.uid), {
-                    trades: [],
-                    strategies: [],
-                    emotions: [],
-                    portfolios: [],
-                    settings: { lossColor: THEME.DEFAULT_LOSS },
-                    lastUpdated: new Date()
-                });
+                console.log('🧹 Clearing Cloud Data (v1 blob + v2 sub-collection)...');
+                await wipeCloudData(db, user.uid);
                 console.log('✅ Cloud Data Cleared');
             }
 

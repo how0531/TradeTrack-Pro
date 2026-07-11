@@ -26,7 +26,15 @@ class ShioajiSessionManager:
         self.is_simulation = True
         self.ca_activated = False
         self.ca_activated_time = None  # 記錄 CA 最後啟動時間
-        self._lock = Lock()
+        # B1f (v3.9.2): RLock — ensure_ca_active 也要持鎖（讀寫 ca_activated），
+        # 而 get_api 在持鎖狀態下會呼叫 _try_activate_ca，需要可重入。
+        self._lock = threading.RLock()
+        # B1f: 序列化所有對 Shioaji C++ API 的實際呼叫（list_profit_loss /
+        # list_accounts / margin...）。程式碼註解早就明言該 API NOT thread-safe，
+        # 但背景 job 執行緒與 HTTP handler 執行緒可同時操作同一個 api 物件。
+        # 單使用者 app 的並發本來就是意外情況（auto-sync 撞手動同步），
+        # 序列化損失的只是極少見的並發性，換到的是不再 segfault / 資料錯亂。
+        self.api_call_lock = threading.RLock()
 
     def get_api(
         self, api_key, secret_key, person_id, ca_path, ca_password, simulation=True,
@@ -184,29 +192,34 @@ class ShioajiSessionManager:
         - force=False → 只在從未啟動或超過有效期時才重新啟動
         回傳 True 表示 CA 已啟動，False 表示啟動失敗。
         """
-        if not self.api:
-            print("WARNING: [CA] No API session, cannot activate CA.", flush=True)
-            return False
+        # B1f (v3.9.2): 持鎖讀寫 ca_activated / ca_activated_time —
+        # 以前無鎖，兩執行緒在 CA 過期邊界並發 activate_ca，
+        # 失敗方會把成功方剛寫入的狀態改寫成 False。RLock 允許
+        # get_api 持鎖路徑重入。
+        with self._lock:
+            if not self.api:
+                print("WARNING: [CA] No API session, cannot activate CA.", flush=True)
+                return False
 
-        # 判斷是否需要重新啟動
-        needs_activation = force
-        reason = "強制重新啟動 (PnL 查詢前)" if force else ""
+            # 判斷是否需要重新啟動
+            needs_activation = force
+            reason = "強制重新啟動 (PnL 查詢前)" if force else ""
 
-        if not force:
-            if not self.ca_activated:
-                needs_activation = True
-                reason = "CA 從未成功啟動"
-            elif self.ca_activated_time:
-                elapsed = (datetime.now() - self.ca_activated_time).total_seconds()
-                if elapsed > _CA_EXPIRY_SECONDS:
+            if not force:
+                if not self.ca_activated:
                     needs_activation = True
-                    reason = f"CA 已超過 {_CA_EXPIRY_SECONDS // 60} 分鐘有效期"
+                    reason = "CA 從未成功啟動"
+                elif self.ca_activated_time:
+                    elapsed = (datetime.now() - self.ca_activated_time).total_seconds()
+                    if elapsed > _CA_EXPIRY_SECONDS:
+                        needs_activation = True
+                        reason = f"CA 已超過 {_CA_EXPIRY_SECONDS // 60} 分鐘有效期"
 
-        if needs_activation:
-            print(f"DEBUG: [CA] 重新啟動原因: {reason}", flush=True)
-            self._try_activate_ca(self.api, ca_path, ca_password, person_id)
+            if needs_activation:
+                print(f"DEBUG: [CA] 重新啟動原因: {reason}", flush=True)
+                self._try_activate_ca(self.api, ca_path, ca_password, person_id)
 
-        return self.ca_activated
+            return self.ca_activated
 
     def _try_activate_ca(self, api, ca_path, ca_password, person_id):
         """

@@ -174,6 +174,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   // response is dropped silently. Avoids "phantom result pops up after close"
   // and "setState on unmounted" warnings without touching the service layer.
   const fetchTokenRef = useRef(0);
+  // B1e (v3.9.2): 真正取消 in-flight 網路鏈（token 只丟棄結果、網路照跑）
+  const abortRef = useRef<AbortController | null>(null);
+  // in-flight guard：擋 auto-sync 計時器與手動點擊並行觸發兩次完整抓取
+  const inFlightRef = useRef(false);
 
   // --- Effects ---
   useEffect(() => {
@@ -199,6 +203,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     } else {
       // Reset + invalidate any pending fetch so its late result is discarded.
       fetchTokenRef.current += 1;
+      abortRef.current?.abort();  // B1e: 真正中斷網路請求，不只丟棄結果
       setStep(1);
       setStatus("idle");
       setTransactions([]);
@@ -209,7 +214,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
 
   // Bump the token on unmount too, in case the parent unmounts us mid-fetch
   // without going through the close path.
-  useEffect(() => () => { fetchTokenRef.current += 1; }, []);
+  useEffect(() => () => {
+    fetchTokenRef.current += 1;
+    abortRef.current?.abort();  // B1e: unmount 也中斷網路鏈
+  }, []);
 
   // 📱 Auto-proceed: backend 從休眠恢復後自動開始同步
   useEffect(() => {
@@ -369,6 +377,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   // Removed fake startLoadingAnimation/stopLoadingAnimation
 
   const handleFetch = async (overrideStart?: string, overrideEnd?: string, overrideIds?: string[]) => {
+    // B1e (v3.9.2): in-flight guard — auto-sync 的 500ms 計時器與手動點擊
+    // 可能並行觸發兩次完整券商抓取，setState 交錯會弄壞進度顯示與結果。
+    if (inFlightRef.current) {
+      console.warn('[SyncModal] fetch already in flight, ignoring duplicate trigger');
+      return;
+    }
     const totalStartTime = performance.now();
 
     // Determine effective values (Override or State)
@@ -418,6 +432,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     // and drops the update if a newer fetch (or close) has bumped the ref.
     const token = ++fetchTokenRef.current;
     const isStale = () => token !== fetchTokenRef.current;
+    // B1e: 本次 fetch 的取消控制器 — modal 關閉/unmount 時 abort，
+    // 真正中斷 110s sync 請求與 5 分鐘 async polling。
+    abortRef.current?.abort();
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+    inFlightRef.current = true;
 
     // 🟢 Status Sync: Set to 'checking' (Yellow) or 'online' (Green) to prevent "OFFLINE" contradiction
     // If we are starting a fetch, we assume we are trying to be online.
@@ -570,7 +590,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
              const chunkProgress = Math.floor((chunkCurrent / chunkTotal) * (50 / totalGroups));
              setLoadingProgress(baseProgress + chunkProgress);
              setLoadingMessage(`正在下載 ${firstBranchName}${branchSuffix} 的交易資料...`);
-          });
+          }, abortController.signal);
           console.log(`✅ [DEBUG] Fetch Success: ${groupKey} -> ${result.details?.length || 0} trades`);
 
           if (result.emptyReason === 'ca_not_activated') {
@@ -973,8 +993,14 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     } catch (e: any) {
       console.error("Fetch Error:", e);
       if (isStale()) return;
+      // 外部取消（modal 關閉）不是錯誤 — 靜默結束
+      if (String(e?.message || '').includes('請求已取消')) return;
       setStatus("error");
       setResultMsg(friendlyMessage(e, lang));
+    } finally {
+      // B1e: 無論成功/失敗/取消都釋放 in-flight guard
+      inFlightRef.current = false;
+      if (abortRef.current === abortController) abortRef.current = null;
     }
   };
 

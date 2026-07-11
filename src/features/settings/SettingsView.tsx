@@ -1048,8 +1048,26 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                             </button>
                             <button
                                 onClick={async () => {
-                                    try { await triggerCloudBackup(); } catch (_) {} // 1. BACKUP TO CLOUD first
+                                    // B1b (v3.9.2): triggerCloudBackup 失敗時回傳 {success:false}
+                                    // 而非 throw — 舊碼用 try/catch 判斷成敗，備份失敗照樣
+                                    // clearLocalData 銷毀本機所有資料。改為檢查回傳值，
+                                    // 失敗就中止登出並告知使用者。
+                                    let backupOk = false;
+                                    try {
+                                        const r = await triggerCloudBackup();  // 1. BACKUP TO CLOUD first
+                                        backupOk = !!r?.success;
+                                    } catch (_) { backupOk = false; }
+                                    if (!backupOk) {
+                                        alert(lang === 'zh'
+                                            ? '雲端備份失敗，為保護您的資料已取消登出。請確認網路後重試。'
+                                            : 'Cloud backup failed. Sign-out cancelled to protect your data. Please check your connection and retry.');
+                                        setShowLogoutConfirm(false);
+                                        return;
+                                    }
                                     try { await actions.clearLocalData(); } catch (_) {} // 2. WIPE LOCAL
+                                    // B1c (v3.9.2): 同步水位一併清除 — 不清的話重登入後
+                                    // watermark 讓 sync 認定本機最新，永不自動還原雲端資料。
+                                    try { localStorage.removeItem('app_last_sync_time'); } catch (_) {}
                                     onLogout();               // 3. SIGN OUT
                                     setShowLogoutConfirm(false);
                                 }}
