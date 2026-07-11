@@ -232,13 +232,13 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 5. Sync Logic
     const {
         isSyncing, syncStatus, syncError, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen,
-        triggerCloudBackup, manualPull, setSyncStatus, conflictStats
+        triggerCloudBackup, manualPull, setSyncStatus, runExclusive, conflictStats
     } = useSync({
         user,
         authStatus,
         db,
         data: { trades, strategies, emotions, portfolios, lossColor },
-        onPull: async (patches) => {
+        onPull: async (patches, opts) => {
             // 增量合併：upsert 差異記錄，而非全量覆蓋。
             // Defensive validation — Firestore can race during writes and
             // produce a doc that is missing fields or has a null id; silently
@@ -256,6 +256,8 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     // 剛編輯完還沒推送的交易會被雲端版本蓋回去、變更靜默消失。
                     // 不比較時間戳 — 本機 updatedAt 是客戶端時鐘、雲端是伺服器時鐘，
                     // 跨時鐘域比大小不可靠；dirty 與否才是可信的判準。
+                    // 例外：opts.force（使用者明確點「雲端還原」）→ 雲端一律覆蓋，
+                    // 否則誤刪（軟刪除 = dirty）的交易點還原也救不回來。
                     // 套用的雲端 trade 一律標 syncedAt=updatedAt（與雲端一致 = clean），
                     // 否則拉下來立刻變 dirty，push 再回推雲端形成 echo 迴圈。
                     await localDb.transaction('rw', localDb.trades, async () => {
@@ -264,7 +266,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         validTrades.forEach((cloud, i) => {
                             const local = locals[i];
                             const cloudUpd = cloud.updatedAt || new Date().toISOString();
-                            if (local && isTradeDirty(local)) {
+                            if (local && isTradeDirty(local) && !opts?.force) {
                                 return; // 本機有未推送變更 → 本機優先
                             }
                             toPut.push({
@@ -509,34 +511,62 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }
                 // v3.9.3: 改讀 v2 sub-collection — 舊碼讀寫的是 v1 legacy blob
                 // (users/{uid})，合併結果只寫回 blob，v2 同步管線完全看不到。
-                const [cloudAllTrades, cloudMeta] = await Promise.all([
-                    pullTrades(db, user.uid, null),
-                    pullMetadata(db, user.uid),
-                ]);
-                const cloudTrades = cloudAllTrades.filter(t => !t.isDeleted);
+                //
+                // 整段（雲端抓取 → 本機讀取 → 計算 → setTrades 落盤）以
+                // runExclusive 持 sync mutex 執行：merge 視窗（全量分頁拉取
+                // 可達數秒）內若讓 auto-pull 並行，pull 進來的新交易會被
+                // setTrades 整表覆蓋抹掉，且 cursor 已推進 → 永久漏拉。
+                const mergeResult = await runExclusive(async () => {
+                    const [cloudAllTrades, cloudMeta] = await Promise.all([
+                        pullTrades(db, user.uid, null),
+                        pullMetadata(db, user.uid),
+                    ]);
+                    const cloudTrades = cloudAllTrades.filter(t => !t.isDeleted);
+
+                    // 本機側讀 Dexie 而非 React `trades` 快照 — 快照可能落後
+                    // （merge 前一刻的寫入、或排隊等鎖期間完成的 auto-pull）。
+                    const localAll = await localDb.trades.toArray();
+                    const localActive = localAll.filter(t => !t.isDeleted);
+                    const localSoftDeleted = localAll.filter(t => t.isDeleted);
+
+                    const tradeMap = new Map<string, Trade>();
+                    // 雲端副本標 syncedAt = clean；本機覆蓋同 id（本機優先）
+                    cloudTrades.forEach(t => tradeMap.set(t.id, { ...t, syncedAt: t.updatedAt }));
+                    localActive.forEach(t => tradeMap.set(t.id, t));
+                    const mergedTrades = Array.from(tradeMap.values());
+
+                    const groups = detectDuplicates(mergedTrades);
+                    const dedupedCount = groups.reduce((sum, g) => sum + g.duplicates.length, 0);
+                    const cleanedTrades = groups.length > 0 ? mergeDuplicates(mergedTrades, groups) : mergedTrades;
+
+                    // 去重移除的交易改成軟刪除 tombstone（dirty）— 直接從陣列
+                    // 消失的話雲端 doc 原封不動，下次全量 pull 重複整批復活。
+                    const now = new Date().toISOString();
+                    const dedupTombstones: Trade[] = groups.flatMap(g => g.duplicates).map(t => ({
+                        ...t, isDeleted: true, updatedAt: now, syncedAt: undefined,
+                    }));
+
+                    // 本機未推送的軟刪除保留且優先於雲端存活副本（否則他機資料復活）
+                    const deletedIds = new Set([
+                        ...localSoftDeleted.map(t => t.id),
+                        ...dedupTombstones.map(t => t.id),
+                    ]);
+                    const finalTrades = [
+                        ...cleanedTrades.filter(t => !deletedIds.has(t.id)),
+                        ...localSoftDeleted,
+                        ...dedupTombstones.filter(t => !localSoftDeleted.some(d => d.id === t.id)),
+                    ];
+                    // preserveSyncedAt：來源是 Dexie 與雲端副本（可信），剝除
+                    // syncedAt 會讓全表變 dirty、整表重推。
+                    await setTrades(finalTrades, { preserveSyncedAt: true });
+
+                    return { cleanedTrades, dedupedCount, cloudMeta };
+                });
+
+                const { cleanedTrades, dedupedCount, cloudMeta } = mergeResult;
                 const cloudPortfolios: Portfolio[] = cloudMeta?.portfolios || [];
                 const cloudStrategies: string[] = cloudMeta?.strategies || [];
                 const cloudEmotions: string[] = cloudMeta?.emotions || [];
-
-                const tradeMap = new Map<string, Trade>();
-                // 雲端副本標 syncedAt = clean；本機覆蓋同 id（本機優先）
-                cloudTrades.forEach(t => tradeMap.set(t.id, { ...t, syncedAt: t.updatedAt }));
-                trades.forEach(t => tradeMap.set(t.id, t));
-                const mergedTrades = Array.from(tradeMap.values());
-
-                const groups = detectDuplicates(mergedTrades);
-                const dedupedCount = groups.reduce((sum, g) => sum + g.duplicates.length, 0);
-                const cleanedTrades = groups.length > 0 ? mergeDuplicates(mergedTrades, groups) : mergedTrades;
-
-                // 本機未推送的軟刪除要保留（setTrades 會清空整表）；
-                // 若雲端同 id 還活著，刪除標記優先，否則他機資料復活。
-                const localSoftDeleted = (await localDb.trades.toArray()).filter(t => t.isDeleted);
-                const deletedIds = new Set(localSoftDeleted.map(t => t.id));
-                const finalTrades = [
-                    ...cleanedTrades.filter(t => !deletedIds.has(t.id)),
-                    ...localSoftDeleted,
-                ];
-                await setTrades(finalTrades);
 
                 // Merge portfolios by id
                 const portfolioMap = new Map<string, Portfolio>();
@@ -552,9 +582,10 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 setStrategies(mergedStrategies);
                 setEmotions(mergedEmotions);
 
-                // v3 push 直接讀 Dexie（setTrades 已 await 落盤），舊的
-                // 「stale closure 需繞過 triggerCloudBackup」前提不存在了。
-                // dirty 判定會自動只推送本機新增/變更的部分。
+                // v3 push 直接讀 Dexie（setTrades 已落盤），dirty 判定自動只推
+                // 本機新增/變更 + 去重 tombstones。triggerCloudBackup 自己取鎖，
+                // 所以放在 runExclusive 外呼叫（同鎖不可重入）。await 到的是
+                // 真正落地的結果（mutex 版已無 in-flight 早退的假 success）。
                 await triggerCloudBackup();
                 // triggerCloudBackup 的 metadata 來自 dataRef（React 快照，
                 // 可能還是合併前的舊值）— 用合併結果明確再推一次蓋回正確值。
@@ -630,7 +661,14 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const duplicateGroups = detectDuplicates(trades);
             if (duplicateGroups.length === 0) return;
             const cleaned = mergeDuplicates(trades, duplicateGroups);
-            setTrades(cleaned);
+            // 被移除的重複改軟刪除 tombstone（dirty）— 只從陣列消失的話
+            // 雲端 doc 原封不動，下次全量 pull 重複整批復活、他機也看得到。
+            const now = new Date().toISOString();
+            const tombstones = duplicateGroups.flatMap(g => g.duplicates).map(t => ({
+                ...t, isDeleted: true, updatedAt: now, syncedAt: undefined,
+            }));
+            // 來源是 Dexie 既有列（可信）→ 保留 syncedAt，避免整表重推
+            setTrades([...cleaned, ...tombstones], { preserveSyncedAt: true });
             scheduleCloudBackup();
         },
     }), [localActions, resetAllData, handleImportJSON, resolveImportConflict, pendingImport, scheduleCloudBackup, setActivePortfolioIds, setTrades, trades, importConflicts, incomingImportCount]);

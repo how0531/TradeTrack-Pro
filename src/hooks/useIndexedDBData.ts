@@ -215,10 +215,26 @@ export const useIndexedDBData = () => {
     // 暴露 setters 供 Sync/Import 邏輯使用
     // C6: clear+bulkAdd 必須在同一個 transaction 內，否則 clear 後若 bulkAdd
     // 失敗（quota / parsing / 連線中斷）會留下空表，使用者全部資料消失。
-    setTrades: async (trades: Trade[]) => {
+    //
+    // v3.9.3 dirty-flag 同步的兩道防護（下沉到這裡，所有呼叫端自動受保護）：
+    // 1. 保留軟刪除 tombstone — 呼叫端的來源（React trades / 匯入檔）都
+    //    已濾掉 isDeleted，整表覆蓋會把「尚未推送的刪除」實體抹除 →
+    //    刪除永遠不同步、他機與本機交易復活。傳入同 id 的存活列則視為
+    //    呼叫端明確要復活（匯入檔含該筆），以傳入為準。
+    // 2. preserveSyncedAt=false（預設）強制剝除 syncedAt — 匯入檔等
+    //    不可信來源若殘留 syncedAt 會被誤判 clean、永不推送，登出清除
+    //    本機後即永久遺失。只有來源是 Dexie/雲端副本的呼叫端（smart-merge、
+    //    removeDuplicates）才傳 true 避免整表重推。
+    setTrades: async (trades: Trade[], opts?: { preserveSyncedAt?: boolean }) => {
+      const incoming = opts?.preserveSyncedAt
+        ? trades
+        : trades.map(t => ({ ...t, syncedAt: undefined }));
+      const incomingIds = new Set(incoming.map(t => t.id));
       await db.transaction('rw', db.trades, async () => {
+        const tombstones = (await db.trades.filter(t => !!t.isDeleted).toArray())
+          .filter(t => !incomingIds.has(t.id));
         await db.trades.clear();
-        await db.trades.bulkAdd(trades);
+        await db.trades.bulkAdd([...incoming, ...tombstones]);
       });
     },
 

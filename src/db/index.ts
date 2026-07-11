@@ -42,6 +42,22 @@ export class TradeTrackDB extends Dexie {
       strategies: '++id, &name', // & = unique constraint
       emotions: '++id, &name'
     });
+
+    // v3.9.3 dirty-flag 同步：既有列 backfill syncedAt = updatedAt（視為 clean）。
+    // 沒有這個 backfill，升級後全表 !syncedAt → 全部 dirty → 每台裝置整表
+    // 重推歷史交易；久未開啟的裝置會把陳舊副本以 serverTimestamp LWW 蓋過
+    // 其他裝置的較新編輯（大規模靜默回滾）。v2 時代真的還沒推送的少數變更
+    // 會被視為 clean —— 代價可接受：下次編輯即重新變 dirty。
+    this.version(2).stores({
+      trades: 'id, date, pnl, portfolioId, strategy, emotion, timestamp',
+      portfolios: 'id, name',
+      strategies: '++id, &name',
+      emotions: '++id, &name'
+    }).upgrade(tx =>
+      tx.table('trades').toCollection().modify((t: any) => {
+        if (!t.syncedAt && t.updatedAt) t.syncedAt = t.updatedAt;
+      })
+    );
   }
 }
 
