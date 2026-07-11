@@ -482,17 +482,23 @@ def login_and_fetch_pnl(
         except Exception as e:
             return {"status": "error", "message": f"憑證處理失敗 (CA Failed): {str(e)}", "details": []}
 
+    _api_lock_acquired = False
+    manager = get_session_manager()
     try:
         _log(f"🔍 [REQUEST START] person_id={person_id[-3:] if person_id else '?'}, "
              f"range={start_date}~{end_date}, sim={simulation}, profile_only={profile_only}, "
              f"rss_start={_rss_mb():.0f}MB")
         request_start = time.perf_counter()
 
+        # B1f (v1.5.7): 序列化整段 Shioaji 操作。Shioaji C++ API 非 thread-safe，
+        # 背景 job 執行緒與 HTTP handler（auto-sync 撞手動同步）會同時操作
+        # 同一個 singleton api 物件，導致 segfault / session steal / 資料錯亂。
+        manager.api_call_lock.acquire()
+        _api_lock_acquired = True
+
         # 2. Get API Session (reuses existing if same credentials)
         if progress_callback:
             progress_callback(10, "正在登入永豐金 API...")
-
-        manager = get_session_manager()
         with _Stage("get_api (login or reuse)"):
             api = manager.get_api(
                 api_key, secret_key, person_id, final_ca_path, ca_password, simulation=simulation
@@ -867,6 +873,9 @@ def login_and_fetch_pnl(
             "environment": "simulation" if simulation else "production"
         }
     finally:
+        # B1f: 釋放 Shioaji API 序列化鎖（若已取得）
+        if _api_lock_acquired:
+            manager.api_call_lock.release()
         # 清理臨時 CA 檔案，避免免費雲端磁碟配額累積
         if temp_ca_path and os.path.exists(temp_ca_path):
             try:
@@ -904,8 +913,12 @@ def verify_simulation_account(
         except Exception as e:
             return {"status": "error", "message": f"憑證處理失敗: {str(e)}"}
 
+    _api_lock_acquired = False
+    manager = get_session_manager()
     try:
-        manager = get_session_manager()
+        # B1f: 與 login_and_fetch_pnl 相同 — 序列化 Shioaji C++ API 呼叫
+        manager.api_call_lock.acquire()
+        _api_lock_acquired = True
         # 模擬下單需要 api.Contracts.Stocks 取契約物件，此處必須帶 contracts
         api = manager.get_api(
             api_key, secret_key, person_id, final_ca_path, ca_password, simulation=True,
@@ -959,6 +972,9 @@ def verify_simulation_account(
     except Exception as e:
         return {"status": "error", "message": f"驗證過程中出錯: {str(e)}"}
     finally:
+        # B1f: 釋放 Shioaji API 序列化鎖（若已取得）
+        if _api_lock_acquired:
+            manager.api_call_lock.release()
         if temp_ca_path and os.path.exists(temp_ca_path):
             try:
                 os.unlink(temp_ca_path)

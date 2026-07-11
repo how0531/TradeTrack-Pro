@@ -52,10 +52,13 @@ const generateMockPnl = (startDate: Date, endDate: Date): BrokerSyncResult => {
 };
 
 export const fetchBrokerPnl = async (
-    startDate: Date, 
-    endDate: Date, 
+    startDate: Date,
+    endDate: Date,
     config: BrokerConfig,
-    onProgress?: (current: number, total: number, currentStart: string, currentEnd: string) => void
+    onProgress?: (current: number, total: number, currentStart: string, currentEnd: string) => void,
+    // B1e (v3.9.2): 外部取消訊號 — modal 關閉時 abort 會真正中斷
+    // sync 請求與 async polling，而非只丟棄結果讓網路鏈跑滿 5 分鐘。
+    abortSignal?: AbortSignal
 ): Promise<BrokerSyncResult> => {
     const startTime = performance.now();
     console.log('🔍 [PERF] fetchBrokerPnl 開始:', new Date().toISOString());
@@ -123,6 +126,7 @@ export const fetchBrokerPnl = async (
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
                 timeout: 110000, // 110s：留 10s buffer 在 gunicorn 120s 之內
+                abortSignal,
             });
 
             if (ok && isPnlSuccessResponse(syncResult)) {
@@ -159,14 +163,25 @@ export const fetchBrokerPnl = async (
             }
         } catch (syncErr: any) {
             const msg = String(syncErr?.message || '');
-            // 只有純網路 / timeout 才退回 async；其他錯誤直接拋
+            // 外部取消 → 直接拋，不 fallback（caller 已經不要結果了）
+            if (msg.includes('請求已取消') || abortSignal?.aborted) {
+                throw syncErr;
+            }
+            // 只有純網路 / timeout 才退回 async；其他錯誤直接拋。
+            // B1a (v3.9.2): backendGateway 拋的是「中文」訊息（請求超時 /
+            // 無法連接後端伺服器 / 後端冷啟動失敗），原本只比對英文關鍵字
+            // 全部 miss — async fallback 從未被觸發過，超時被誤判為後端
+            // 邏輯錯誤直接拋給使用者。
             const isNetworkOrTimeout =
                 msg.includes('fetch') ||
                 msg.includes('NetworkError') ||
                 msg.includes('timeout') ||
                 msg.includes('Timeout') ||
                 msg.includes('aborted') ||
-                msg.includes('Failed to fetch');
+                msg.includes('Failed to fetch') ||
+                msg.includes('請求超時') ||
+                msg.includes('無法連接後端') ||
+                msg.includes('冷啟動');
             if (!isNetworkOrTimeout) {
                 syncBackendError = syncErr;
             } else {
@@ -190,6 +205,7 @@ export const fetchBrokerPnl = async (
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
                 timeout: 30000,
+                abortSignal,
             });
 
             if (!ok || createResult?.status === 'error') {
@@ -238,8 +254,15 @@ export const fetchBrokerPnl = async (
             };
 
             while (elapsedMs < MAX_TOTAL_MS) {
+                // B1e: 外部取消 → 立即停止 polling（modal 已關閉）
+                if (abortSignal?.aborted) {
+                    throw new Error('請求已取消 (aborted)');
+                }
                 const wait = pollIntervalMs(pollCount, lastProgress);
                 await new Promise(r => setTimeout(r, wait));
+                if (abortSignal?.aborted) {
+                    throw new Error('請求已取消 (aborted)');
+                }
                 elapsedMs += wait;
                 pollCount++;
 
@@ -247,7 +270,8 @@ export const fetchBrokerPnl = async (
                     const { ok: statOk, data: statData, status: statStatus } = await backendFetch(`/api/jobs/${jobId}/status`, {
                         method: 'GET',
                         timeout: 10000,
-                        autoWake: false // 不要因為 polling 失敗就觸發冷啟動重試
+                        autoWake: false, // 不要因為 polling 失敗就觸發冷啟動重試
+                        abortSignal,
                     });
 
                     // 404 = Job 在後端不存在。
@@ -283,7 +307,8 @@ export const fetchBrokerPnl = async (
                             // 3. 取得最終結果
                             const { ok: resOk, data: finalData } = await backendFetch(`/api/jobs/${jobId}/result`, {
                                 method: 'GET',
-                                timeout: 30000
+                                timeout: 30000,
+                                abortSignal,
                             });
 
                             if (resOk) {
@@ -299,8 +324,9 @@ export const fetchBrokerPnl = async (
                         consecutiveFailures++;
                     }
                 } catch (pollErr: any) {
-                    // 雲端休眠的明確錯誤直接往上拋
+                    // 外部取消 / 雲端休眠的明確錯誤直接往上拋
                     if (
+                        pollErr.message?.includes('請求已取消') ||
                         pollErr.message?.includes('雲端後台') ||
                         pollErr.message?.includes('伺服器在同步過程中重啟')
                     ) {

@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.2] - 2026-07-11
+
+### Fixed — Ultra 協作審計：跨執行緒 / 跨模組協調缺陷（Batch 1，6 項）
+
+第二輪 ultra 多代理審計（29 項確認缺陷）的第一批機械性修復。
+後端同步升版 v1.5.7。
+
+#### 前端
+- **B1a 非同步 fallback 死碼**（brokerService.ts）：isNetworkOrTimeout 只比對英文
+  關鍵字（timeout/Failed to fetch），但 backendGateway 拋的是中文錯誤訊息
+  （請求超時/無法連接後端/冷啟動）→ 同步逾時後永遠不會走非同步 job fallback。
+  補上中文關鍵字比對。
+- **B1b 登出備份失敗仍清資料**（SettingsView.tsx）：登出流程原本 triggerCloudBackup
+  失敗（或回傳 success:false）照樣 clearLocalData → 未備份的本地交易永久遺失。
+  改為備份未確認成功即中止登出並提示；成功後才清資料 + 移除 app_last_sync_time。
+- **B1c 登出殘留同步水位**（SettingsView.tsx）：登出未清 app_last_sync_time，
+  換帳號登入會沿用前帳號的增量水位 → 漏拉資料。登出成功路徑一併移除。
+- **B1d resetAllData 只清 v1 舊格式**（TradeContext.tsx + firestoreService.ts）：
+  雲端清除只刪 users/{uid} 舊 blob，v2 的 users/{uid}/trades 子集合與 metadata
+  原封不動 → 重置後一同步資料全部回來。新增 wipeCloudData()：分頁 writeBatch
+  刪除 trades 子集合 + 重置 metadata + 清 legacy blob。
+- **B1e 關閉 Modal 不取消請求**（SyncDateModal.tsx + backendGateway.ts +
+  brokerService.ts）：關閉同步視窗只丟棄結果（stale token），110s 的同步請求與
+  最長 5 分鐘的 job polling 照常在背景跑完，並可能同時疊加第二次請求。
+  AbortController 全鏈路貫通（fetch / 重試迴圈 / polling），關閉或卸載即真正中斷；
+  加 inFlightRef 防重入。
+
+#### 後端
+- **B1f Shioaji API 跨執行緒無序列化**（core/session.py + core/pnl.py）：
+  Shioaji C++ API 非 thread-safe，背景 job 執行緒與 HTTP handler 可同時操作
+  同一個 singleton api 物件（auto-sync 撞手動同步）→ segfault / session steal /
+  資料錯亂風險。新增 api_call_lock (RLock) 序列化 login_and_fetch_pnl 與
+  verify_simulation_account 的整段 Shioaji 操作；_lock 改 RLock 並讓
+  ensure_ca_active 持鎖讀寫 ca_activated（修 CA 過期邊界的並發改寫）。
+
 ## [3.9.1] - 2026-06-13
 
 ### Fixed — Ultra 深度審計：券商同步鏈 9 項瑕疵（第二批）

@@ -262,3 +262,46 @@ const sanitizeForFirestore = (obj: any): any => {
     value === undefined ? null : value
   ));
 };
+
+/**
+ * B1d (v3.9.2): 完整清除某使用者的雲端資料 — v2 sub-collection 版。
+ *
+ * resetAllData 以前只覆寫 v1 legacy blob（users/{uid}），但 v2 同步管線
+ * 讀寫的是 users/{uid}/trades 子集合與 users/{uid}/metadata/main —
+ * 重置後下次登入 since=null 全量 pull 又把「已重置」的資料整批拉回來。
+ *
+ * Firestore client SDK 沒有 deleteCollection：逐頁撈 id + writeBatch 刪，
+ * 每批 400（低於 500 上限留餘裕）。
+ */
+export const wipeCloudData = async (db: Firestore, uid: string): Promise<void> => {
+  // 1. 刪 trades 子集合（分頁批刪直到空）
+  const col = tradesCol(db, uid);
+  // 迴圈上限防禦：100 頁 × 400 = 4 萬筆，超過即中止（避免規則異常時無限迴圈）
+  for (let page = 0; page < 100; page++) {
+    const snap = await getDocs(query(col, fsLimit(400)));
+    if (snap.empty) break;
+    const batch = writeBatch(db);
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    if (snap.size < 400) break;
+  }
+
+  // 2. 重置 metadata/main（清空 + 蓋新的 lastUpdated，讓他機 onSnapshot 拉到空狀態）
+  await setDoc(metadataDoc(db, uid), {
+    portfolios: [],
+    strategies: [],
+    emotions: [],
+    settings: {},
+    lastUpdated: serverTimestamp(),
+  });
+
+  // 3. 清 v1 legacy blob（維持原行為）
+  await setDoc(legacyDoc(db, uid), {
+    trades: [],
+    strategies: [],
+    emotions: [],
+    portfolios: [],
+    settings: {},
+    lastUpdated: serverTimestamp(),
+  });
+};
