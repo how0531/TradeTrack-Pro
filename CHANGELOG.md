@@ -2,6 +2,96 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.3] - 2026-07-11
+
+### Changed — Ultra 協作審計 Batch 2：同步管線 dirty-flag 重設計（解根因群 A）
+
+v2 增量同步用「全域水位 app_last_sync_time」同時當 push 過濾器與 pull cursor，
+是 8 項 HIGH 缺陷的共同根因。v3 改為每筆交易自帶同步狀態：
+
+- **新增 Trade.syncedAt**：dirty = `!syncedAt || updatedAt > syncedAt`。
+  push 資格由每筆交易自己決定，pull 推進 cursor 不再把未推送的本機交易
+  永久排除在 push 之外（v2 的靜默資料遺失主因）。
+- **push 直接讀 Dexie 全表**（useSync）：不經 React dataRef 快照 —
+  修掉 350ms debounce 競態（快照落後 Dexie 寫入漏推）；且包含軟刪除
+  記錄 — v2 的 push 來源被 useLiveQuery 預先濾掉 isDeleted，刪除永遠
+  推不出去、他機資料復活。推送成功後條件式標 syncedAt（推送期間又被
+  編輯的交易不誤標 clean）。
+- **本機 mutation 一律清 syncedAt**（useIndexedDBData）：不依賴
+  updatedAt > syncedAt 跨時鐘域比較（本機時鐘落後伺服器時，新編輯
+  會被誤判 clean 而永不推送）。
+- **pull 衝突規則**（TradeContext.onPull）：本機 dirty → 保留本機
+  （下次 push 覆蓋，LWW）；v2 無條件 bulkPut 會把剛編輯未推送的交易
+  用雲端舊版蓋掉。套用的雲端 trade 標 syncedAt=updatedAt，避免
+  pull → dirty → push 的 echo 迴圈。
+- **pull cursor 綁定 uid**（app_last_sync_time_v2，JSON {uid,time}）：
+  換帳號登入不再沿用前帳號水位漏拉資料；cursor 只由 pull 路徑用雲端
+  lastUpdated（伺服器時鐘域）推進，push 不再用本機時間蓋 cursor（v2
+  混時鐘域）。登出清除兩代 cursor key。
+- **smart-merge 改用 v2 資料層**（TradeContext）：原本讀寫 v1 legacy
+  blob（users/{uid}），合併結果 v2 同步管線完全看不到。改為
+  pullTrades/pullMetadata 合併 → setTrades → triggerCloudBackup
+  （dirty 判定自動只推差異），並保留本機未推送的軟刪除。
+- **onSnapshot 監聽風暴修復**（useSync）：onPull 是 caller 每次 render
+  重建的 inline arrow，列在 effect deps 造成每次 render 都
+  unsubscribe/resubscribe Firestore 監聽。改走 onPullRef。
+
+### Fixed — 對抗性審查修正（4 lens × 驗證，15 項確認 → 去重 9 議題）
+
+初版 dirty-flag 實作經多代理對抗審查後修正：
+
+- **sync mutex 序列化 push / pull / smart-merge**（useSync.runExclusive）：
+  無鎖時 pull 抓回舊雲端資料 → push 把剛編輯的交易標 clean → pull 套用時
+  dirty-skip 失效 → 編輯被舊資料蓋掉且永不重推。防護判斷全部移入鎖內重查。
+  一併取代 in-flight 早退（早退回傳假 success 會騙過登出守門與 smart-merge
+  的 await 語意，且 50ms follow-up 可用合併前快照蓋回 metadata）。
+- **Dexie v2 升級 backfill syncedAt=updatedAt**：無 backfill 時升級後全表
+  dirty → 每台裝置整表重推；久未開啟的裝置會把陳舊副本以 serverTimestamp
+  LWW 蓋過他機較新編輯（大規模靜默回滾）。
+- **setTrades 下沉兩道防護**（useIndexedDBData）：(1) 整表覆蓋一律保留
+  軟刪除 tombstone — JSON 匯入/去重路徑原本會抹掉未推送的刪除，交易在
+  他機與本機復活；(2) 預設剝除來源不明的 syncedAt（匯入檔殘留會被誤判
+  clean、永不推送，登出清除後永久遺失），可信來源（smart-merge、
+  removeDuplicates）傳 preserveSyncedAt。
+- **去重改軟刪除 tombstone**（smart-merge + removeDuplicates）：原本只從
+  陣列移除，雲端 doc 原封不動 → 下次全量 pull 重複整批復活。改寫入
+  isDeleted tombstone 隨 push 傳播。
+- **smart-merge 本機側改讀 Dexie**：React trades 快照可能落後（merge 視窗
+  內的 auto-pull / 本機寫入會被 setTrades 覆蓋抹掉且 cursor 已推進 →
+  永久漏拉）；整段 merge 持 sync mutex。
+- **manualPull 改 force 套用**：「雲端還原」原本會被 dirty-skip 擋住 —
+  誤刪（軟刪除 = dirty）的交易點還原救不回，反而把刪除推上雲端。force
+  模式下雲端一律覆蓋，dirty-skip 只保留給背景增量 pull。
+- **push 成功標記 syncedAt=updatedAt**（原用 push 時刻 nowIso）：本機時鐘
+  回撥時 nowIso < updatedAt → 該筆永遠 dirty、每次備份重推、雲端更新
+  永遠被擋。
+- 移除死碼 setLastSyncTimeStr 與失效的 syncStatusRef 'saving' 防護。
+
+第二輪聚焦驗證（3 skeptics）再修 5 項：
+- **匯入合併只對檔案列剝 syncedAt**（resolveImportConflict）：初版修正把
+  整個合併結果丟給 setTrades 預設剝除 → 本機所有 clean 列被標 dirty →
+  整表重推、陳舊副本 LWW 蓋掉他機較新編輯（新引入的回滾路徑，HIGH）。
+- **匯入/去重路徑補鎖**：handleImportJSON、resolveImportConflict、
+  removeDuplicates 的整表 setTrades 改持 sync mutex，merge/去重的本機側
+  改讀 Dexie（React 快照可能漏掉剛 pull 進來的交易）。
+- **backfill 涵蓋缺 updatedAt 的舊列**（db v2 upgrade）：legacy localStorage
+  遷移的列沒有 updatedAt，原條件跳過 → 升級後仍整批 dirty 重推。
+- **smart-merge 強制標 dirty 雲端沒有的本機列**：v2 水位缺陷漏推的孤兒
+  交易（backfill 會誤標 clean）由 smart-merge 救回推送。
+
+時序 lens 補修 3 項：
+- **resetAllData 補鎖**：wipe 前取消 pending debounce push 並持 sync mutex —
+  否則飛行中的 push 會在分頁批刪期間把資料重新寫回雲端，重置靜默失效。
+- **migration 全段入鎖**：migrateFromLegacy 的 blob 上推原在鎖外，可與並發
+  push 交錯讓 legacy 舊版本蓋掉首登編輯。
+- **onSnapshot 守門補跑**：snapshot 是 edge-triggered，被 5 秒守門擋下的
+  遠端變更原本要等下一次任意 metadata 寫入才落地（頻繁編輯時長期
+  starve）。改為排一次延遲補跑。
+
+已知取捨（LOW，已記錄）：force 還原套用的是點擊當下的雲端快照，點擊後
+數秒內的本機編輯若同 id 會被覆蓋；登出備份與 clearLocalData 間有毫秒級
+視窗，期間他分頁寫入不在備份內。
+
 ## [3.9.2] - 2026-07-11
 
 ### Fixed — Ultra 協作審計：跨執行緒 / 跨模組協調缺陷（Batch 1，6 項）

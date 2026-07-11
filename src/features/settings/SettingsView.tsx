@@ -1065,9 +1065,13 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                         return;
                                     }
                                     try { await actions.clearLocalData(); } catch (_) {} // 2. WIPE LOCAL
-                                    // B1c (v3.9.2): 同步水位一併清除 — 不清的話重登入後
-                                    // watermark 讓 sync 認定本機最新，永不自動還原雲端資料。
-                                    try { localStorage.removeItem('app_last_sync_time'); } catch (_) {}
+                                    // B1c (v3.9.2): pull cursor 一併清除 — 本機資料已清空，
+                                    // 下次登入必須全量 pull；cursor 殘留會讓增量 pull 漏拉舊資料。
+                                    // v3.9.3 起 cursor 存於 uid 綁定的 v2 key，兩個 key 都清。
+                                    try {
+                                        localStorage.removeItem('app_last_sync_time');
+                                        localStorage.removeItem('app_last_sync_time_v2');
+                                    } catch (_) {}
                                     onLogout();               // 3. SIGN OUT
                                     setShowLogoutConfirm(false);
                                 }}

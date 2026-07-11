@@ -81,7 +81,10 @@ export const useIndexedDBData = () => {
     saveTrade: async (trade: Trade, editingId: string | null) => {
       const now = new Date().toISOString();
       if (editingId) {
-        await db.trades.update(editingId, { ...trade, updatedAt: now });
+        // syncedAt 清空 = 標記 dirty。不能只靠 updatedAt > syncedAt：
+        // syncedAt 可能來自雲端 pull（伺服器時鐘域），客戶端時鐘落後時
+        // 新編輯的 updatedAt 會比它小，變更就永遠推不出去。
+        await db.trades.update(editingId, { ...trade, updatedAt: now, syncedAt: undefined });
       } else {
         const newTrade = {
           ...trade,
@@ -103,6 +106,9 @@ export const useIndexedDBData = () => {
         timestamp: t.timestamp || now,
         updatedAt: t.updatedAt || now,
         isDeleted: t.isDeleted ?? false,
+        // 本機批次寫入（券商匯入/合併）一律視為 dirty，下次 push 上傳。
+        // 雲端 pull 不走這裡（onPull 直寫 Dexie 並自帶 syncedAt）。
+        syncedAt: undefined,
       }));
       // 使用 bulkPut 代替 bulkAdd，遇到相同 ID 時更新而非報錯
       await db.trades.bulkPut(newTrades as Trade[]);
@@ -110,9 +116,11 @@ export const useIndexedDBData = () => {
 
     deleteTrade: async (id: string) => {
       // 軟刪除：標記為 isDeleted 並更新 updatedAt，不真正移除 document
-      // 這樣其他裝置在增量同步時能正確偵測到刪除事件
+      // 這樣其他裝置在增量同步時能正確偵測到刪除事件。
+      // syncedAt 清空 → dirty → 隨下次 push 傳播（v2 的 push 來源是
+      // useLiveQuery 過濾後的清單，軟刪除從來推不出去，他機會復活）。
       const now = new Date().toISOString();
-      await db.trades.update(id, { isDeleted: true, updatedAt: now });
+      await db.trades.update(id, { isDeleted: true, updatedAt: now, syncedAt: undefined });
     },
 
     updatePortfolio: async (id: string, key: keyof Portfolio, value: any) => {
@@ -207,10 +215,26 @@ export const useIndexedDBData = () => {
     // 暴露 setters 供 Sync/Import 邏輯使用
     // C6: clear+bulkAdd 必須在同一個 transaction 內，否則 clear 後若 bulkAdd
     // 失敗（quota / parsing / 連線中斷）會留下空表，使用者全部資料消失。
-    setTrades: async (trades: Trade[]) => {
+    //
+    // v3.9.3 dirty-flag 同步的兩道防護（下沉到這裡，所有呼叫端自動受保護）：
+    // 1. 保留軟刪除 tombstone — 呼叫端的來源（React trades / 匯入檔）都
+    //    已濾掉 isDeleted，整表覆蓋會把「尚未推送的刪除」實體抹除 →
+    //    刪除永遠不同步、他機與本機交易復活。傳入同 id 的存活列則視為
+    //    呼叫端明確要復活（匯入檔含該筆），以傳入為準。
+    // 2. preserveSyncedAt=false（預設）強制剝除 syncedAt — 匯入檔等
+    //    不可信來源若殘留 syncedAt 會被誤判 clean、永不推送，登出清除
+    //    本機後即永久遺失。只有來源是 Dexie/雲端副本的呼叫端（smart-merge、
+    //    removeDuplicates）才傳 true 避免整表重推。
+    setTrades: async (trades: Trade[], opts?: { preserveSyncedAt?: boolean }) => {
+      const incoming = opts?.preserveSyncedAt
+        ? trades
+        : trades.map(t => ({ ...t, syncedAt: undefined }));
+      const incomingIds = new Set(incoming.map(t => t.id));
       await db.transaction('rw', db.trades, async () => {
+        const tombstones = (await db.trades.filter(t => !!t.isDeleted).toArray())
+          .filter(t => !incomingIds.has(t.id));
         await db.trades.clear();
-        await db.trades.bulkAdd(trades);
+        await db.trades.bulkAdd([...incoming, ...tombstones]);
       });
     },
 

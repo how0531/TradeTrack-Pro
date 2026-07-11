@@ -8,8 +8,9 @@ import { detectDuplicates, mergeDuplicates, DuplicateGroup, DetectionOptions } f
 import { safeDateParse } from '../utils/calculations';
 import { Trade, Portfolio, Metrics, Frequency, TimeRange, SyncStatus, RiskStreaks, Translation, Streaks, BrokerConfig, AutoSyncParams, User } from '../types';
 import { db, resetFirestoreCache } from '../firebaseConfig';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { wipeCloudData } from '../services/firestoreService';
+import { db as localDb } from '../db';
+import { isTradeDirty } from '../hooks/useSync';
+import { wipeCloudData, pullTrades, pullMetadata, pushMetadata } from '../services/firestoreService';
 import { I18N, THEME } from '../constants';
 import { preemptiveWake } from '../services/backendGateway';
 
@@ -231,13 +232,13 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 5. Sync Logic
     const {
         isSyncing, syncStatus, syncError, lastBackupTime, isSyncModalOpen, setIsSyncModalOpen,
-        triggerCloudBackup, manualPull, setLastSyncTimeStr, setSyncStatus, conflictStats
+        triggerCloudBackup, manualPull, setSyncStatus, runExclusive, conflictStats
     } = useSync({
         user,
         authStatus,
         db,
         data: { trades, strategies, emotions, portfolios, lossColor },
-        onPull: async (patches) => {
+        onPull: async (patches, opts) => {
             // 增量合併：upsert 差異記錄，而非全量覆蓋。
             // Defensive validation — Firestore can race during writes and
             // produce a doc that is missing fields or has a null id; silently
@@ -250,13 +251,33 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     return ok;
                 });
                 if (validTrades.length > 0) {
-                    await localActions.saveTrades(
-                        validTrades.map(t => ({
-                            ...t,
-                            updatedAt: t.updatedAt || new Date().toISOString(),
-                            isDeleted: t.isDeleted ?? false,
-                        }))
-                    );
+                    // 衝突規則：本機 dirty（有尚未推送的變更）→ 保留本機，
+                    // 下次 push 覆蓋雲端（LWW，最後推送者贏）。以前無條件 bulkPut，
+                    // 剛編輯完還沒推送的交易會被雲端版本蓋回去、變更靜默消失。
+                    // 不比較時間戳 — 本機 updatedAt 是客戶端時鐘、雲端是伺服器時鐘，
+                    // 跨時鐘域比大小不可靠；dirty 與否才是可信的判準。
+                    // 例外：opts.force（使用者明確點「雲端還原」）→ 雲端一律覆蓋，
+                    // 否則誤刪（軟刪除 = dirty）的交易點還原也救不回來。
+                    // 套用的雲端 trade 一律標 syncedAt=updatedAt（與雲端一致 = clean），
+                    // 否則拉下來立刻變 dirty，push 再回推雲端形成 echo 迴圈。
+                    await localDb.transaction('rw', localDb.trades, async () => {
+                        const locals = await localDb.trades.bulkGet(validTrades.map(t => t.id));
+                        const toPut: Trade[] = [];
+                        validTrades.forEach((cloud, i) => {
+                            const local = locals[i];
+                            const cloudUpd = cloud.updatedAt || new Date().toISOString();
+                            if (local && isTradeDirty(local) && !opts?.force) {
+                                return; // 本機有未推送變更 → 本機優先
+                            }
+                            toPut.push({
+                                ...cloud,
+                                updatedAt: cloudUpd,
+                                isDeleted: cloud.isDeleted ?? false,
+                                syncedAt: cloudUpd,
+                            });
+                        });
+                        if (toPut.length > 0) await localDb.trades.bulkPut(toPut);
+                    });
                 }
             }
             if (Array.isArray(patches.strategies)) {
@@ -333,7 +354,10 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }
 
                 // Direct Import (no existing trades — no conflict modal)
-                if (data.trades) setTrades(data.trades);
+                // runExclusive：整表覆蓋不能與持鎖中的 auto-pull 套用交錯，
+                // 否則剛拉下的交易被抹掉且 cursor 已推進 → 增量 pull 永久漏拉。
+                // （檔案來源 → 走 setTrades 預設剝 syncedAt，全部視為 dirty）
+                if (data.trades) runExclusive(() => setTrades(data.trades));
                 if (data.strategies) setStrategies(data.strategies);
                 if (data.emotions) setEmotions(data.emotions);
                 if (data.portfolios && Array.isArray(data.portfolios)) {
@@ -363,7 +387,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
                     if (shouldMerge) {
                         const cleaned = mergeDuplicates(data.trades, duplicates);
-                        setTrades(cleaned);
+                        runExclusive(() => setTrades(cleaned));
                         if (autoMerge) {
                             alert(
                                 lang === 'zh'
@@ -384,16 +408,18 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
         reader.readAsText(file);
         e.target.value = '';
-    }, [trades, lang, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, scheduleCloudBackup]);
+    }, [trades, lang, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, scheduleCloudBackup, runExclusive]);
 
-    const resolveImportConflict = useCallback((choice: 'merge' | 'overwrite') => {
+    const resolveImportConflict = useCallback(async (choice: 'merge' | 'overwrite') => {
         if (!pendingImport) return;
         const data = pendingImport;
         const importedPortfolios: Portfolio[] | null = Array.isArray(data.portfolios) ? data.portfolios : null;
 
         try {
             if (choice === 'overwrite') {
-                if (Array.isArray(data.trades)) setTrades(data.trades);
+                // 檔案來源 → setTrades 預設剝 syncedAt（全 dirty），並持鎖
+                // 避免與 auto-pull 套用交錯。
+                if (Array.isArray(data.trades)) await runExclusive(() => setTrades(data.trades));
                 if (Array.isArray(data.strategies)) setStrategies(data.strategies);
                 if (Array.isArray(data.emotions)) setEmotions(data.emotions);
                 if (importedPortfolios) {
@@ -404,13 +430,23 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             } else {
                 // MERGE — last-write-wins on id collision
                 if (Array.isArray(data.trades)) {
-                    const tradeMap = new Map(trades.map(t => [t.id, t]));
-                    data.trades.forEach((t: Trade) => tradeMap.set(t.id, t));
-                    setTrades(
-                        Array.from(tradeMap.values()).sort((a, b) =>
-                            safeDateParse(b.date).getTime() - safeDateParse(a.date).getTime()
-                        )
-                    );
+                    // 本機側持鎖讀 Dexie（React 快照可能落後）；只對「檔案列」
+                    // 剝 syncedAt — 若把整個合併結果丟給預設剝除，本機所有
+                    // clean 列會被標 dirty → 整表重推 → 陳舊副本 LWW 蓋掉
+                    // 他機較新的雲端編輯（大規模回滾）。
+                    await runExclusive(async () => {
+                        const localActive = (await localDb.trades.toArray()).filter(t => !t.isDeleted);
+                        const tradeMap = new Map(localActive.map(t => [t.id, t]));
+                        (data.trades as Trade[]).forEach(t =>
+                            tradeMap.set(t.id, { ...t, syncedAt: undefined })
+                        );
+                        await setTrades(
+                            Array.from(tradeMap.values()).sort((a, b) =>
+                                safeDateParse(b.date).getTime() - safeDateParse(a.date).getTime()
+                            ),
+                            { preserveSyncedAt: true }
+                        );
+                    });
                 }
                 if (Array.isArray(data.strategies)) {
                     setStrategies(Array.from(new Set([...strategies, ...data.strategies])));
@@ -437,7 +473,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } finally {
             setPendingImport(null);
         }
-    }, [pendingImport, trades, strategies, emotions, portfolios, activePortfolioIds, lang, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, scheduleCloudBackup]);
+    }, [pendingImport, strategies, emotions, portfolios, activePortfolioIds, lang, setTrades, setStrategies, setEmotions, setPortfolios, setActivePortfolioIds, setLossColor, scheduleCloudBackup, runExclusive]);
 
     const resetAllData = useCallback(async (t: Translation) => {
         console.log('🚀 Data Reset Started...');
@@ -446,9 +482,17 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             // B1d (v3.9.2): 改用 wipeCloudData — 舊碼只覆寫 v1 legacy blob
             // (users/{uid})，v2 同步管線的 trades 子集合與 metadata/main
             // 原封不動，重置後下次登入全量 pull 又把資料整批拉回來。
+            //
+            // v3.9.3: 先取消 pending 的 debounce push，再持 sync mutex 執行
+            // wipe — 否則佇列中/飛行中的 push 會在分頁批刪期間把 dirty 交易
+            // 與完整 metadata 重新寫回雲端，重置後下次登入又整批拉回。
+            if (backupTimerRef.current !== null) {
+                clearTimeout(backupTimerRef.current);
+                backupTimerRef.current = null;
+            }
             if (user && authStatus === 'online') {
                 console.log('🧹 Clearing Cloud Data (v1 blob + v2 sub-collection)...');
-                await wipeCloudData(db, user.uid);
+                await runExclusive(() => wipeCloudData(db, user.uid));
                 console.log('✅ Cloud Data Cleared');
             }
 
@@ -472,7 +516,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             try { await indexedDB.deleteDatabase('TradeTrackDB'); } catch (_) {}
             window.location.reload();
         }
-    }, [user, authStatus]);
+    }, [user, authStatus, runExclusive]);
 
     const onResolveSyncConflict = async (choice: 'cloud' | 'local' | 'merge') => {
         if (choice === 'cloud') {
@@ -488,21 +532,71 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     setIsSyncModalOpen(false);
                     return;
                 }
-                const docSnap = await getDoc(doc(db, 'users', user.uid));
-                const cloudTrades: Trade[] = docSnap.exists() ? (docSnap.data()?.trades || []) : [];
-                const cloudPortfolios: Portfolio[] = docSnap.exists() ? (docSnap.data()?.portfolios || []) : [];
-                const cloudStrategies: string[] = docSnap.exists() ? (docSnap.data()?.strategies || []) : [];
-                const cloudEmotions: string[] = docSnap.exists() ? (docSnap.data()?.emotions || []) : [];
+                // v3.9.3: 改讀 v2 sub-collection — 舊碼讀寫的是 v1 legacy blob
+                // (users/{uid})，合併結果只寫回 blob，v2 同步管線完全看不到。
+                //
+                // 整段（雲端抓取 → 本機讀取 → 計算 → setTrades 落盤）以
+                // runExclusive 持 sync mutex 執行：merge 視窗（全量分頁拉取
+                // 可達數秒）內若讓 auto-pull 並行，pull 進來的新交易會被
+                // setTrades 整表覆蓋抹掉，且 cursor 已推進 → 永久漏拉。
+                const mergeResult = await runExclusive(async () => {
+                    const [cloudAllTrades, cloudMeta] = await Promise.all([
+                        pullTrades(db, user.uid, null),
+                        pullMetadata(db, user.uid),
+                    ]);
+                    const cloudTrades = cloudAllTrades.filter(t => !t.isDeleted);
 
-                const tradeMap = new Map<string, Trade>();
-                cloudTrades.forEach(t => tradeMap.set(t.id, t));
-                trades.forEach(t => tradeMap.set(t.id, t));
-                const mergedTrades = Array.from(tradeMap.values());
+                    // 本機側讀 Dexie 而非 React `trades` 快照 — 快照可能落後
+                    // （merge 前一刻的寫入、或排隊等鎖期間完成的 auto-pull）。
+                    const localAll = await localDb.trades.toArray();
+                    const localActive = localAll.filter(t => !t.isDeleted);
+                    const localSoftDeleted = localAll.filter(t => t.isDeleted);
 
-                const groups = detectDuplicates(mergedTrades);
-                const dedupedCount = groups.reduce((sum, g) => sum + g.duplicates.length, 0);
-                const cleanedTrades = groups.length > 0 ? mergeDuplicates(mergedTrades, groups) : mergedTrades;
-                setTrades(cleanedTrades);
+                    const tradeMap = new Map<string, Trade>();
+                    // 雲端副本標 syncedAt = clean；本機覆蓋同 id（本機優先）。
+                    // 雲端完全沒有的本機列強制標 dirty — 這批多半是 v2 水位
+                    // 缺陷漏推的孤兒（或 v3 升級 backfill 誤標 clean 的
+                    // 從未推送列），smart-merge 是使用者救回它們的入口。
+                    const cloudIds = new Set(cloudAllTrades.map(t => t.id));
+                    cloudTrades.forEach(t => tradeMap.set(t.id, { ...t, syncedAt: t.updatedAt }));
+                    localActive.forEach(t => tradeMap.set(
+                        t.id,
+                        cloudIds.has(t.id) ? t : { ...t, syncedAt: undefined }
+                    ));
+                    const mergedTrades = Array.from(tradeMap.values());
+
+                    const groups = detectDuplicates(mergedTrades);
+                    const dedupedCount = groups.reduce((sum, g) => sum + g.duplicates.length, 0);
+                    const cleanedTrades = groups.length > 0 ? mergeDuplicates(mergedTrades, groups) : mergedTrades;
+
+                    // 去重移除的交易改成軟刪除 tombstone（dirty）— 直接從陣列
+                    // 消失的話雲端 doc 原封不動，下次全量 pull 重複整批復活。
+                    const now = new Date().toISOString();
+                    const dedupTombstones: Trade[] = groups.flatMap(g => g.duplicates).map(t => ({
+                        ...t, isDeleted: true, updatedAt: now, syncedAt: undefined,
+                    }));
+
+                    // 本機未推送的軟刪除保留且優先於雲端存活副本（否則他機資料復活）
+                    const deletedIds = new Set([
+                        ...localSoftDeleted.map(t => t.id),
+                        ...dedupTombstones.map(t => t.id),
+                    ]);
+                    const finalTrades = [
+                        ...cleanedTrades.filter(t => !deletedIds.has(t.id)),
+                        ...localSoftDeleted,
+                        ...dedupTombstones.filter(t => !localSoftDeleted.some(d => d.id === t.id)),
+                    ];
+                    // preserveSyncedAt：來源是 Dexie 與雲端副本（可信），剝除
+                    // syncedAt 會讓全表變 dirty、整表重推。
+                    await setTrades(finalTrades, { preserveSyncedAt: true });
+
+                    return { cleanedTrades, dedupedCount, cloudMeta };
+                });
+
+                const { cleanedTrades, dedupedCount, cloudMeta } = mergeResult;
+                const cloudPortfolios: Portfolio[] = cloudMeta?.portfolios || [];
+                const cloudStrategies: string[] = cloudMeta?.strategies || [];
+                const cloudEmotions: string[] = cloudMeta?.emotions || [];
 
                 // Merge portfolios by id
                 const portfolioMap = new Map<string, Portfolio>();
@@ -518,21 +612,20 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 setStrategies(mergedStrategies);
                 setEmotions(mergedEmotions);
 
-                // Push merged result directly to cloud (avoid stale closure from triggerCloudBackup)
-                // triggerCloudBackup reads `data` from its closure, but setTrades hasn't flushed yet.
-                // So we push the merged data directly using setDoc.
-                const now = new Date();
-                const rawData = {
-                    trades: cleanedTrades,
+                // v3 push 直接讀 Dexie（setTrades 已落盤），dirty 判定自動只推
+                // 本機新增/變更 + 去重 tombstones。triggerCloudBackup 自己取鎖，
+                // 所以放在 runExclusive 外呼叫（同鎖不可重入）。await 到的是
+                // 真正落地的結果（mutex 版已無 in-flight 早退的假 success）。
+                await triggerCloudBackup();
+                // triggerCloudBackup 的 metadata 來自 dataRef（React 快照，
+                // 可能還是合併前的舊值）— 用合併結果明確再推一次蓋回正確值。
+                await pushMetadata(db, user.uid, {
+                    portfolios: mergedPortfolios,
                     strategies: mergedStrategies,
                     emotions: mergedEmotions,
-                    portfolios: mergedPortfolios,
                     settings: { lossColor },
-                    lastUpdated: now
-                };
-                await setDoc(doc(db, 'users', user.uid), JSON.parse(JSON.stringify(rawData, (_, v) => v === undefined ? null : v)));
+                });
                 setSyncStatus('synced');
-                setLastSyncTimeStr(now.toISOString());
                 showToast(
                     'success',
                     lang === 'zh'
@@ -594,14 +687,26 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteStrategy: (s: string) => { localActions.deleteStrategy(s); scheduleCloudBackup(); },
         deleteEmotion: (e: string) => { localActions.deleteEmotion(e); scheduleCloudBackup(); },
         detectDuplicates: (options?: DetectionOptions) => detectDuplicates(trades, options),
-        removeDuplicates: () => {
-            const duplicateGroups = detectDuplicates(trades);
-            if (duplicateGroups.length === 0) return;
-            const cleaned = mergeDuplicates(trades, duplicateGroups);
-            setTrades(cleaned);
+        removeDuplicates: async () => {
+            // 持鎖 + 讀 Dexie：React trades 快照可能落後（漏掉剛 pull 進來的
+            // 交易），鎖外整表覆蓋會把它們抹掉且 cursor 已推進 → 永久漏拉。
+            await runExclusive(async () => {
+                const active = (await localDb.trades.toArray()).filter(t => !t.isDeleted);
+                const duplicateGroups = detectDuplicates(active);
+                if (duplicateGroups.length === 0) return;
+                const cleaned = mergeDuplicates(active, duplicateGroups);
+                // 被移除的重複改軟刪除 tombstone（dirty）— 只從陣列消失的話
+                // 雲端 doc 原封不動，下次全量 pull 重複整批復活、他機也看得到。
+                const now = new Date().toISOString();
+                const tombstones = duplicateGroups.flatMap(g => g.duplicates).map(t => ({
+                    ...t, isDeleted: true, updatedAt: now, syncedAt: undefined,
+                }));
+                // 來源是 Dexie 既有列（可信）→ 保留 syncedAt，避免整表重推
+                await setTrades([...cleaned, ...tombstones], { preserveSyncedAt: true });
+            });
             scheduleCloudBackup();
         },
-    }), [localActions, resetAllData, handleImportJSON, resolveImportConflict, pendingImport, scheduleCloudBackup, setActivePortfolioIds, setTrades, trades, importConflicts, incomingImportCount]);
+    }), [localActions, resetAllData, handleImportJSON, resolveImportConflict, pendingImport, scheduleCloudBackup, setActivePortfolioIds, setTrades, trades, importConflicts, incomingImportCount, runExclusive]);
 
     const t = useMemo(() => I18N[lang] || I18N['zh'], [lang]);
 
