@@ -67,6 +67,18 @@ v2 增量同步用「全域水位 app_last_sync_time」同時當 push 過濾器�
   永遠被擋。
 - 移除死碼 setLastSyncTimeStr 與失效的 syncStatusRef 'saving' 防護。
 
+第二輪聚焦驗證（3 skeptics）再修 5 項：
+- **匯入合併只對檔案列剝 syncedAt**（resolveImportConflict）：初版修正把
+  整個合併結果丟給 setTrades 預設剝除 → 本機所有 clean 列被標 dirty →
+  整表重推、陳舊副本 LWW 蓋掉他機較新編輯（新引入的回滾路徑，HIGH）。
+- **匯入/去重路徑補鎖**：handleImportJSON、resolveImportConflict、
+  removeDuplicates 的整表 setTrades 改持 sync mutex，merge/去重的本機側
+  改讀 Dexie（React 快照可能漏掉剛 pull 進來的交易）。
+- **backfill 涵蓋缺 updatedAt 的舊列**（db v2 upgrade）：legacy localStorage
+  遷移的列沒有 updatedAt，原條件跳過 → 升級後仍整批 dirty 重推。
+- **smart-merge 強制標 dirty 雲端沒有的本機列**：v2 水位缺陷漏推的孤兒
+  交易（backfill 會誤標 clean）由 smart-merge 救回推送。
+
 ## [3.9.2] - 2026-07-11
 
 ### Fixed — Ultra 協作審計：跨執行緒 / 跨模組協調缺陷（Batch 1，6 項）

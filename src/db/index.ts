@@ -53,11 +53,16 @@ export class TradeTrackDB extends Dexie {
       portfolios: 'id, name',
       strategies: '++id, &name',
       emotions: '++id, &name'
-    }).upgrade(tx =>
-      tx.table('trades').toCollection().modify((t: any) => {
-        if (!t.syncedAt && t.updatedAt) t.syncedAt = t.updatedAt;
-      })
-    );
+    }).upgrade(tx => {
+      // 缺 updatedAt 的舊列（legacy localStorage 遷移、舊版匯入）也要 backfill —
+      // 跳過的話這批列升級後仍整批 dirty，休眠裝置重推會以 serverTimestamp
+      // LWW 蓋掉他機較新編輯。isTradeDirty 對「有 syncedAt、無 updatedAt」判
+      // clean，語意正確。
+      const nowIso = new Date().toISOString();
+      return tx.table('trades').toCollection().modify((t: any) => {
+        if (!t.syncedAt) t.syncedAt = t.updatedAt || t.timestamp || nowIso;
+      });
+    });
   }
 }
 
