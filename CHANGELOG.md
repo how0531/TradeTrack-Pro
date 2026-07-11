@@ -79,6 +79,19 @@ v2 增量同步用「全域水位 app_last_sync_time」同時當 push 過濾器�
 - **smart-merge 強制標 dirty 雲端沒有的本機列**：v2 水位缺陷漏推的孤兒
   交易（backfill 會誤標 clean）由 smart-merge 救回推送。
 
+時序 lens 補修 3 項：
+- **resetAllData 補鎖**：wipe 前取消 pending debounce push 並持 sync mutex —
+  否則飛行中的 push 會在分頁批刪期間把資料重新寫回雲端，重置靜默失效。
+- **migration 全段入鎖**：migrateFromLegacy 的 blob 上推原在鎖外，可與並發
+  push 交錯讓 legacy 舊版本蓋掉首登編輯。
+- **onSnapshot 守門補跑**：snapshot 是 edge-triggered，被 5 秒守門擋下的
+  遠端變更原本要等下一次任意 metadata 寫入才落地（頻繁編輯時長期
+  starve）。改為排一次延遲補跑。
+
+已知取捨（LOW，已記錄）：force 還原套用的是點擊當下的雲端快照，點擊後
+數秒內的本機編輯若同 id 會被覆蓋；登出備份與 clearLocalData 間有毫秒級
+視窗，期間他分頁寫入不在備份內。
+
 ## [3.9.2] - 2026-07-11
 
 ### Fixed — Ultra 協作審計：跨執行緒 / 跨模組協調缺陷（Batch 1，6 項）

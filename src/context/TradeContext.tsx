@@ -482,9 +482,17 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             // B1d (v3.9.2): 改用 wipeCloudData — 舊碼只覆寫 v1 legacy blob
             // (users/{uid})，v2 同步管線的 trades 子集合與 metadata/main
             // 原封不動，重置後下次登入全量 pull 又把資料整批拉回來。
+            //
+            // v3.9.3: 先取消 pending 的 debounce push，再持 sync mutex 執行
+            // wipe — 否則佇列中/飛行中的 push 會在分頁批刪期間把 dirty 交易
+            // 與完整 metadata 重新寫回雲端，重置後下次登入又整批拉回。
+            if (backupTimerRef.current !== null) {
+                clearTimeout(backupTimerRef.current);
+                backupTimerRef.current = null;
+            }
             if (user && authStatus === 'online') {
                 console.log('🧹 Clearing Cloud Data (v1 blob + v2 sub-collection)...');
-                await wipeCloudData(db, user.uid);
+                await runExclusive(() => wipeCloudData(db, user.uid));
                 console.log('✅ Cloud Data Cleared');
             }
 
@@ -508,7 +516,7 @@ export const TradeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             try { await indexedDB.deleteDatabase('TradeTrackDB'); } catch (_) {}
             window.location.reload();
         }
-    }, [user, authStatus]);
+    }, [user, authStatus, runExclusive]);
 
     const onResolveSyncConflict = async (choice: 'cloud' | 'local' | 'merge') => {
         if (choice === 'cloud') {

@@ -174,15 +174,19 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
     migrationDoneRef.current = true;
 
     try {
-      const result = await migrateFromLegacy(db, uid);
-      if (result.migrated && result.tradeCount > 0) {
-        console.log(`✅ [Sync] Legacy migration completed: ${result.tradeCount} trades moved.`);
-        // 遷移後，把舊資料同步到本地（持鎖，避免與 push 交錯）
-        await runExclusive(async () => {
+      // 整段（blob 上推 + 回拉）持鎖 — migrateFromLegacy 的 pushTrades 若與
+      // 並發 push 交錯，legacy blob 的同 id 舊版本會以較晚的 serverTimestamp
+      // 蓋掉剛推上去的新編輯，遷移後的全量 pull 再把舊值拉回（已 clean，
+      // dirty-skip 不保護）。
+      await runExclusive(async () => {
+        const result = await migrateFromLegacy(db, uid);
+        if (result.migrated && result.tradeCount > 0) {
+          console.log(`✅ [Sync] Legacy migration completed: ${result.tradeCount} trades moved.`);
+          // 遷移後，把舊資料同步到本地
           const patches = await doPull(uid, null);
           if (patches) await onPullRef.current(patches);
-        });
-      }
+        }
+      });
     } catch (e) {
       console.warn('[Sync] Migration error (non-fatal):', e);
     }
@@ -332,19 +336,29 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
 
     // 監聽輕量的 metadata document (不再監聽含所有 trades 的大 blob)
     const metaRef = doc(db, 'users', user.uid, 'metadata', 'main');
-    const unsubscribe = onSnapshot(metaRef, (snap) => {
-      if (!snap.exists()) return;
-      if (snap.metadata.hasPendingWrites) return;
 
-      const cloudUpdated = toDateSafe(snap.data()?.lastUpdated);
+    // 守門補跑 timer — snapshot 是 edge-triggered 的唯一通知，被 5 秒守門
+    // 擋下就不會重送；不補跑的話「排在自家 push 之後」的遠端變更要等
+    // 下一次任意 metadata 寫入才落地（頻繁編輯時可長期 starve）。
+    let rearmTimer: number | null = null;
 
-      // 整段（防護判斷 → 抓取 → 套用 → cursor 推進）持鎖執行。
-      // 防護必須在鎖內重查：排隊等鎖期間可能剛有 push/pull 完成，
-      // 鎖外先查會拿到過期判斷（舊版正是 pull 抓取與 push 交錯造成
-      // 「舊雲端資料蓋掉剛編輯內容」的回滾缺陷）。
+    // 整段（防護判斷 → 抓取 → 套用 → cursor 推進）持鎖執行。
+    // 防護必須在鎖內重查：排隊等鎖期間可能剛有 push/pull 完成，
+    // 鎖外先查會拿到過期判斷（舊版正是 pull 抓取與 push 交錯造成
+    // 「舊雲端資料蓋掉剛編輯內容」的回滾缺陷）。
+    const processRemoteUpdate = (cloudUpdated: Date | null): void => {
       runExclusive(async () => {
-        // 5 秒內剛推送/拉取過，不重複拉
-        if (Date.now() - lastPullTimeRef.current < 5000) return;
+        // 5 秒內剛推送/拉取過 → 排一次補跑而非直接丟棄
+        const waitLeft = 5000 - (Date.now() - lastPullTimeRef.current);
+        if (waitLeft > 0) {
+          if (rearmTimer === null) {
+            rearmTimer = window.setTimeout(() => {
+              rearmTimer = null;
+              processRemoteUpdate(cloudUpdated);
+            }, waitLeft + 100);
+          }
+          return;
+        }
 
         const since = getLastSyncDate();
         const localTime = since?.getTime() ?? 0;
@@ -374,13 +388,22 @@ export const useSync = ({ user, authStatus, db, data, onPull }: UseSyncProps) =>
         setSyncStatus('error');
         setSyncError(friendlyMessage(e));
       });
+    };
+
+    const unsubscribe = onSnapshot(metaRef, (snap) => {
+      if (!snap.exists()) return;
+      if (snap.metadata.hasPendingWrites) return;
+      processRemoteUpdate(toDateSafe(snap.data()?.lastUpdated));
     }, (err) => {
       console.error('[Sync] onSnapshot error:', err);
       setSyncStatus('error');
       setSyncError(friendlyMessage(err));
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (rearmTimer !== null) clearTimeout(rearmTimer);
+    };
     // onPull 走 onPullRef；其餘 callback 依賴皆為穩定 identity（deps 只含 db/[]）。
     // 把它們列進 deps 曾造成每次 render 都 unsubscribe/resubscribe 的監聽風暴。
   }, [user, authStatus, db, runMigrationIfNeeded, getLastSyncDate, doPull, saveSyncTime, runExclusive]);
