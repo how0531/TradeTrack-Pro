@@ -45,7 +45,9 @@ import { friendlyMessage } from "../../utils/errors";
 interface SyncDateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (trades: Trade[]) => void;
+  // 可回傳 Promise（CalendarView.handleSyncSuccess 為 async 寫入）—
+  // handleConfirmImport 會 await 它，寫入完成後才發 success toast。
+  onSuccess?: (trades: Trade[]) => void | Promise<void>;
   lang?: "zh" | "en";
   existingTrades?: Trade[];
   autoSyncParams?: AutoSyncParams | null;
@@ -415,7 +417,20 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
       return;
     }
     if (endDt > todayDt) {
-      setResultMsg("結束日期不可超過今天");
+      setResultMsg("結束日期不可超過今天 — 券商僅提供歷史已實現損益，請將結束日期改為今天（含）以前");
+      return;
+    }
+
+    // 📅 區間長度前置驗證 — 在後端冷啟動（可達 60-90 秒）+ 登入之前就先擋下。
+    // 券商 API 單次查詢有 ~90 天上限，但後端已對證券帳戶自動切成 ≤90 天
+    // chunks（backend/core/pnl.py），期貨單次呼叫實測可抓完整一年，因此
+    // 90-365 天屬已支援情境、不需要擋。超過一年則不行：期貨沒有切段機制、
+    // 證券切成 5 段以上也會撞到後端 120 秒逾時 — 這種請求注定失敗，
+    // 直接在前端提示改用較短區間。
+    const MAX_RANGE_DAYS = 365;
+    const rangeDays = Math.floor((endDt.getTime() - startDt.getTime()) / 86400000) + 1;
+    if (rangeDays > MAX_RANGE_DAYS) {
+      setResultMsg(`日期區間過長（${rangeDays} 天）：單次同步最多 ${MAX_RANGE_DAYS} 天，請縮短區間或分成多次同步`);
       return;
     }
 
@@ -876,7 +891,16 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               existingHasRealOrderNo &&
               trade.orderNo === e.orderNo
             ) {
-              return true;
+              // H7 同款防護（v3.9.4 補上同步匯入這條路）：Shioaji ProfitLoss
+              // 的 orderNo 實為查詢結果列序號（0,1,2...）非全域唯一 — 上月
+              // 既有交易的「3」會跟今天批次的第 4 筆誤命中，新交易被誤標
+              // 「已存在」而自動取消勾選。同單號還必須同日 + 同代號才算命中；
+              // 不符時不 return false — 落到方法B 內容比對（序號跨批次會位移，
+              // 單號不同不能證明「非重複」）。
+              const eCodeA = (e.code || '').split(' ')[0].trim();
+              if (e.date === trade.date && !!eCodeA && eCodeA === tradeStockCode) {
+                return true;
+              }
             }
 
             // --- 方法B: 日期 + 代號 + 損益 主要比對 ---
@@ -964,7 +988,7 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
           setResultMsg(`同步成功但 0 筆交易：${emptyDiagnostics.join('；')}`);
           emitToast({ type: 'info', message: '同步完成但 0 筆交易', detail: emptyDiagnostics.join('；') });
         } else {
-          setResultMsg(`此區間（${effectiveStart} ~ ${effectiveEnd}）查無交易紀錄。請確認券商帳號是否有未平倉或已實作損益。`);
+          setResultMsg(`此區間（${effectiveStart} ~ ${effectiveEnd}）查無交易紀錄。請確認券商帳號是否有未平倉或已實現損益。`);
         }
         setStep(2);
       } else {
@@ -977,9 +1001,12 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
             detail: fetchErrors.join('；'),
           });
         } else {
+          // 此時只是「抓取完成」進入檢核預覽，尚未寫入任何資料 —
+          // 用 info 型 toast 提示檢核；真正的 success toast 在
+          // handleConfirmImport 寫入完成後才發（帶實際勾選/略過筆數）。
           emitToast({
-            type: 'success',
-            message: `已匯入 ${processedTrades.length} 筆交易`,
+            type: 'info',
+            message: `已取得 ${processedTrades.length} 筆交易，請檢核後匯入`,
           });
         }
         setStep(2);
@@ -1004,11 +1031,31 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
     }
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     const finalTrades = transactions.filter((t) => t.selected);
+    // 勾選 0 筆（含 0 筆結果）時不執行匯入、不更新上次同步日期 —
+    // footer CTA 此時已顯示「關閉」，這裡是雙保險。
+    if (finalTrades.length === 0) {
+      onClose();
+      return;
+    }
     // 📱 記住本次同步結束日期，供下次開啟時自動預填
     if (endDate) setLastSyncDate(endDate);
-    if (onSuccess) onSuccess(finalTrades);
+    const skippedCount = transactions.length - finalTrades.length;
+    try {
+      // onSuccess (CalendarView.handleSyncSuccess) 是 async 寫入 —
+      // await 確保 success toast 在資料真正落地後才發，而非關 modal 就發。
+      if (onSuccess) await onSuccess(finalTrades);
+      emitToast({
+        type: 'success',
+        message: `已匯入 ${finalTrades.length} 筆交易`,
+        detail: skippedCount > 0 ? `略過 ${skippedCount} 筆重複／未勾選` : undefined,
+      });
+    } catch (e) {
+      // 寫入失敗 — 不發 success toast，改發錯誤提示
+      console.error('❌ [Import] onSuccess 寫入失敗:', e);
+      emitToast({ type: 'error', message: '匯入失敗', detail: '資料寫入未完成，請重新同步後再試' });
+    }
     onClose();
   };
 
@@ -1016,6 +1063,10 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
   if (typeof document === "undefined") return null;
 
   const currentTheme = NEBULA_THEMES[backendStatus] || NEBULA_THEMES.checking;
+
+  // 檢核階段實際勾選的筆數 — 0 筆（查無結果或全部取消勾選）時
+  // footer 主 CTA 改為「關閉」，不執行匯入、也不更新上次同步日期。
+  const selectedCount = transactions.filter((t) => t.selected).length;
 
   const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0A0B0F]/85 backdrop-blur-2xl animate-in fade-in duration-300 p-4 overflow-hidden font-inter">
@@ -1934,7 +1985,13 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
               )}
 
               <button
-                onClick={step === 1 ? () => handleFetch() : handleConfirmImport}
+                onClick={
+                  step === 1
+                    ? () => handleFetch()
+                    : selectedCount === 0
+                      ? onClose // 0 筆勾選：純關閉，不走匯入流程
+                      : handleConfirmImport
+                }
                 disabled={status === "loading" || (step === 1 && selectedConfigIds.length === 0)}
                 className={`relative overflow-hidden px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-3 active:scale-95
                   ${status === "loading"
@@ -1983,10 +2040,20 @@ export const SyncDateModal: React.FC<SyncDateModalProps> = ({
                         ? lang === "zh"
                           ? "登入並同步"
                           : "LOGIN & SYNC"
-                        : lang === "zh"
-                          ? "確認匯入"
-                          : "CONFIRM IMPORT"}
-                      <CheckCircle2 size={14} />
+                        : selectedCount === 0
+                          // 0 筆結果（或全部取消勾選）— 沒有可匯入的交易，
+                          // 主 CTA 顯示「關閉」避免匯入空集合又靜默關閉
+                          ? lang === "zh"
+                            ? "關閉"
+                            : "CLOSE"
+                          : lang === "zh"
+                            ? `確認匯入（${selectedCount} 筆）`
+                            : `CONFIRM IMPORT (${selectedCount})`}
+                      {step === 2 && selectedCount === 0 ? (
+                        <X size={14} />
+                      ) : (
+                        <CheckCircle2 size={14} />
+                      )}
                     </>
                   )}
                 </span>

@@ -12,6 +12,20 @@ import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { ImportConflictModal } from '../../components/modals/ImportConflictModal';
 import { useTradeContext } from '../../context/TradeContext';
 import { BrokerSettings } from './components/BrokerSettings';
+import { emitToast } from '../../components/ui/Toast';
+
+// 備份時間戳的相對顯示：今天/昨天顯示時刻，更早的日期補上 M/D，
+// 避免三天前的備份被誤讀成「今天 14:32」。
+const formatBackupTime = (d: Date, lang: Lang): string => {
+    const isZh = lang === 'zh';
+    const hhmm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const now = new Date();
+    const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const dayDiff = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+    if (dayDiff === 0) return isZh ? `今天 ${hhmm}` : `Today ${hhmm}`;
+    if (dayDiff === 1) return isZh ? `昨天 ${hhmm}` : `Yesterday ${hhmm}`;
+    return `${d.getMonth() + 1}/${d.getDate()} ${hhmm}`;
+};
 
 
 // --- INTERNAL COMPONENT: GlassCard (UPDATED TRANSPARENCY) ---
@@ -566,11 +580,19 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
     const [isForcePulling, setIsForcePulling] = useState(false); // State for pull loading
     // Set1 (v3.5.0): cloud-restore 改為 inline two-step confirm，避免誤觸蓋掉本地全部資料
     const [pullConfirmStage, setPullConfirmStage] = useState<'idle' | 'confirm'>('idle');
+    // 確認態前 2 秒鎖定按鈕（比照 ResetConfirmPanel 的倒數），避免快速連點兩下直接擊穿確認
+    const [pullCountdown, setPullCountdown] = useState(0);
     React.useEffect(() => {
         if (pullConfirmStage !== 'confirm') return;
-        const timer = setTimeout(() => setPullConfirmStage('idle'), 3000);
+        // 鎖定 2 秒 + 可按 3 秒，共 5 秒後自動復原為 idle
+        const timer = setTimeout(() => setPullConfirmStage('idle'), 5000);
         return () => clearTimeout(timer);
     }, [pullConfirmStage]);
+    React.useEffect(() => {
+        if (pullCountdown <= 0) return;
+        const timer = setTimeout(() => setPullCountdown(c => c - 1), 1000);
+        return () => clearTimeout(timer);
+    }, [pullCountdown]);
     const [showResetConfirm, setShowResetConfirm] = useState(false); // New state for two-step reset
     const jsonInputRef = useRef<HTMLInputElement>(null);
 
@@ -593,9 +615,9 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
         setIsForceBackingUp(false);
 
         if (result.success) {
-            alert(lang === 'zh' ? '強制備份成功！雲端資料已覆蓋為目前裝置版本。' : 'Force backup successful! Cloud data overwritten with local version.');
+            emitToast({ type: 'success', message: lang === 'zh' ? '強制備份成功！雲端資料已覆蓋為目前裝置版本。' : 'Force backup successful! Cloud data overwritten with local version.' });
         } else {
-            alert(lang === 'zh' ? `備份失敗：${result.error}` : `Backup failed: ${result.error}`);
+            emitToast({ type: 'error', message: lang === 'zh' ? '備份失敗' : 'Backup failed', detail: String(result.error ?? '') });
         }
     };
 
@@ -604,17 +626,19 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
         // Two-step inline confirm，取代 window.confirm（瀏覽器擋掉就直接覆蓋本地資料）
         if (pullConfirmStage === 'idle') {
             setPullConfirmStage('confirm');
+            setPullCountdown(2); // 進入確認態後鎖定 2 秒，防止連點擊穿
             return;
         }
+        if (pullCountdown > 0) return; // 倒數未結束，忽略點擊（按鈕本身也是 disabled）
         setPullConfirmStage('idle');
         setIsForcePulling(true);
         const result = await manualPull();
         setIsForcePulling(false);
 
         if (result.success) {
-            alert(lang === 'zh' ? '還原成功！資料已更新。' : 'Restore successful! Data has been updated.');
+            emitToast({ type: 'success', message: lang === 'zh' ? '還原成功！資料已更新。' : 'Restore successful! Data has been updated.' });
         } else {
-            alert(lang === 'zh' ? `還原失敗：${result.error}` : `Restore failed: ${result.error}`);
+            emitToast({ type: 'error', message: lang === 'zh' ? '還原失敗' : 'Restore failed', detail: String(result.error ?? '') });
         }
     };
 
@@ -655,15 +679,26 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                                             {currentUser.email}
                                         </p>
 
-                                        {/* Status Row */}
+                                        {/* Status Row：徽章依 syncStatus 切換，不再無條件顯示「已備份」假保證 */}
                                         <div className="flex items-center gap-2 flex-wrap">
-                                            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#5B9A8B]/10 border border-[#5B9A8B]/20">
-                                                <Cloud size={8} className="text-[#5B9A8B]" />
-                                                <span className="text-[9px] font-bold text-[#5B9A8B] uppercase tracking-wider">{t.synced}</span>
-                                            </div>
+                                            {(() => {
+                                                const badge = syncStatus === 'synced'
+                                                    ? { cls: 'bg-[#5B9A8B]/10 border-[#5B9A8B]/20 text-[#5B9A8B]', label: t.synced }
+                                                    : syncStatus === 'saving'
+                                                        ? { cls: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400', label: lang === 'zh' ? '同步中...' : 'Syncing...' }
+                                                        : syncStatus === 'error'
+                                                            ? { cls: 'bg-red-500/10 border-red-500/20 text-red-400', label: lang === 'zh' ? '同步失敗' : 'Sync failed' }
+                                                            : { cls: 'bg-white/5 border-white/10 text-zinc-500', label: lang === 'zh' ? '尚未同步' : 'Not synced' };
+                                                return (
+                                                    <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border ${badge.cls}`}>
+                                                        <Cloud size={8} />
+                                                        <span className="text-[9px] font-bold uppercase tracking-wider">{badge.label}</span>
+                                                    </div>
+                                                );
+                                            })()}
                                             {lastBackupTime instanceof Date && (
                                                 <span className="text-[9px] text-zinc-600 font-mono">
-                                                    {lastBackupTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    {formatBackupTime(lastBackupTime, lang)}
                                                 </span>
                                             )}
                                         </div>
@@ -920,11 +955,27 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
 
                 <div className="grid grid-cols-1 gap-3">
                     {/* CLOUD ACTIONS ONLY - Removed Local Backup as per user request */}
+                    {/* 「雲端備份」排在「雲端還原」前面：先鼓勵備份（安全操作），再提供還原（破壞性操作） */}
+
+                    <button
+                        onClick={handleForceBackup}
+                        disabled={isForceBackingUp}
+                        className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-[#5B9A8B]/20 hover:border-[#5B9A8B]/40 transition-all gap-2 bg-[#5B9A8B]/5 active:scale-[0.98]"
+                    >
+                        <div className="p-3 rounded-full bg-[#5B9A8B]/10 text-[#5B9A8B] group-hover:scale-110 transition-transform">
+                            {isForceBackingUp ? <Loader2 size={20} className="animate-spin" /> : <Cloud size={20} />}
+                        </div>
+                        <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">{t.cloudBackup ?? '雲端備份'}</span>
+                        {/* 方向說明：讓使用者一眼看懂資料流向 */}
+                        <span className="text-[9px] text-zinc-500 tracking-wide">
+                            {lang === 'zh' ? '本機 → 雲端' : 'Local → Cloud'}
+                        </span>
+                    </button>
 
                     <button
                         onClick={handleForcePull}
-                        disabled={isForcePulling}
-                        className={`group flex flex-col items-center justify-center p-5 rounded-2xl border transition-all gap-2 active:scale-[0.98] ${
+                        disabled={isForcePulling || (pullConfirmStage === 'confirm' && pullCountdown > 0)}
+                        className={`group flex flex-col items-center justify-center p-5 rounded-2xl border transition-all gap-2 active:scale-[0.98] disabled:cursor-not-allowed ${
                             pullConfirmStage === 'confirm'
                                 ? 'border-red-500/60 bg-red-500/10'
                                 : 'border-[#C8B085]/20 hover:border-[#C8B085]/40 bg-[#C8B085]/5'
@@ -941,20 +992,17 @@ export const SettingsView = ({ onBack }: { onBack?: () => void }) => {
                             pullConfirmStage === 'confirm' ? 'text-red-400' : 'text-[#C8B085]'
                         }`}>
                             {pullConfirmStage === 'confirm'
-                                ? (lang === 'zh' ? '再按一次確認覆蓋' : 'Tap again to overwrite')
+                                ? (lang === 'zh'
+                                    ? `以雲端資料覆蓋本機（本機未同步的變更將遺失）${pullCountdown > 0 ? ` (${pullCountdown}s)` : ''}`
+                                    : `Overwrite local with cloud data (unsynced local changes will be lost)${pullCountdown > 0 ? ` (${pullCountdown}s)` : ''}`)
                                 : (lang === 'zh' ? '雲端還原' : 'Cloud Restore')}
                         </span>
-                    </button>
-
-                    <button
-                        onClick={handleForceBackup}
-                        disabled={isForceBackingUp}
-                        className="group flex flex-col items-center justify-center p-5 rounded-2xl border border-[#5B9A8B]/20 hover:border-[#5B9A8B]/40 transition-all gap-2 bg-[#5B9A8B]/5 active:scale-[0.98]"
-                    >
-                        <div className="p-3 rounded-full bg-[#5B9A8B]/10 text-[#5B9A8B] group-hover:scale-110 transition-transform">
-                            {isForceBackingUp ? <Loader2 size={20} className="animate-spin" /> : <Cloud size={20} />}
-                        </div>
-                        <span className="text-[10px] font-bold text-[#5B9A8B] tracking-wider text-center uppercase">{t.cloudBackup ?? '雲端備份'}</span>
+                        {/* 方向說明：讓使用者一眼看懂資料流向 */}
+                        {pullConfirmStage !== 'confirm' && (
+                            <span className="text-[9px] text-zinc-500 tracking-wide">
+                                {lang === 'zh' ? '雲端 → 本機' : 'Cloud → Local'}
+                            </span>
+                        )}
                     </button>
                 </div>
             </div>

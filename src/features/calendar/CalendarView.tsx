@@ -7,6 +7,12 @@ import { I18N } from '../../constants';
 import { formatCurrency, formatDecimal, formatCompactNumber } from '../../utils/format';
 import { SyncDateModal } from '../../components/modals/SyncDateModal';
 import { useTradeContext } from '../../context/TradeContext';
+import { db as localDb } from '../../db';
+
+// 同步匯入自動產生的 note 形如「2330 台積電 | +3.5% | 2張」（兩個分隔線、
+// 尾端是數量單位）。符合此形狀視為機器產生、可被新同步結果覆寫；
+// 不符合視為使用者手寫筆記，重複匯入時保留。
+const AUTO_NOTE_RE = /\|[^|]*\|\s*\d+\s*[張口]\s*$/;
 
 export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDateClick, monthlyStats, hideAmounts, lang }: CalendarViewProps) => {
     const year = currentMonth.getFullYear();
@@ -79,26 +85,47 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
              actions.deleteTrade(`sync-${date}`);
          });
 
-         const newTrades = transactions.map(tx => ({
-             id: tx.id,
-             date: tx.date,
-             pnl: tx.pnl,
-             strategy: tx.strategy || '',
-             emotion: tx.emotion || '',
-             note: tx.note,
-             portfolioId: tx.portfolioId || 'main', // 🛡️ 防護：空 portfolioId 回退到 main
-             // 🛡️ Data Integrity Hardening: Persist ALL Critical Fields
-             code: tx.code,
-             quantity: tx.quantity,
-             entryPrice: tx.entryPrice,
-             exitPrice: tx.exitPrice,
-             category: tx.category,
-             orderNo: tx.orderNo,
-             price: tx.price,
-             raw_yield: tx.raw_yield,
-             yield: tx.yield,
-             points: tx.points,
-         }));
+         // v3.9.4: 重複匯入防護 — saveTrades 是整筆覆蓋(bulkPut)，同 ID 的
+         // 交易重新匯入時會把使用者先前補的策略/心態/手寫筆記洗成空值，
+         // 已刪除(軟刪除)的交易也會復活。先撈既有列：
+         //   1. 既有列已軟刪除 → 跳過不匯入（刪除優先，不自動復活）
+         //   2. 保留既有的 strategy/emotion（同步資料一律是空字串）
+         //   3. note 若不是機器產生格式（使用者改寫過）→ 保留
+         const existingRows = await localDb.trades.bulkGet(transactions.map(tx => tx.id));
+         const existingById = new Map(
+             existingRows.filter((t): t is NonNullable<typeof t> => !!t).map(t => [t.id, t])
+         );
+         const skippedDeleted = transactions.filter(tx => existingById.get(tx.id)?.isDeleted).length;
+         if (skippedDeleted > 0) {
+             console.log(`🗑️ [IMPORT] 略過 ${skippedDeleted} 筆已刪除的交易（不自動復活）`);
+         }
+
+         const newTrades = transactions
+             .filter(tx => !existingById.get(tx.id)?.isDeleted)
+             .map(tx => {
+                 const existing = existingById.get(tx.id);
+                 const keepUserNote = !!existing?.note?.trim() && !AUTO_NOTE_RE.test(existing.note.trim());
+                 return {
+                     id: tx.id,
+                     date: tx.date,
+                     pnl: tx.pnl,
+                     strategy: tx.strategy || existing?.strategy || '',
+                     emotion: tx.emotion || existing?.emotion || '',
+                     note: keepUserNote ? existing!.note : tx.note,
+                     portfolioId: tx.portfolioId || 'main', // 🛡️ 防護：空 portfolioId 回退到 main
+                     // 🛡️ Data Integrity Hardening: Persist ALL Critical Fields
+                     code: tx.code,
+                     quantity: tx.quantity,
+                     entryPrice: tx.entryPrice,
+                     exitPrice: tx.exitPrice,
+                     category: tx.category,
+                     orderNo: tx.orderNo,
+                     price: tx.price,
+                     raw_yield: tx.raw_yield,
+                     yield: tx.yield,
+                     points: tx.points,
+                 };
+             });
 
          try {
              await actions.saveTrades(newTrades);
@@ -115,7 +142,10 @@ export const CalendarView = ({ dailyPnlMap, currentMonth, setCurrentMonth, onDat
              }
          } catch (error) {
              console.error("❌ [IMPORT] Failed to bulk save:", error);
-             alert("匯入失敗：資料庫寫入錯誤");
+             console.groupEnd();
+             // 往上拋讓 SyncDateModal 的 handleConfirmImport 接手：
+             // 它會發錯誤 toast（而非誤發「已匯入」success toast）
+             throw error;
          }
          console.groupEnd();
     };

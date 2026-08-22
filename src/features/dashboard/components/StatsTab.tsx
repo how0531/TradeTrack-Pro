@@ -662,7 +662,7 @@ export const StatsContent = ({ metrics, lang, hideAmounts, setDetailStrategy, st
                 </div>
 
                 {stratView === 'list' ? (
-                    <StrategyListView data={strategyData} onSelect={(name) => setDetailStrategy(name)} lang={lang} />
+                    <StrategyListView data={strategyData} onSelect={(name) => setDetailStrategy(name)} lang={lang} hideAmounts={hideAmounts} />
                 ) : (
                     <>
                         <StrategyBubbleChart data={strategyData} onSelect={(name) => setDetailStrategy(name)} lang={lang} hideAmounts={hideAmounts} />

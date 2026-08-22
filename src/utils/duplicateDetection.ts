@@ -36,20 +36,23 @@ export function detectDuplicates(
     const duplicates = trades.slice(index + 1).filter(other => {
       if (processed.has(other.id)) return false;
 
-      // 方法 1: 使用 orderNo — 僅當兩邊都是真實單號才採用。
+      // 方法 1: 使用 orderNo — 僅當兩邊都是真實單號才採用「正向命中」。
       // H7 (v3.9.1): orderNo 相等還必須同日 + 同代號才判定重複。
       // Shioaji ProfitLoss 的 id 是查詢結果的列序號（0,1,2,...），
       // 不是全域唯一單號 — 不同帳號/不同批次的第 N 筆都會拿到相同
       // orderNo，只比 orderNo 會把兩筆無關的真實交易誤判成重複，
       // removeDuplicates 一鍵直接刪掉其中一筆。
+      // v3.9.4: 方法1 只做正向命中，不命中時「落到方法2」而非直接判非重複 —
+      // 列序號跨批次會位移，同一筆交易兩次同步可能拿到不同序號，
+      // 舊邏輯在單號不同時 return false，真重複永遠抓不到。
       if (isRealOrderNo(trade.orderNo) && isRealOrderNo(other.orderNo)) {
-        if (trade.orderNo !== other.orderNo) return false;
-        const dateA = new Date(trade.date).toISOString().split('T')[0];
-        const dateB = new Date(other.date).toISOString().split('T')[0];
-        if (dateA !== dateB) return false;
-        const codeA = trade.code ? trade.code.split(' ')[0].trim() : '';
-        const codeB = other.code ? other.code.split(' ')[0].trim() : '';
-        return codeA === codeB;
+        if (trade.orderNo === other.orderNo) {
+          const dateA = new Date(trade.date).toISOString().split('T')[0];
+          const dateB = new Date(other.date).toISOString().split('T')[0];
+          const codeA = trade.code ? trade.code.split(' ')[0].trim() : '';
+          const codeB = other.code ? other.code.split(' ')[0].trim() : '';
+          if (dateA === dateB && codeA === codeB) return true;
+        }
       }
 
       // 若設定為僅用 orderNo，則跳過其他條件
