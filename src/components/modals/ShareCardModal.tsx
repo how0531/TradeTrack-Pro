@@ -155,14 +155,16 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
     };
 
     // Helper to split number and unit for styling
-    // Helper to split number and unit for styling
     const getFormattedValueParts = () => {
-        // If hidden, we still return the values but relies on CSS blur
-        // Previously returned **** or 888.88 placeholder
-        
+        // 隱藏模式:直接以遮罩佔位取代真實金額(比照 formatCurrency 對 hideAmounts 的 '****' 慣例)。
+        // 不能依賴 CSS blur — html2canvas 不支援 filter: blur,匯出的 PNG 會露出真實金額,
+        // 改用文字遮罩讓預覽與匯出結果一致。
+        if (displayMode === 'hidden') {
+            return { value: '****', unit: '' };
+        }
+
         let fullStr = '';
-        if (displayMode === 'amount' || displayMode === 'hidden') {
-            // Even if hidden, use the amount format so we blur the actual amount
+        if (displayMode === 'amount') {
             fullStr = formatCompactNumber(metrics.netProfit, false).replace('+', '');
         } else {
             fullStr = `${formatDecimal(metrics.netProfitPct)}%`;
@@ -211,14 +213,15 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                         <div className="flex flex-row items-end gap-3 whitespace-nowrap">
                              {/* Main Number */}
                              <div className="flex items-baseline">
-                                <span 
-                                    className={`font-bold font-barlow-numeric tracking-tighter leading-none drop-shadow-2xl transition-all duration-300 ${displayMode === 'hidden' ? 'blur-md opacity-50 select-none' : ''}`}
+                                {/* 隱藏模式已在 getFormattedValueParts 以 '****' 遮罩,不再依賴 blur(html2canvas 不支援) */}
+                                <span
+                                    className="font-bold font-barlow-numeric tracking-tighter leading-none drop-shadow-2xl transition-all duration-300"
                                     style={{ color: themeColor, fontSize: '40px' }}
                                 >
                                     {value}
                                 </span>
-                                {(unit || displayMode === 'hidden') && (
-                                    <span className={`text-xl font-bold opacity-80 ml-1 ${displayMode === 'hidden' ? 'blur-md opacity-50' : ''}`} style={{ color: themeColor }}>
+                                {unit && (
+                                    <span className="text-xl font-bold opacity-80 ml-1" style={{ color: themeColor }}>
                                         {unit}
                                     </span>
                                 )}
@@ -227,9 +230,10 @@ export const ShareModal = ({ isOpen, onClose, metrics, lang }: ShareModalProps) 
                              {/* Max Drawdown - Right Aligned, stacked */}
                              {/* CHANGED: Removed self-center to allow items-end to work */}
                              <div className="flex flex-col items-end leading-none ml-auto">
-                                <span className={`text-[#555] text-[9px] font-bold uppercase tracking-widest mb-0.5 ${displayMode === 'hidden' ? 'blur-sm select-none' : ''}`}>區間最大回撤</span>
-                                <span className={`font-barlow-numeric text-lg font-bold ${displayMode === 'hidden' ? 'blur-sm opacity-50' : ''}`} style={{ color: drawdownColor }}>
-                                    {formatDecimal(Math.abs(metrics.maxDD))}%
+                                <span className="text-[#555] text-[9px] font-bold uppercase tracking-widest mb-0.5">區間最大回撤</span>
+                                {/* 同主數字:隱藏模式改用文字遮罩,不依賴 blur */}
+                                <span className="font-barlow-numeric text-lg font-bold" style={{ color: drawdownColor }}>
+                                    {displayMode === 'hidden' ? '****' : `${formatDecimal(Math.abs(metrics.maxDD))}%`}
                                 </span>
                             </div>
                         </div>

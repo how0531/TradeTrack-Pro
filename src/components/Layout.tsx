@@ -42,7 +42,10 @@ export const Layout: React.FC<LayoutProps> = ({ lang, onFabClick }) => {
                 onClick={() => setHideAmounts(!hideAmounts)}
                 aria-label={lang === 'zh' ? (hideAmounts ? '顯示金額' : '隱藏金額') : (hideAmounts ? 'Show amounts' : 'Hide amounts')}
                 title={lang === 'zh' ? (hideAmounts ? '顯示金額' : '隱藏金額（截圖友善）') : (hideAmounts ? 'Show amounts' : 'Hide amounts (screenshot-friendly)')}
-                className={`fixed top-3 right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-colors ${
+                // top 用 env(safe-area-inset-top)：PWA viewport-fit=cover 時內容會延伸到
+                // iOS 狀態列下，固定 top-3 會壓在時鐘／動態島底下（比照 DashboardHeader 做法）
+                style={{ top: 'max(0.75rem, env(safe-area-inset-top))' }}
+                className={`fixed right-3 z-40 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-colors ${
                     hideAmounts
                         ? 'bg-[#C8B085]/20 border-[#C8B085]/40 text-[#C8B085]'
                         : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
@@ -52,7 +55,11 @@ export const Layout: React.FC<LayoutProps> = ({ lang, onFabClick }) => {
             </button>
 
             {/* PREMIUM FLOATING NAVIGATION BAR */}
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-48px)] max-w-[350px] pointer-events-none h-16">
+            {/* bottom 用 env(safe-area-inset-bottom)：避免壓到 iOS home indicator */}
+            <div
+                className="fixed left-1/2 -translate-x-1/2 z-50 w-[calc(100%-48px)] max-w-[350px] pointer-events-none h-16"
+                style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+            >
                 {/* 1. VISUAL BACKGROUND LAYER (WITH CUTOUT) */}
                 <div 
                     className="absolute inset-0 bg-white/5 backdrop-blur-3xl border border-white/20 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.5)] ring-1 ring-white/10"

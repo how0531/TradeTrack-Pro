@@ -15,6 +15,7 @@
  *  - info / warning / error 三層；error 比較久（8s），info 短（3s）
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, CheckCircle2, Info, X, AlertTriangle } from 'lucide-react';
 
 type ToastType = 'info' | 'success' | 'warning' | 'error';
@@ -98,16 +99,22 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return (
         <ToastContext.Provider value={value}>
             {children}
-            {/* Toast Stack：右上角固定，自下而上堆疊 */}
-            <div
-                aria-live="polite"
-                className="fixed top-3 right-3 z-[100] flex flex-col gap-2 pointer-events-none"
-                style={{ maxWidth: 'calc(100vw - 1.5rem)' }}
-            >
-                {items.map(t => (
-                    <ToastCard key={t.id} item={t} onClose={() => dismiss(t.id)} />
-                ))}
-            </div>
+            {/* Toast Stack：右上角固定，自下而上堆疊。
+                用 createPortal 掛到 document.body：modal（如 SyncDateModal）也是 portal 到 body
+                且 z-[9999]，若 toast 留在 #root 內會被完整遮住，所以這裡 z 要更高。
+                top 用 env(safe-area-inset-top) 避免瀏海／動態島機種遮住上半截。 */}
+            {createPortal(
+                <div
+                    aria-live="polite"
+                    className="fixed right-3 z-[10010] flex flex-col gap-2 pointer-events-none"
+                    style={{ top: 'max(0.75rem, env(safe-area-inset-top))', maxWidth: 'calc(100vw - 1.5rem)' }}
+                >
+                    {items.map(t => (
+                        <ToastCard key={t.id} item={t} onClose={() => dismiss(t.id)} />
+                    ))}
+                </div>,
+                document.body
+            )}
         </ToastContext.Provider>
     );
 };

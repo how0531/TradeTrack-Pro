@@ -92,3 +92,29 @@ describe('v3.9.1: Method A requires date+code, not orderNo alone', () => {
         expect(groups.length).toBe(1);
     });
 });
+
+describe('v3.9.4: 方法A 不命中時落到方法B（列序號跨批次位移）', () => {
+    it('同一筆交易兩批同步拿到不同 orderNo（列序號位移）→ 內容比對仍抓到重複', () => {
+        const trades: Trade[] = [
+            baseTrade({ id: 'a', orderNo: '3', pnl: 1500 }),
+            baseTrade({ id: 'b', orderNo: '7', pnl: 1500 }), // 同日同代號同損益同量價，僅序號不同
+        ];
+        expect(detectDuplicates(trades)).toHaveLength(1);
+    });
+
+    it('orderNo 相同但代號不同（跨帳號列序號碰撞）→ 不誤判重複', () => {
+        const trades: Trade[] = [
+            baseTrade({ id: 'a', orderNo: '3', code: '2330 TSMC', pnl: 1500 }),
+            baseTrade({ id: 'b', orderNo: '3', code: '0050 ETF', pnl: 8000 }),
+        ];
+        expect(detectDuplicates(trades)).toHaveLength(0);
+    });
+
+    it('useOrderNoOnly 時方法A 不命中不落內容比對', () => {
+        const trades: Trade[] = [
+            baseTrade({ id: 'a', orderNo: '3', pnl: 1500 }),
+            baseTrade({ id: 'b', orderNo: '7', pnl: 1500 }),
+        ];
+        expect(detectDuplicates(trades, { useOrderNoOnly: true })).toHaveLength(0);
+    });
+});

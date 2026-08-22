@@ -6,7 +6,7 @@ import { StrategyStat } from '../../types';
 import { I18N } from '../../constants';
 import { formatDecimal } from '../../utils/format';
 
-export const StrategyListView = ({ data, onSelect, lang }: { data: { name: string; stat: StrategyStat }[], onSelect: (name: string) => void, lang: 'zh' | 'en' }) => {
+export const StrategyListView = ({ data, onSelect, lang, hideAmounts }: { data: { name: string; stat: StrategyStat }[], onSelect: (name: string) => void, lang: 'zh' | 'en', hideAmounts: boolean }) => {
     const t = I18N[lang] || I18N['zh'];
     const [sortType, setSortType] = useState<'pnl' | 'trades'>('pnl');
     const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
@@ -94,9 +94,12 @@ export const StrategyListView = ({ data, onSelect, lang }: { data: { name: strin
                     const isLoss = pnl < 0;
                     const isZero = pnl === 0;
 
-                    const textColor = isProfit 
-                        ? 'text-[#ff9e9e]' // Soft Red Text
-                        : (isLoss ? 'text-[#7ee8d2]' : 'text-zinc-600'); // Soft Teal Text
+                    // 隱藏金額時以灰色遮罩顯示,不帶紅綠色以免洩漏盈虧方向
+                    const textColor = hideAmounts
+                        ? 'text-zinc-600'
+                        : (isProfit
+                            ? 'text-[#ff9e9e]' // Soft Red Text
+                            : (isLoss ? 'text-[#7ee8d2]' : 'text-zinc-600')); // Soft Teal Text
 
                     // Using gradients to simulate the "Sphere/Bubble" look from the image
                     // Profit: Deep Red
@@ -129,7 +132,8 @@ export const StrategyListView = ({ data, onSelect, lang }: { data: { name: strin
                                     </div>
                                 </div>
                                 <span className={`font-barlow-numeric text-sm font-bold tracking-tight ${textColor} drop-shadow-sm`}>
-                                    {formatStealthPnl(pnl)}
+                                    {/* 隱藏金額時以 '****' 遮罩(比照 formatCurrency 慣例) */}
+                                    {hideAmounts ? '****' : formatStealthPnl(pnl)}
                                 </span>
                             </div>
 
