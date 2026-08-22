@@ -140,6 +140,13 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
     const [shareShowChart, setShareShowChart] = useState(true);
 
     const updateForm = (key: keyof Trade, value: any) => setForm({ ...form, [key]: value });
+
+    // 儲存震動回饋:只在原生驗證通過、onSubmit 真正觸發時才震「成功」,
+    // 避免驗證失敗(泡泡擋下送出)時按鈕 onClick 仍無條件震動誤導使用者
+    const handleFormSubmit = (e: React.FormEvent) => {
+        vibrate('success');
+        onSubmit(e);
+    };
     
     // Default to first portfolio if not set
     if (!form.portfolioId && portfolios.length > 0) {
@@ -424,7 +431,7 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                             </button>
                         </div>
                     </div>
-                    <form onSubmit={onSubmit} className="p-4 space-y-4 overflow-y-auto flex-1 no-scrollbar pb-8">
+                    <form onSubmit={handleFormSubmit} className="p-4 space-y-4 overflow-y-auto flex-1 no-scrollbar pb-8">
                         
                         {/* GLASS CHIPS: PORTFOLIO SELECTOR */}
                         <div>
@@ -493,7 +500,7 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                                 <button type="button" onClick={() => { updateForm('type', 'profit'); vibrate('selection'); }} className={`px-4 rounded-md text-[10px] font-bold uppercase transition-all ${form.type === 'profit' ? 'bg-[#D05A5A]/20 text-[#D05A5A] shadow-[0_0_10px_rgba(208,90,90,0.2)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.profit}</button>
                                 <button type="button" onClick={() => { updateForm('type', 'loss'); vibrate('selection'); }} className={`px-4 rounded-md text-[10px] font-bold uppercase transition-all ${form.type === 'loss' ? 'bg-[#5B9A8B]/20 text-[#5B9A8B] shadow-[0_0_10px_rgba(91,154,139,0.2)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.loss}</button>
                             </div>
-                            <input type="number" step="0.1" inputMode="decimal" required value={form.amount} onChange={e => updateForm('amount', e.target.value)} className="w-full h-[40px] px-2 text-2xl font-barlow-numeric font-bold bg-transparent border-none text-white placeholder-slate-600 outline-none text-right" placeholder="0.0" autoFocus />
+                            <input type="number" step="any" inputMode="decimal" required value={form.amount} onChange={e => updateForm('amount', e.target.value)} className="w-full h-[40px] px-2 text-2xl font-barlow-numeric font-bold bg-transparent border-none text-white placeholder-slate-600 outline-none text-right" placeholder="0.0" autoFocus />
                         </div>
 
                         {/* --- INVENTORY SECTION (Simplified / Pro Max) --- */}
@@ -523,10 +530,13 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] sm:text-xs font-bold text-zinc-600 tracking-wider group-focus-within:text-[#C8B085] transition-colors">
                                 {t.trade_label_pnl}
                             </span>
+                            {/* 券商同步格式如 "+150 pts"/"-3.5%":用 replace 會殘留前導 + 與空格,
+                                被 number input 的 sanitization 清成空字串而顯示空白;
+                                改用 parseFloat 解析(自帶正負號處理,無法解析時顯示空白) */}
                             <input
                                 type="number"
                                 step="any"
-                                value={form.points?.replace('%', '').replace('pts', '') || ''}
+                                value={(() => { const parsed = parseFloat(form.points || ''); return Number.isNaN(parsed) ? '' : parsed; })()}
                                 onChange={(e) => updateForm('points', e.target.value + (pnlUnit === '%' ? '%' : ''))}
                                 placeholder={t.trade_pnl_ph || "+/- Pts"}
                                 className="w-full bg-[#050505] border border-white/10 rounded-xl py-3 pl-12 pr-12 text-sm text-center text-zinc-300 placeholder:text-zinc-800 focus:outline-none focus:border-[#C8B085]/50 focus:ring-1 focus:ring-[#C8B085]/20 transition-all font-barlow-numeric appearance-none"
@@ -580,7 +590,7 @@ export const TradeModal = ({ isOpen, onClose, form, setForm, onSubmit, isEditing
                         </div>
                         
                         {/* GLASS BUTTON: SUBMIT */}
-                        <button type="submit" onClick={() => vibrate('success')} className={`w-full py-3.5 rounded-xl font-bold uppercase tracking-widest text-xs shadow-lg transition-all active:scale-[0.98] backdrop-blur-md border ${form.type === 'profit' ? 'bg-[#D05A5A]/20 text-[#D05A5A] border-[#D05A5A]/50 shadow-[0_0_20px_rgba(208,90,90,0.15)] hover:bg-[#D05A5A]/30' : 'bg-[#5B9A8B]/20 text-[#5B9A8B] border-[#5B9A8B]/50 shadow-[0_0_20px_rgba(91,154,139,0.15)] hover:bg-[#5B9A8B]/30'}`}>
+                        <button type="submit" className={`w-full py-3.5 rounded-xl font-bold uppercase tracking-widest text-xs shadow-lg transition-all active:scale-[0.98] backdrop-blur-md border ${form.type === 'profit' ? 'bg-[#D05A5A]/20 text-[#D05A5A] border-[#D05A5A]/50 shadow-[0_0_20px_rgba(208,90,90,0.15)] hover:bg-[#D05A5A]/30' : 'bg-[#5B9A8B]/20 text-[#5B9A8B] border-[#5B9A8B]/50 shadow-[0_0_20px_rgba(91,154,139,0.15)] hover:bg-[#5B9A8B]/30'}`}>
                             {isEditing ? t.update : t.save}
                         </button>
                     </form>
