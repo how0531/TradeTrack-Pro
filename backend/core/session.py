@@ -143,8 +143,11 @@ class ShioajiSessionManager:
                     login_result[0] = new_api.login(
                         api_key=api_key,
                         secret_key=secret_key,
-                        fetch_contract=fetch_contract,  # default False — saves ~200MB on free tier
                     )
+                    # shioaji 1.7 起 login() 不再下載商品檔（移除 fetch_contract 參數），
+                    # 改由 fetch_contracts() 明確觸發；預設不抓以省下 ~200MB（Render free tier）
+                    if fetch_contract:
+                        new_api.fetch_contracts()
                 except Exception as e:
                     login_error[0] = e
 
