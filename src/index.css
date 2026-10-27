@@ -9,10 +9,18 @@
 
   body {
     @apply text-gray-200 overflow-x-hidden relative;
-    background-color: #000000;
-    background-image: radial-gradient(circle at 50% -10%, #1c1812 0%, #000000 80%);
-    background-attachment: fixed;
     overscroll-behavior-y: none;
+  }
+
+  /* 背景漸層放在獨立的 fixed 圖層：body 上的 background-attachment: fixed
+     會讓捲動每一幀都重繪整頁 */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: radial-gradient(circle at 50% -10%, #1c1812 0%, #000000 80%);
   }
 
   body::before {
@@ -21,9 +29,10 @@
     inset: 0;
     pointer-events: none;
     z-index: 50;
-    opacity: 0.05;
+    /* 不用 mix-blend-mode：全螢幕混合圖層會讓捲動時整頁每幀重新合成；
+       改以較低不透明度的一般疊加近似原本的顆粒感 */
+    opacity: 0.03;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-    mix-blend-mode: overlay;
   }
 
   /* ── B1: Focus States — 金銅色 focus-visible ring ── */

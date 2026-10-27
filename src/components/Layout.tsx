@@ -62,7 +62,7 @@ export const Layout: React.FC<LayoutProps> = ({ lang, onFabClick }) => {
             >
                 {/* 1. VISUAL BACKGROUND LAYER (WITH CUTOUT) */}
                 <div 
-                    className="absolute inset-0 bg-white/5 backdrop-blur-3xl border border-white/20 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.5)] ring-1 ring-white/10"
+                    className="absolute inset-0 bg-white/5 backdrop-blur-xl border border-white/20 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.5)] ring-1 ring-white/10"
                     style={{
                         WebkitMaskImage: 'radial-gradient(circle at 50% 50%, transparent 32px, black 32.5px)',
                         maskImage: 'radial-gradient(circle at 50% 50%, transparent 32px, black 32.5px)'
@@ -101,7 +101,7 @@ export const Layout: React.FC<LayoutProps> = ({ lang, onFabClick }) => {
                     <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[60px] h-[60px] rounded-full z-20 pointer-events-auto transition-all duration-300 group overflow-hidden shadow-[0_8px_32px_rgba(200,176,133,0.3)] hover:scale-105 active:scale-95 hover:shadow-[0_12px_40px_rgba(200,176,133,0.4)]">
                         <button 
                             onClick={onFabClick} 
-                            className="w-full h-full flex items-center justify-center text-[#C8B085] relative z-10 bg-[#C8B085]/20 backdrop-blur-3xl border border-[#C8B085]/40 rounded-full"
+                            className="w-full h-full flex items-center justify-center text-[#C8B085] relative z-10 bg-[#C8B085]/20 backdrop-blur-xl border border-[#C8B085]/40 rounded-full"
                         >
                             <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-50 rounded-full"></div>
                             <Plus size={30} strokeWidth={2.5} className="transition-transform duration-300 group-hover:rotate-90 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] relative z-20" />
